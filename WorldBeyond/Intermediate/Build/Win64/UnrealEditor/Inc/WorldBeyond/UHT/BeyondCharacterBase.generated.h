@@ -19,7 +19,7 @@ PRAGMA_DISABLE_DEPRECATION_WARNINGS
 // ********** Begin Class ABeyondCharacterBase *****************************************************
 WORLDBEYOND_API UClass* Z_Construct_UClass_ABeyondCharacterBase_NoRegister();
 
-#define FID_GAT360_Worlds_Beyond_WorldBeyond_Source_WorldBeyond_Characters_BeyondCharacterBase_h_14_INCLASS_NO_PURE_DECLS \
+#define FID_GAT360_Worlds_Beyond_WorldBeyond_Source_WorldBeyond_Characters_BeyondCharacterBase_h_15_INCLASS_NO_PURE_DECLS \
 private: \
 	static void StaticRegisterNativesABeyondCharacterBase(); \
 	friend struct Z_Construct_UClass_ABeyondCharacterBase_Statics; \
@@ -31,7 +31,7 @@ public: \
 	virtual UObject* _getUObject() const override { return const_cast<ABeyondCharacterBase*>(this); }
 
 
-#define FID_GAT360_Worlds_Beyond_WorldBeyond_Source_WorldBeyond_Characters_BeyondCharacterBase_h_14_ENHANCED_CONSTRUCTORS \
+#define FID_GAT360_Worlds_Beyond_WorldBeyond_Source_WorldBeyond_Characters_BeyondCharacterBase_h_15_ENHANCED_CONSTRUCTORS \
 	/** Deleted move- and copy-constructors, should never be used */ \
 	ABeyondCharacterBase(ABeyondCharacterBase&&) = delete; \
 	ABeyondCharacterBase(const ABeyondCharacterBase&) = delete; \
@@ -41,12 +41,12 @@ public: \
 	NO_API virtual ~ABeyondCharacterBase();
 
 
-#define FID_GAT360_Worlds_Beyond_WorldBeyond_Source_WorldBeyond_Characters_BeyondCharacterBase_h_11_PROLOG
-#define FID_GAT360_Worlds_Beyond_WorldBeyond_Source_WorldBeyond_Characters_BeyondCharacterBase_h_14_GENERATED_BODY \
+#define FID_GAT360_Worlds_Beyond_WorldBeyond_Source_WorldBeyond_Characters_BeyondCharacterBase_h_12_PROLOG
+#define FID_GAT360_Worlds_Beyond_WorldBeyond_Source_WorldBeyond_Characters_BeyondCharacterBase_h_15_GENERATED_BODY \
 PRAGMA_DISABLE_DEPRECATION_WARNINGS \
 public: \
-	FID_GAT360_Worlds_Beyond_WorldBeyond_Source_WorldBeyond_Characters_BeyondCharacterBase_h_14_INCLASS_NO_PURE_DECLS \
-	FID_GAT360_Worlds_Beyond_WorldBeyond_Source_WorldBeyond_Characters_BeyondCharacterBase_h_14_ENHANCED_CONSTRUCTORS \
+	FID_GAT360_Worlds_Beyond_WorldBeyond_Source_WorldBeyond_Characters_BeyondCharacterBase_h_15_INCLASS_NO_PURE_DECLS \
+	FID_GAT360_Worlds_Beyond_WorldBeyond_Source_WorldBeyond_Characters_BeyondCharacterBase_h_15_ENHANCED_CONSTRUCTORS \
 private: \
 PRAGMA_ENABLE_DEPRECATION_WARNINGS
 

@@ -1,0 +1,10 @@
+{
+	"RemapUnityFiles": 
+	{
+		"Module.WorldBeyond.gen.cpp.obj": [
+			"BeyondCharacterBase.gen.cpp.obj",
+			"CharacterAttributeSet.gen.cpp.obj",
+			"WorldBeyond.init.gen.cpp.obj"
+		]
+	}
+}

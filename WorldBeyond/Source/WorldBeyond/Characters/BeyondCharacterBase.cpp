@@ -2,7 +2,8 @@
 
 
 #include "BeyondCharacterBase.h"
-#include "BeyondCharacterBase.h"
+#include "GameplayEffect.h"
+#include "GameplayEffectExtension.h"
 
 // Sets default values
 ABeyondCharacterBase::ABeyondCharacterBase()
@@ -15,15 +16,19 @@ ABeyondCharacterBase::ABeyondCharacterBase()
 	AbilitySystemComponent->SetIsReplicated(true);
 	AbilitySystemComponent->SetReplicationMode(ASCReplicationMode);
 
+	AttributeSet = CreateDefaultSubobject<UCharacterAttributeSet>("AttributeSet");
 
 	
 }
+
+
+
 
 // Called when the game starts or when spawned
 void ABeyondCharacterBase::BeginPlay()
 {
 	Super::BeginPlay();
-	
+	InitializeAttributeSet();
 }
 
 // Called every frame
@@ -56,6 +61,13 @@ void ABeyondCharacterBase::OnRep_PlayerState()
 	if (AbilitySystemComponent)
 	{
 		AbilitySystemComponent->InitAbilityActorInfo(this,this);
+	}
+}
+void ABeyondCharacterBase::InitializeAttributeSet()
+{
+	if (AbilitySystemComponent && AttributeSet)
+	{
+		
 	}
 }
 

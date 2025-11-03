@@ -6,6 +6,7 @@
 #include "GameFramework/Character.h"
 #include "AbilitySystemInterface.h"
 #include "AbilitySystemComponent.h"
+#include "WorldBeyond/CharacterAttributeSet.h"
 #include "BeyondCharacterBase.generated.h"
 
 UCLASS()
@@ -20,6 +21,12 @@ public:
 	//Ability System Component
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AbilitySystem")
 	class UAbilitySystemComponent* AbilitySystemComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Attributes", meta = (AllowPrivateAccess = "true"))
+	UCharacterAttributeSet* AttributeSet;
+
+
+	void InitializeAttributeSet();
 
 protected:
 	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category = "AbilitySystem")

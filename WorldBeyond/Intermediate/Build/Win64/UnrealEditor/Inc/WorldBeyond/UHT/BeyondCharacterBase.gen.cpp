@@ -19,6 +19,7 @@ GAMEPLAYABILITIES_API UEnum* Z_Construct_UEnum_GameplayAbilities_EGameplayEffect
 UPackage* Z_Construct_UPackage__Script_WorldBeyond();
 WORLDBEYOND_API UClass* Z_Construct_UClass_ABeyondCharacterBase();
 WORLDBEYOND_API UClass* Z_Construct_UClass_ABeyondCharacterBase_NoRegister();
+WORLDBEYOND_API UClass* Z_Construct_UClass_UCharacterAttributeSet_NoRegister();
 // ********** End Cross Module References **********************************************************
 
 // ********** Begin Class ABeyondCharacterBase *****************************************************
@@ -73,12 +74,19 @@ struct Z_Construct_UClass_ABeyondCharacterBase_Statics
 		{ "ToolTip", "Ability System Component" },
 #endif
 	};
+	static constexpr UECodeGen_Private::FMetaDataPairParam NewProp_AttributeSet_MetaData[] = {
+		{ "AllowPrivateAccess", "true" },
+		{ "Category", "Attributes" },
+		{ "EditInline", "true" },
+		{ "ModuleRelativePath", "Characters/BeyondCharacterBase.h" },
+	};
 	static constexpr UECodeGen_Private::FMetaDataPairParam NewProp_ASCReplicationMode_MetaData[] = {
 		{ "Category", "AbilitySystem" },
 		{ "ModuleRelativePath", "Characters/BeyondCharacterBase.h" },
 	};
 #endif // WITH_METADATA
 	static const UECodeGen_Private::FObjectPropertyParams NewProp_AbilitySystemComponent;
+	static const UECodeGen_Private::FObjectPropertyParams NewProp_AttributeSet;
 	static const UECodeGen_Private::FBytePropertyParams NewProp_ASCReplicationMode_Underlying;
 	static const UECodeGen_Private::FEnumPropertyParams NewProp_ASCReplicationMode;
 	static const UECodeGen_Private::FPropertyParamsBase* const PropPointers[];
@@ -90,10 +98,12 @@ struct Z_Construct_UClass_ABeyondCharacterBase_Statics
 	static const UECodeGen_Private::FClassParams ClassParams;
 };
 const UECodeGen_Private::FObjectPropertyParams Z_Construct_UClass_ABeyondCharacterBase_Statics::NewProp_AbilitySystemComponent = { "AbilitySystemComponent", nullptr, (EPropertyFlags)0x00100000000a001d, UECodeGen_Private::EPropertyGenFlags::Object, RF_Public|RF_Transient|RF_MarkAsNative, nullptr, nullptr, 1, STRUCT_OFFSET(ABeyondCharacterBase, AbilitySystemComponent), Z_Construct_UClass_UAbilitySystemComponent_NoRegister, METADATA_PARAMS(UE_ARRAY_COUNT(NewProp_AbilitySystemComponent_MetaData), NewProp_AbilitySystemComponent_MetaData) };
+const UECodeGen_Private::FObjectPropertyParams Z_Construct_UClass_ABeyondCharacterBase_Statics::NewProp_AttributeSet = { "AttributeSet", nullptr, (EPropertyFlags)0x00100000000a001d, UECodeGen_Private::EPropertyGenFlags::Object, RF_Public|RF_Transient|RF_MarkAsNative, nullptr, nullptr, 1, STRUCT_OFFSET(ABeyondCharacterBase, AttributeSet), Z_Construct_UClass_UCharacterAttributeSet_NoRegister, METADATA_PARAMS(UE_ARRAY_COUNT(NewProp_AttributeSet_MetaData), NewProp_AttributeSet_MetaData) };
 const UECodeGen_Private::FBytePropertyParams Z_Construct_UClass_ABeyondCharacterBase_Statics::NewProp_ASCReplicationMode_Underlying = { "UnderlyingType", nullptr, (EPropertyFlags)0x0000000000000000, UECodeGen_Private::EPropertyGenFlags::Byte, RF_Public|RF_Transient|RF_MarkAsNative, nullptr, nullptr, 1, 0, nullptr, METADATA_PARAMS(0, nullptr) };
 const UECodeGen_Private::FEnumPropertyParams Z_Construct_UClass_ABeyondCharacterBase_Statics::NewProp_ASCReplicationMode = { "ASCReplicationMode", nullptr, (EPropertyFlags)0x0020080000000005, UECodeGen_Private::EPropertyGenFlags::Enum, RF_Public|RF_Transient|RF_MarkAsNative, nullptr, nullptr, 1, STRUCT_OFFSET(ABeyondCharacterBase, ASCReplicationMode), Z_Construct_UEnum_GameplayAbilities_EGameplayEffectReplicationMode, METADATA_PARAMS(UE_ARRAY_COUNT(NewProp_ASCReplicationMode_MetaData), NewProp_ASCReplicationMode_MetaData) }; // 3979288675
 const UECodeGen_Private::FPropertyParamsBase* const Z_Construct_UClass_ABeyondCharacterBase_Statics::PropPointers[] = {
 	(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_ABeyondCharacterBase_Statics::NewProp_AbilitySystemComponent,
+	(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_ABeyondCharacterBase_Statics::NewProp_AttributeSet,
 	(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_ABeyondCharacterBase_Statics::NewProp_ASCReplicationMode_Underlying,
 	(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_ABeyondCharacterBase_Statics::NewProp_ASCReplicationMode,
 };
@@ -137,10 +147,10 @@ ABeyondCharacterBase::~ABeyondCharacterBase() {}
 struct Z_CompiledInDeferFile_FID_GAT360_Worlds_Beyond_WorldBeyond_Source_WorldBeyond_Characters_BeyondCharacterBase_h__Script_WorldBeyond_Statics
 {
 	static constexpr FClassRegisterCompiledInInfo ClassInfo[] = {
-		{ Z_Construct_UClass_ABeyondCharacterBase, ABeyondCharacterBase::StaticClass, TEXT("ABeyondCharacterBase"), &Z_Registration_Info_UClass_ABeyondCharacterBase, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(ABeyondCharacterBase), 1245304422U) },
+		{ Z_Construct_UClass_ABeyondCharacterBase, ABeyondCharacterBase::StaticClass, TEXT("ABeyondCharacterBase"), &Z_Registration_Info_UClass_ABeyondCharacterBase, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(ABeyondCharacterBase), 2341494872U) },
 	};
 };
-static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_GAT360_Worlds_Beyond_WorldBeyond_Source_WorldBeyond_Characters_BeyondCharacterBase_h__Script_WorldBeyond_2920500535(TEXT("/Script/WorldBeyond"),
+static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_GAT360_Worlds_Beyond_WorldBeyond_Source_WorldBeyond_Characters_BeyondCharacterBase_h__Script_WorldBeyond_1000118639(TEXT("/Script/WorldBeyond"),
 	Z_CompiledInDeferFile_FID_GAT360_Worlds_Beyond_WorldBeyond_Source_WorldBeyond_Characters_BeyondCharacterBase_h__Script_WorldBeyond_Statics::ClassInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_GAT360_Worlds_Beyond_WorldBeyond_Source_WorldBeyond_Characters_BeyondCharacterBase_h__Script_WorldBeyond_Statics::ClassInfo),
 	nullptr, 0,
 	nullptr, 0);

@@ -5,7 +5,7 @@
 #include "Net/UnrealNetwork.h"
 
 UCharacterAttributeSet::UCharacterAttributeSet():
- CurrentHealth(100.f), MaxHealth(100.f)
+ CurrentHealth(100.f), MaxHealth(500.f)
 {
 }
 
@@ -17,6 +17,19 @@ void UCharacterAttributeSet::OnRep_CurrentHealth(const FGameplayAttributeData& O
 void UCharacterAttributeSet::OnRep_MaxHealth(const FGameplayAttributeData& OldMaxHealth)
 {
 	GAMEPLAYATTRIBUTE_REPNOTIFY(UCharacterAttributeSet, MaxHealth, OldMaxHealth);
+}
+
+void UCharacterAttributeSet::PreAttributeChange(const FGameplayAttribute& Attribute, float& NewValue)
+{
+	Super::PreAttributeChange(Attribute, NewValue);
+
+	//Clamp CurrentHealth To MaxHealth
+	if (Attribute == GetCurrentHealthAttribute())
+	{
+		//Ensure CurrentHealth does not exceed Maxhealth
+		const float MaxHealthValue = MaxHealth.GetCurrentValue();
+		NewValue = FMath::Clamp(NewValue, 0.0f, MaxHealthValue);
+	}
 }
 
 void UCharacterAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
