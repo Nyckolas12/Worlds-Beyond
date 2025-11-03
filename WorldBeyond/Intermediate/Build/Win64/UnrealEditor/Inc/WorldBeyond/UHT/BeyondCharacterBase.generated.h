@@ -1,0 +1,61 @@
+// Copyright Epic Games, Inc. All Rights Reserved.
+/*===========================================================================
+	Generated code exported from UnrealHeaderTool.
+	DO NOT modify this manually! Edit the corresponding .h files instead!
+===========================================================================*/
+
+// IWYU pragma: private, include "Characters/BeyondCharacterBase.h"
+
+#ifdef WORLDBEYOND_BeyondCharacterBase_generated_h
+#error "BeyondCharacterBase.generated.h already included, missing '#pragma once' in BeyondCharacterBase.h"
+#endif
+#define WORLDBEYOND_BeyondCharacterBase_generated_h
+
+#include "UObject/ObjectMacros.h"
+#include "UObject/ScriptMacros.h"
+
+PRAGMA_DISABLE_DEPRECATION_WARNINGS
+
+// ********** Begin Class ABeyondCharacterBase *****************************************************
+WORLDBEYOND_API UClass* Z_Construct_UClass_ABeyondCharacterBase_NoRegister();
+
+#define FID_GAT360_Worlds_Beyond_WorldBeyond_Source_WorldBeyond_Characters_BeyondCharacterBase_h_14_INCLASS_NO_PURE_DECLS \
+private: \
+	static void StaticRegisterNativesABeyondCharacterBase(); \
+	friend struct Z_Construct_UClass_ABeyondCharacterBase_Statics; \
+	static UClass* GetPrivateStaticClass(); \
+	friend WORLDBEYOND_API UClass* Z_Construct_UClass_ABeyondCharacterBase_NoRegister(); \
+public: \
+	DECLARE_CLASS2(ABeyondCharacterBase, ACharacter, COMPILED_IN_FLAGS(0 | CLASS_Config), CASTCLASS_None, TEXT("/Script/WorldBeyond"), Z_Construct_UClass_ABeyondCharacterBase_NoRegister) \
+	DECLARE_SERIALIZER(ABeyondCharacterBase) \
+	virtual UObject* _getUObject() const override { return const_cast<ABeyondCharacterBase*>(this); }
+
+
+#define FID_GAT360_Worlds_Beyond_WorldBeyond_Source_WorldBeyond_Characters_BeyondCharacterBase_h_14_ENHANCED_CONSTRUCTORS \
+	/** Deleted move- and copy-constructors, should never be used */ \
+	ABeyondCharacterBase(ABeyondCharacterBase&&) = delete; \
+	ABeyondCharacterBase(const ABeyondCharacterBase&) = delete; \
+	DECLARE_VTABLE_PTR_HELPER_CTOR(NO_API, ABeyondCharacterBase); \
+	DEFINE_VTABLE_PTR_HELPER_CTOR_CALLER(ABeyondCharacterBase); \
+	DEFINE_DEFAULT_CONSTRUCTOR_CALL(ABeyondCharacterBase) \
+	NO_API virtual ~ABeyondCharacterBase();
+
+
+#define FID_GAT360_Worlds_Beyond_WorldBeyond_Source_WorldBeyond_Characters_BeyondCharacterBase_h_11_PROLOG
+#define FID_GAT360_Worlds_Beyond_WorldBeyond_Source_WorldBeyond_Characters_BeyondCharacterBase_h_14_GENERATED_BODY \
+PRAGMA_DISABLE_DEPRECATION_WARNINGS \
+public: \
+	FID_GAT360_Worlds_Beyond_WorldBeyond_Source_WorldBeyond_Characters_BeyondCharacterBase_h_14_INCLASS_NO_PURE_DECLS \
+	FID_GAT360_Worlds_Beyond_WorldBeyond_Source_WorldBeyond_Characters_BeyondCharacterBase_h_14_ENHANCED_CONSTRUCTORS \
+private: \
+PRAGMA_ENABLE_DEPRECATION_WARNINGS
+
+
+class ABeyondCharacterBase;
+
+// ********** End Class ABeyondCharacterBase *******************************************************
+
+#undef CURRENT_FILE_ID
+#define CURRENT_FILE_ID FID_GAT360_Worlds_Beyond_WorldBeyond_Source_WorldBeyond_Characters_BeyondCharacterBase_h
+
+PRAGMA_ENABLE_DEPRECATION_WARNINGS
