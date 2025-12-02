@@ -5,18 +5,11 @@
 #include "Net/UnrealNetwork.h"
 
 UCharacterAttributeSet::UCharacterAttributeSet():
- CurrentHealth(100.f), MaxHealth(500.f)
+CurrentHealth(100.f), 
+MaxHealth(500.f), 
+CurrentStamina(100.f),
+MaxStamina(100.f)
 {
-}
-
-void UCharacterAttributeSet::OnRep_CurrentHealth(const FGameplayAttributeData& OldCurrentHealth)
-{
-	GAMEPLAYATTRIBUTE_REPNOTIFY(UCharacterAttributeSet, CurrentHealth, OldCurrentHealth);
-}
-
-void UCharacterAttributeSet::OnRep_MaxHealth(const FGameplayAttributeData& OldMaxHealth)
-{
-	GAMEPLAYATTRIBUTE_REPNOTIFY(UCharacterAttributeSet, MaxHealth, OldMaxHealth);
 }
 
 void UCharacterAttributeSet::PreAttributeChange(const FGameplayAttribute& Attribute, float& NewValue)
@@ -38,5 +31,7 @@ void UCharacterAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty
 
 	DOREPLIFETIME_CONDITION_NOTIFY(UCharacterAttributeSet, CurrentHealth, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UCharacterAttributeSet, MaxHealth, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UCharacterAttributeSet, CurrentStamina, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UCharacterAttributeSet, MaxStamina, COND_None, REPNOTIFY_Always);
 }
 

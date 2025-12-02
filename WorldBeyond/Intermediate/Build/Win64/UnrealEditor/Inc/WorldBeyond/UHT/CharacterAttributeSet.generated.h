@@ -21,6 +21,8 @@ struct FGameplayAttributeData;
 
 // ********** Begin Class UCharacterAttributeSet ***************************************************
 #define FID_GAT360_Worlds_Beyond_WorldBeyond_Source_WorldBeyond_CharacterAttributeSet_h_22_RPC_WRAPPERS_NO_PURE_DECLS \
+	DECLARE_FUNCTION(execOnRep_MaxStamina); \
+	DECLARE_FUNCTION(execOnRep_CurrentStamina); \
 	DECLARE_FUNCTION(execOnRep_MaxHealth); \
 	DECLARE_FUNCTION(execOnRep_CurrentHealth);
 
@@ -42,7 +44,9 @@ public: \
 		NETFIELD_REP_START=(uint16)((int32)Super::ENetFields_Private::NETFIELD_REP_END + (int32)1), \
 		CurrentHealth=NETFIELD_REP_START, \
 		MaxHealth, \
-		NETFIELD_REP_END=MaxHealth	}; \
+		CurrentStamina, \
+		MaxStamina, \
+		NETFIELD_REP_END=MaxStamina	}; \
 	DECLARE_VALIDATE_GENERATED_REP_ENUMS(NO_API) \
 private: \
 	REPLICATED_BASE_CLASS(UCharacterAttributeSet) \

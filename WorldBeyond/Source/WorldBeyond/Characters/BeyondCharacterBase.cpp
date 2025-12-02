@@ -16,7 +16,7 @@ ABeyondCharacterBase::ABeyondCharacterBase()
 	AbilitySystemComponent->SetIsReplicated(true);
 	AbilitySystemComponent->SetReplicationMode(ASCReplicationMode);
 
-	AttributeSet = CreateDefaultSubobject<UCharacterAttributeSet>("AttributeSet");
+	AttributeSet = CreateDefaultSubobject<UCharacterAttributeSet>(TEXT("BasicAttributeSet"));
 
 	
 }
