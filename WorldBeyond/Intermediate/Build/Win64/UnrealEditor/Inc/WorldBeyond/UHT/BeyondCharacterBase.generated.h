@@ -16,7 +16,22 @@
 
 PRAGMA_DISABLE_DEPRECATION_WARNINGS
 
+class UGameplayAbility;
+struct FGameplayAbilitySpecHandle;
+struct FGameplayEventData;
+
 // ********** Begin Class ABeyondCharacterBase *****************************************************
+#define FID_GAT360_Worlds_Beyond_WorldBeyond_Source_WorldBeyond_Characters_BeyondCharacterBase_h_15_RPC_WRAPPERS_NO_PURE_DECLS \
+	virtual void ServerSendGameplayEventToSelf_Implementation(FGameplayEventData EventData); \
+	virtual void HandleDeath_Implementation(); \
+	DECLARE_FUNCTION(execServerSendGameplayEventToSelf); \
+	DECLARE_FUNCTION(execSendAbilitiesChangedEvent); \
+	DECLARE_FUNCTION(execRemoveAbilities); \
+	DECLARE_FUNCTION(execGrantAbilities); \
+	DECLARE_FUNCTION(execHandleDeath);
+
+
+#define FID_GAT360_Worlds_Beyond_WorldBeyond_Source_WorldBeyond_Characters_BeyondCharacterBase_h_15_CALLBACK_WRAPPERS
 WORLDBEYOND_API UClass* Z_Construct_UClass_ABeyondCharacterBase_NoRegister();
 
 #define FID_GAT360_Worlds_Beyond_WorldBeyond_Source_WorldBeyond_Characters_BeyondCharacterBase_h_15_INCLASS_NO_PURE_DECLS \
@@ -45,6 +60,8 @@ public: \
 #define FID_GAT360_Worlds_Beyond_WorldBeyond_Source_WorldBeyond_Characters_BeyondCharacterBase_h_15_GENERATED_BODY \
 PRAGMA_DISABLE_DEPRECATION_WARNINGS \
 public: \
+	FID_GAT360_Worlds_Beyond_WorldBeyond_Source_WorldBeyond_Characters_BeyondCharacterBase_h_15_RPC_WRAPPERS_NO_PURE_DECLS \
+	FID_GAT360_Worlds_Beyond_WorldBeyond_Source_WorldBeyond_Characters_BeyondCharacterBase_h_15_CALLBACK_WRAPPERS \
 	FID_GAT360_Worlds_Beyond_WorldBeyond_Source_WorldBeyond_Characters_BeyondCharacterBase_h_15_INCLASS_NO_PURE_DECLS \
 	FID_GAT360_Worlds_Beyond_WorldBeyond_Source_WorldBeyond_Characters_BeyondCharacterBase_h_15_ENHANCED_CONSTRUCTORS \
 private: \

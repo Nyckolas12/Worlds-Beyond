@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("WorldBeyondModuleRules")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Development")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+c4ea8f69abc09437dcf5e12abf223250b75ad401")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+f763cfc5bac32719cf52c33e974761c607be8658")]
 [assembly: System.Reflection.AssemblyProductAttribute("WorldBeyondModuleRules")]
 [assembly: System.Reflection.AssemblyTitleAttribute("WorldBeyondModuleRules")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
