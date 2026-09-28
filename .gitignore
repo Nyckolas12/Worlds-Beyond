@@ -73,3 +73,14 @@ Plugins/**/Intermediate/*
 
 # Cache files for the editor to use
 DerivedDataCache/*
+
+# Unreal project lives in WorldBeyond/ - the root-anchored rules above don't reach it
+WorldBeyond/Binaries/
+WorldBeyond/Intermediate/
+WorldBeyond/DerivedDataCache/
+WorldBeyond/Saved/
+WorldBeyond/.idea/
+WorldBeyond/.vs/
+WorldBeyond/*.sln
+WorldBeyond/*.slnx
+WorldBeyond/*.DotSettings.user
