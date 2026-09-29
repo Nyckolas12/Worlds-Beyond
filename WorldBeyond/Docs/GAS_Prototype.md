@@ -73,7 +73,9 @@ UnrealEditor-Cmd.exe WorldBeyond.uproject -ExecCmds="Automation RunTests WorldsB
 ```
 
 - `migrate_prototype.py` — already applied. Idempotent; backs up every asset it saves to `Saved/MigrationBackups/<timestamp>/`.
-- `cleanup_legacy.py` — dry run by default; set `BEYOND_CLEANUP_APPLY=1` to delete. Never deletes anything still referenced.
+- `cleanup_legacy.py` — dry run by default. To delete, in PowerShell run ` = "1"` first (then `Remove-Item Env:BEYOND_CLEANUP_APPLY`).
+  Never deletes anything still referenced; report in `Saved/MigrationBackups/cleanup_report.txt`.
+  Afterwards, in the editor: right-click the `Content` folder → **Fix Up Redirectors**.
 - `WorldsBeyond.Prototype.Smoke` — plays `MAP_Demo_Main` headless: party + buddy, swaps without duplicate abilities,
   GAS damage on enemies mirrored into the old component, no friendly fire, attack tokens, death, revive.
   Also in the editor: *Tools → Test Automation*, filter WorldsBeyond.

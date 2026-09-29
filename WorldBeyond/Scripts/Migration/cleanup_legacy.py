@@ -82,21 +82,32 @@ while changed:
 deletable = sorted(remaining)
 for target, refs in blocked.items():
     log("KEEP %s - still referenced by: %s" % (target, ", ".join(refs)))
-for target in deletable:
-    log(("DELETE " if APPLY else "would delete ") + target)
-    if APPLY:
-        EAL.delete_asset(target)
+if not APPLY:
+    for target in deletable:
+        log("would delete " + target)
+else:
+    # The referencer check above already proved nothing outside this list uses these assets.
+    # delete_asset refuses assets that happen to be loaded in this session, and the editor is
+    # closed, so remove the package files directly (same as deleting them in Explorer).
+    content_dir = os.path.abspath(unreal.Paths.project_content_dir())
+    for target in deletable:
+        rel = target.replace("/Game/", "", 1).replace("/", os.sep)
+        files = [os.path.join(content_dir, rel + ext) for ext in (".uasset", ".umap", ".uexp", ".ubulk")]
+        existing = [f for f in files if os.path.exists(f)]
+        if not existing:
+            log("already gone: " + target)
+            continue
+        for f in existing:
+            os.remove(f)
+        log("DELETE " + target)
 
-if APPLY:
-    # Clean up redirectors left behind by earlier moves/renames
-    tools = unreal.AssetToolsHelpers.get_asset_tools()
-    redirectors = [unreal.load_asset(str(d.package_name) + "." + str(d.asset_name))
-                   for d in AR.get_assets_by_path("/Game", recursive=True)
-                   if str(d.asset_class_path.asset_name) == "ObjectRedirector"]
-    redirectors = [r for r in redirectors if r]
-    if redirectors:
-        tools.fix_up_referencers(redirectors)
-        log("fixed up %d redirectors" % len(redirectors))
+# Redirector fix-up isn't exposed to Python; list them for Content Browser > Fix Up Redirectors
+redirectors = sorted(set(str(d.package_name) for d in AR.get_assets_by_path("/Game", recursive=True)
+                         if str(d.asset_class_path.asset_name) == "ObjectRedirector"))
+for r in redirectors:
+    log("redirector: %s" % r)
+if redirectors:
+    log("%d redirectors: right-click the Content folder > Fix Up Redirectors" % len(redirectors))
 
 out = os.path.join(os.path.abspath(unreal.Paths.project_saved_dir()), "MigrationBackups", "cleanup_report.txt")
 os.makedirs(os.path.dirname(out), exist_ok=True)

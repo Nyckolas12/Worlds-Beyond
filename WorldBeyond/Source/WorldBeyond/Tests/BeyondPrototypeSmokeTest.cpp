@@ -79,9 +79,6 @@ bool FBeyondPrototypeSmokeTest::RunTest(const FString& Parameters)
 	TSharedRef<FState> State = MakeShared<FState>();
 	State->Test = this;
 
-	// Known Blueprint issue: the demigods' OnDeath handler calls DisableInput with the player controller even on the AI companion
-	AddExpectedError(TEXT("DisableInput can only be specified on a Pawn for its Controller"), EAutomationExpectedErrorFlags::Contains, 0);
-
 	ADD_LATENT_AUTOMATION_COMMAND(FEditorLoadMap(TEXT("/Game/SICKA_PERSEPOLIS/MAPS/MAP_Demo_Main")));
 	ADD_LATENT_AUTOMATION_COMMAND(FStartPIECommand(false));
 	ADD_LATENT_AUTOMATION_COMMAND(FWaitLatentCommand(4.0f));
