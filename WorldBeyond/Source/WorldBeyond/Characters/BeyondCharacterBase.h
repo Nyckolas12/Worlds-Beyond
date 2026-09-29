@@ -8,10 +8,12 @@
 #include "AbilitySystemComponent.h"
 #include "GenericTeamAgentInterface.h"
 #include "AbilitySystem/BeyondAbilitySet.h"
+#include "Characters/BeyondLegacyDamageBridge.h"
 #include "WorldBeyond/CharacterAttributeSet.h"
 #include "BeyondCharacterBase.generated.h"
 
 class UBeyondAbilitySet;
+class UInputAction;
 
 UENUM(BlueprintType)
 enum class EBeyondTeam : uint8
@@ -20,6 +22,18 @@ enum class EBeyondTeam : uint8
 	Neutral = 0,
 	Player = 1,
 	Enemy = 2
+};
+
+USTRUCT(BlueprintType)
+struct FBeyondInputBinding
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
+	TObjectPtr<const UInputAction> InputAction;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, meta = (Categories = "Ability.Input"))
+	FGameplayTag InputTag;
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(FBeyondHitTakenSignature, ABeyondCharacterBase*, Character, AActor*, DamageInstigator, float, Damage, FGameplayTag, HitResponse);
@@ -66,6 +80,28 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AbilitySystem")
 	TArray<TSubclassOf<UGameplayAbility>> StartingAbilities;
 
+	// Input actions that press an ability slot. Abilities granted anywhere (ability set or Blueprint) are matched by their Input Tag.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (TitleProperty = "InputTag"))
+	TArray<FBeyondInputBinding> AbilityInputBindings;
+
+	// Confirms / cancels targeting (ground-targeted abilities such as GA_AOEAttack)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
+	TObjectPtr<const UInputAction> ConfirmTargetAction;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
+	TObjectPtr<const UInputAction> CancelTargetAction;
+
+	// Drop the old raw key events (Blueprint "Keyboard F / Left Mouse Button" nodes) so they don't fire alongside ability inputs
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
+	bool bDisableLegacyKeyInput = true;
+
+	// Weapon to equip on spawn, sent to GA_EquipWeapon as the event's target tag (e.g. Weapon.Ranged.Staff)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon", meta = (Categories = "Weapon"))
+	FGameplayTag DefaultWeaponTag;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon")
+	FGameplayTag EquipWeaponEventTag;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AbilitySystem|Attributes", meta = (ClampMin = "1"))
 	float DefaultMaxHealth = 100.0f;
 
@@ -75,6 +111,10 @@ protected:
 	// Optional: an instant effect that sets starting attributes instead of the defaults above
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AbilitySystem|Attributes")
 	TSubclassOf<UGameplayEffect> DefaultAttributesEffect;
+
+	// Use the Max Health set on the old BPC_DamageSystem component (keeps each enemy's tuning)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AbilitySystem|Attributes")
+	bool bUseLegacyMaxHealth = true;
 
 	// Seconds before a dead character is destroyed (0 keeps the body, e.g. for revivable demigods)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat", meta = (ClampMin = "0"))
@@ -89,11 +129,25 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Combat")
 	void Revive(float HealthFraction = 1.0f);
 
+	// How many enemies may attack this character at the same time (enemy AI attack tokens)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|AI", meta = (ClampMin = "0"))
+	int32 MaxAttackTokens = 2;
+
+	UFUNCTION(BlueprintCallable, Category = "Combat|AI")
+	bool TryReserveAttackTokens(int32 Amount);
+
+	UFUNCTION(BlueprintCallable, Category = "Combat|AI")
+	void ReleaseAttackTokens(int32 Amount);
+
+	// Copy the old BPC_DamageSystem blocking / invincible / interruptible flags onto GAS tags
+	void SyncLegacyDamageState();
+
 protected:
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
 
 	virtual void PossessedBy(AController* NewControl) override;
+	virtual void PawnClientRestart() override;
 
 	virtual void OnRep_PlayerState() override;
 	virtual void OnDeadTagChanged(const FGameplayTag CallbackTag, int32 NewCount);
@@ -146,6 +200,14 @@ private:
 	void HandleOutOfHealth(AActor* DamageInstigator, AActor* Causer, float Damage, FGameplayTag HitResponse);
 	void Die();
 
+	void HandleHealthAttributeChanged(const FOnAttributeChangeData& ChangeData);
+	void SyncLegacyHealth();
+
+	void EquipDefaultWeapon();
+	void BindAbilityInput(class UEnhancedInputComponent* EnhancedInput, const UInputAction* Action, const FGameplayTag& InputTag);
+	void Input_ConfirmTarget();
+	void Input_CancelTarget();
+
 	void Input_AbilityPressed(FGameplayTag InputTag);
 	void Input_AbilityReleased(FGameplayTag InputTag);
 	void CollectSpecsWithInputTag(const FGameplayTag& InputTag, TArray<FGameplayAbilitySpecHandle>& OutHandles) const;
@@ -156,6 +218,12 @@ private:
 	FBeyondAbilitySetHandles AbilitySetHandles;
 
 	TWeakObjectPtr<AActor> LastDamageInstigator;
+
+	int32 AvailableAttackTokens = 0;
+
+	// The old Blueprint BPC_DamageSystem component, kept in sync with GAS
+	TWeakObjectPtr<UActorComponent> LegacyDamageComponent;
+	BeyondLegacyDamage::FStateMirror LegacyStateMirror;
 
 	// Pre-ragdoll setup, restored by Revive
 	FTransform MeshRelativeTransform;

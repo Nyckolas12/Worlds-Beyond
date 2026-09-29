@@ -2,6 +2,7 @@
 
 
 #include "CharacterAttributeSet.h"
+#include "AbilitySystem/BeyondCombatLibrary.h"
 #include "BeyondGameplayTags.h"
 #include "GameplayEffectExtension.h"
 #include "Net/UnrealNetwork.h"
@@ -103,6 +104,23 @@ void UCharacterAttributeSet::PostAttributeChange(const FGameplayAttribute& Attri
 	{
 		ASC->ApplyModToAttribute(GetCurrentStaminaAttribute(), EGameplayModOp::Override, NewValue);
 	}
+}
+
+bool UCharacterAttributeSet::PreGameplayEffectExecute(FGameplayEffectModCallbackData& Data)
+{
+	// No friendly fire: projectiles and damage areas hit every ability system they overlap
+	const FGameplayAttribute& Attribute = Data.EvaluatedData.Attribute;
+	const bool bIsDamage = Attribute == GetIncomingDamageAttribute() || (Attribute == GetCurrentHealthAttribute() && Data.EvaluatedData.Magnitude < 0.0f);
+	if (bIsDamage)
+	{
+		const AActor* Instigator = Data.EffectSpec.GetEffectContext().GetOriginalInstigator();
+		const AActor* Target = Data.Target.GetAvatarActor();
+		if (Instigator && Target && Instigator != Target && UBeyondCombatLibrary::AreFriendly(Instigator, Target))
+		{
+			return false;
+		}
+	}
+	return Super::PreGameplayEffectExecute(Data);
 }
 
 void UCharacterAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbackData& Data)

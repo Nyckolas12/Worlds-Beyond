@@ -7,11 +7,23 @@
 #include "AbilitySystemComponent.h"
 #include "Characters/BeyondCharacterBase.h"
 #include "EngineUtils.h"
+#include "Navigation/PathFollowingComponent.h"
 #include "TimerManager.h"
 
 ABeyondCompanionController::ABeyondCompanionController()
 {
 	bAttachToPawn = true;
+}
+
+FPathFollowingRequestResult ABeyondCompanionController::MoveTo(const FAIMoveRequest& MoveRequest, FNavPathSharedPtr* OutPath)
+{
+	if (!bIssuingOwnMove)
+	{
+		FPathFollowingRequestResult Rejected;
+		Rejected.Code = EPathFollowingRequestResult::Failed;
+		return Rejected;
+	}
+	return Super::MoveTo(MoveRequest, OutPath);
 }
 
 void ABeyondCompanionController::OnPossess(APawn* InPawn)
@@ -178,6 +190,7 @@ void ABeyondCompanionController::Think()
 		const float DesiredRange = EngageRange > 0.0f ? EngageRange * 0.8f : FallbackAttackRange;
 		if (FVector::Dist(Self->GetActorLocation(), Target->GetActorLocation()) > DesiredRange)
 		{
+			TGuardValue<bool> OwnMove(bIssuingOwnMove, true);
 			MoveToActor(Target, DesiredRange * 0.9f);
 		}
 		return;
@@ -198,6 +211,7 @@ void ABeyondCompanionController::FollowLeader()
 
 	if (FVector::Dist2D(Self->GetActorLocation(), FollowPoint) > FollowAcceptanceRadius * 1.5f)
 	{
+		TGuardValue<bool> OwnMove(bIssuingOwnMove, true);
 		MoveToLocation(FollowPoint, FollowAcceptanceRadius);
 	}
 }

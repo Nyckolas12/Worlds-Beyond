@@ -2,7 +2,9 @@
 
 #include "AbilitySystem/BeyondCombatLibrary.h"
 #include "AbilitySystem/BeyondGameplayEffects.h"
+#include "AI/BeyondAIAbilityUtils.h"
 #include "AbilitySystemBlueprintLibrary.h"
+#include "Characters/BeyondCharacterBase.h"
 #include "AbilitySystemComponent.h"
 #include "BeyondGameplayTags.h"
 #include "CharacterAttributeSet.h"
@@ -20,6 +22,12 @@ bool UBeyondCombatLibrary::ApplyDamage(AActor* Source, AActor* Target, float Amo
 	if (!TargetASC || Amount <= 0.0f)
 	{
 		return false;
+	}
+
+	// Blueprint logic may have toggled blocking / invincibility on the old damage component
+	if (ABeyondCharacterBase* TargetCharacter = Cast<ABeyondCharacterBase>(Target))
+	{
+		TargetCharacter->SyncLegacyDamageState();
 	}
 
 	UAbilitySystemComponent* SourceASC = GetASC(Source);
@@ -61,6 +69,91 @@ bool UBeyondCombatLibrary::ApplyLegacyDamage(AActor* Source, AActor* Target, flo
 		!bCanBeBlocked, Source, !bCanBeParried, bShouldDamageInvincible, bShouldForceInterrupt);
 }
 
+DEFINE_FUNCTION(UBeyondCombatLibrary::execApplyDamageInfo)
+{
+	P_GET_OBJECT(AActor, Target);
+	P_GET_OBJECT(AActor, DamageCauser);
+
+	Stack.MostRecentProperty = nullptr;
+	Stack.MostRecentPropertyAddress = nullptr;
+	Stack.StepCompiledIn<FStructProperty>(nullptr);
+	const FStructProperty* InfoProperty = CastField<FStructProperty>(Stack.MostRecentProperty);
+	const void* InfoData = Stack.MostRecentPropertyAddress;
+
+	P_FINISH;
+
+	P_NATIVE_BEGIN;
+	*static_cast<bool*>(RESULT_PARAM) = ApplyDamageInfoImpl(Target, DamageCauser, InfoProperty ? InfoProperty->Struct : nullptr, InfoData);
+	P_NATIVE_END;
+}
+
+bool UBeyondCombatLibrary::ApplyDamageInfoImpl(AActor* Target, AActor* DamageCauser, const UStruct* InfoStruct, const void* InfoData)
+{
+	if (!InfoStruct || !InfoData)
+	{
+		return false;
+	}
+
+	double Amount = 0.0;
+	uint8 DamageType = 0;
+	uint8 DamageResponse = 0;
+	bool bShouldDamageInvincible = false;
+	bool bCanBeBlocked = true;
+	bool bCanBeParried = true;
+	bool bShouldForceInterrupt = false;
+
+	// User-defined struct members have generated names; match on the name the user typed
+	for (TFieldIterator<FProperty> It(InfoStruct); It; ++It)
+	{
+		const FString Name = It->GetAuthoredName();
+		const void* Value = It->ContainerPtrToValuePtr<void>(InfoData);
+
+		if (const FNumericProperty* Numeric = CastField<FNumericProperty>(*It))
+		{
+			if (Name == TEXT("Amount"))
+			{
+				Amount = Numeric->IsFloatingPoint() ? Numeric->GetFloatingPointPropertyValue(Value) : static_cast<double>(Numeric->GetSignedIntPropertyValue(Value));
+			}
+			else if (Name == TEXT("DamageType"))
+			{
+				DamageType = static_cast<uint8>(Numeric->GetUnsignedIntPropertyValue(Value));
+			}
+			else if (Name == TEXT("DamageResponse"))
+			{
+				DamageResponse = static_cast<uint8>(Numeric->GetUnsignedIntPropertyValue(Value));
+			}
+		}
+		else if (const FEnumProperty* EnumProp = CastField<FEnumProperty>(*It))
+		{
+			const uint8 EnumValue = static_cast<uint8>(EnumProp->GetUnderlyingProperty()->GetUnsignedIntPropertyValue(Value));
+			if (Name == TEXT("DamageType")) { DamageType = EnumValue; }
+			else if (Name == TEXT("DamageResponse")) { DamageResponse = EnumValue; }
+		}
+		else if (const FBoolProperty* Bool = CastField<FBoolProperty>(*It))
+		{
+			const bool bValue = Bool->GetPropertyValue(Value);
+			if (Name == TEXT("ShouldDamageInvincible")) { bShouldDamageInvincible = bValue; }
+			else if (Name == TEXT("CanBeBlocked")) { bCanBeBlocked = bValue; }
+			else if (Name == TEXT("CanBeParried")) { bCanBeParried = bValue; }
+			else if (Name == TEXT("ShouldForceInterrupt")) { bShouldForceInterrupt = bValue; }
+		}
+	}
+
+	// Remember health to report whether damage actually landed (blocked / invincible hits return false)
+	const float HealthBefore = GetActorHealth(Target);
+	// Projectiles / weapons: credit the pawn that fired them
+	AActor* Source = DamageCauser;
+	if (DamageCauser && DamageCauser->GetInstigator())
+	{
+		Source = DamageCauser->GetInstigator();
+	}
+
+	const bool bApplied = ApplyDamage(Source, Target, static_cast<float>(Amount), DamageTypeFromLegacy(DamageType), HitResponseFromLegacy(DamageResponse),
+		!bCanBeBlocked, DamageCauser, !bCanBeParried, bShouldDamageInvincible, bShouldForceInterrupt);
+
+	return bApplied && GetActorHealth(Target) < HealthBefore;
+}
+
 bool UBeyondCombatLibrary::ApplyHeal(AActor* Source, AActor* Target, float Amount)
 {
 	UAbilitySystemComponent* TargetASC = GetASC(Target);
@@ -84,6 +177,36 @@ bool UBeyondCombatLibrary::ApplyHeal(AActor* Source, AActor* Target, float Amoun
 	SpecHandle.Data->SetSetByCallerMagnitude(BeyondTags::SetByCaller_Heal, Amount);
 	SpecOwner->ApplyGameplayEffectSpecToTarget(*SpecHandle.Data.Get(), TargetASC);
 	return true;
+}
+
+float UBeyondCombatLibrary::HealActor(AActor* Target, float Amount)
+{
+	ApplyHeal(Target, Target, Amount);
+	return GetActorHealth(Target);
+}
+
+int32 UBeyondCombatLibrary::GetActorTeamNumber(const AActor* Actor)
+{
+	return FGenericTeamId::GetTeamIdentifier(Actor).GetId();
+}
+
+bool UBeyondCombatLibrary::IsActorAttacking(const AActor* Actor)
+{
+	return BeyondAI::IsUsingAbility(GetASC(Actor));
+}
+
+bool UBeyondCombatLibrary::ReserveAttackTokens(AActor* Target, int32 Amount)
+{
+	ABeyondCharacterBase* Character = Cast<ABeyondCharacterBase>(Target);
+	return !Character || Character->TryReserveAttackTokens(Amount);
+}
+
+void UBeyondCombatLibrary::ReturnAttackTokens(AActor* Target, int32 Amount)
+{
+	if (ABeyondCharacterBase* Character = Cast<ABeyondCharacterBase>(Target))
+	{
+		Character->ReleaseAttackTokens(Amount);
+	}
 }
 
 bool UBeyondCombatLibrary::IsActorDead(const AActor* Actor)
@@ -121,6 +244,17 @@ bool UBeyondCombatLibrary::AreHostile(const AActor* A, const AActor* B)
 		return false;
 	}
 	return FGenericTeamId::GetAttitude(TeamA, TeamB) == ETeamAttitude::Hostile;
+}
+
+bool UBeyondCombatLibrary::AreFriendly(const AActor* A, const AActor* B)
+{
+	const FGenericTeamId TeamA = FGenericTeamId::GetTeamIdentifier(A);
+	const FGenericTeamId TeamB = FGenericTeamId::GetTeamIdentifier(B);
+	if (TeamA == FGenericTeamId::NoTeam || TeamB == FGenericTeamId::NoTeam)
+	{
+		return false;
+	}
+	return FGenericTeamId::GetAttitude(TeamA, TeamB) == ETeamAttitude::Friendly;
 }
 
 void UBeyondCombatLibrary::SetInvincible(AActor* Actor, bool bInvincible)

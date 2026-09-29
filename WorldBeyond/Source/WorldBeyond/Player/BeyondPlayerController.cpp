@@ -2,6 +2,7 @@
 
 #include "Player/BeyondPlayerController.h"
 #include "Blueprint/UserWidget.h"
+#include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Characters/BeyondCharacterBase.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
@@ -25,6 +26,10 @@ void ABeyondPlayerController::BeginPlay()
 	{
 		PartyComponent->InitializeParty(GetPawn());
 	}
+
+	// Characters may still create their own HUD in their BeginPlay; replace it once everything has started
+	FTimerHandle RefreshTimer;
+	GetWorldTimerManager().SetTimer(RefreshTimer, this, &ThisClass::RefreshHUD, 0.2f, false);
 }
 
 void ABeyondPlayerController::OnPossess(APawn* InPawn)
@@ -78,11 +83,14 @@ void ABeyondPlayerController::RefreshHUD()
 		return;
 	}
 
-	if (HUDWidget)
+	// Also removes a HUD a character Blueprint created itself, so there is only ever one
+	TArray<UUserWidget*> ExistingHUDs;
+	UWidgetBlueprintLibrary::GetAllWidgetsOfClass(this, ExistingHUDs, HUDWidgetClass, false);
+	for (UUserWidget* Existing : ExistingHUDs)
 	{
-		HUDWidget->RemoveFromParent();
-		HUDWidget = nullptr;
+		Existing->RemoveFromParent();
 	}
+	HUDWidget = nullptr;
 
 	HUDWidget = CreateWidget<UUserWidget>(this, HUDWidgetClass);
 	if (HUDWidget)

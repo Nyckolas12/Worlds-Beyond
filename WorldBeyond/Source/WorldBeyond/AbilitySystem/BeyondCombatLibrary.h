@@ -38,25 +38,57 @@ public:
 	static bool ApplyLegacyDamage(AActor* Source, AActor* Target, float Amount, uint8 DamageType, uint8 DamageResponse,
 		bool bShouldDamageInvincible, bool bCanBeBlocked, bool bCanBeParried, bool bShouldForceInterrupt);
 
+	/**
+	 * Adapter for BPI_Damagable::TakeDamage: pass the S_DamageInfo struct straight in.
+	 * Reads Amount, DamageType, DamageResponse, ShouldDamageInvincible, CanBeBlocked, CanBeParried
+	 * and ShouldForceInterrupt by name. Returns true if the target took the damage.
+	 */
+	UFUNCTION(BlueprintCallable, CustomThunk, Category = "Beyond|Combat|Legacy", meta = (CustomStructureParam = "DamageInfo", DefaultToSelf = "Target"))
+	static bool ApplyDamageInfo(AActor* Target, AActor* DamageCauser, const int32& DamageInfo);
+	DECLARE_FUNCTION(execApplyDamageInfo);
+
 	UFUNCTION(BlueprintCallable, Category = "Beyond|Combat", meta = (DefaultToSelf = "Source"))
 	static bool ApplyHeal(AActor* Source, AActor* Target, float Amount);
 
-	UFUNCTION(BlueprintPure, Category = "Beyond|Combat")
+	// Adapter for BPI_Damagable::Heal: heals Target and returns its new health
+	UFUNCTION(BlueprintCallable, Category = "Beyond|Combat|Legacy", meta = (DefaultToSelf = "Target"))
+	static float HealActor(AActor* Target, float Amount);
+
+	UFUNCTION(BlueprintPure, Category = "Beyond|Combat", meta = (DefaultToSelf = "Actor"))
 	static bool IsActorDead(const AActor* Actor);
 
-	UFUNCTION(BlueprintPure, Category = "Beyond|Combat")
+	UFUNCTION(BlueprintPure, Category = "Beyond|Combat", meta = (DefaultToSelf = "Actor"))
 	static float GetActorHealth(const AActor* Actor);
 
-	UFUNCTION(BlueprintPure, Category = "Beyond|Combat")
+	UFUNCTION(BlueprintPure, Category = "Beyond|Combat", meta = (DefaultToSelf = "Actor"))
 	static float GetActorMaxHealth(const AActor* Actor);
 
 	// 0..1, or 0 when the actor has no attribute set
-	UFUNCTION(BlueprintPure, Category = "Beyond|Combat")
+	UFUNCTION(BlueprintPure, Category = "Beyond|Combat", meta = (DefaultToSelf = "Actor"))
 	static float GetActorHealthPercent(const AActor* Actor);
+
+	// Team id used by AI (1 = Player, 2 = Enemy, 255 = none)
+	UFUNCTION(BlueprintPure, Category = "Beyond|Combat", meta = (DefaultToSelf = "Actor"))
+	static int32 GetActorTeamNumber(const AActor* Actor);
+
+	// True while the actor is running an attack/ability
+	UFUNCTION(BlueprintPure, Category = "Beyond|Combat", meta = (DefaultToSelf = "Actor"))
+	static bool IsActorAttacking(const AActor* Actor);
+
+	// Enemy AI attack tokens: limit how many enemies attack Target at once. Non-Beyond actors always succeed.
+	UFUNCTION(BlueprintCallable, Category = "Beyond|Combat|AI", meta = (DefaultToSelf = "Target"))
+	static bool ReserveAttackTokens(AActor* Target, int32 Amount);
+
+	UFUNCTION(BlueprintCallable, Category = "Beyond|Combat|AI", meta = (DefaultToSelf = "Target"))
+	static void ReturnAttackTokens(AActor* Target, int32 Amount);
 
 	// Uses team affiliation (IGenericTeamAgentInterface) on the actors or their controllers
 	UFUNCTION(BlueprintPure, Category = "Beyond|Combat")
 	static bool AreHostile(const AActor* A, const AActor* B);
+
+	// Both actors are on the same team (actors without a team are never friendly)
+	UFUNCTION(BlueprintPure, Category = "Beyond|Combat")
+	static bool AreFriendly(const AActor* A, const AActor* B);
 
 	UFUNCTION(BlueprintCallable, Category = "Beyond|Combat")
 	static void SetInvincible(AActor* Actor, bool bInvincible);
@@ -76,4 +108,5 @@ public:
 
 private:
 	static UAbilitySystemComponent* GetASC(const AActor* Actor);
+	static bool ApplyDamageInfoImpl(AActor* Target, AActor* DamageCauser, const UStruct* InfoStruct, const void* InfoData);
 };

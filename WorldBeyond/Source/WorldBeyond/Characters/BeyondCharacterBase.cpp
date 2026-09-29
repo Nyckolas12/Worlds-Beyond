@@ -28,6 +28,7 @@ ABeyondCharacterBase::ABeyondCharacterBase()
 
 	AttributeSet = CreateDefaultSubobject<UCharacterAttributeSet>(TEXT("BasicAttributeSet"));
 
+	EquipWeaponEventTag = FGameplayTag::RequestGameplayTag(TEXT("Event.Weapon.Equipped"), false);
 
 }
 
@@ -40,10 +41,40 @@ void ABeyondCharacterBase::BeginPlay()
 	MeshRelativeTransform = GetMesh()->GetRelativeTransform();
 	MeshCollision = GetMesh()->GetCollisionEnabled();
 	CapsuleCollision = GetCapsuleComponent()->GetCollisionEnabled();
+	AvailableAttackTokens = MaxAttackTokens;
 
 	// Before Super so Blueprint BeginPlay already sees attributes and abilities
 	InitAbilitySystem();
 	Super::BeginPlay();
+
+	// Next tick, so abilities granted by Blueprint BeginPlay (GA_EquipWeapon) exist
+	GetWorldTimerManager().SetTimerForNextTick(this, &ThisClass::EquipDefaultWeapon);
+}
+
+void ABeyondCharacterBase::EquipDefaultWeapon()
+{
+	if (!AbilitySystemComponent || !DefaultWeaponTag.IsValid() || !EquipWeaponEventTag.IsValid())
+	{
+		return;
+	}
+
+	FGameplayEventData Payload;
+	Payload.EventTag = EquipWeaponEventTag;
+	Payload.Instigator = this;
+	Payload.Target = this;
+	Payload.TargetTags.AddTag(DefaultWeaponTag);
+	AbilitySystemComponent->HandleGameplayEvent(EquipWeaponEventTag, &Payload);
+}
+
+void ABeyondCharacterBase::PawnClientRestart()
+{
+	Super::PawnClientRestart();
+
+	// Blueprint key-event nodes are bound during Super; ability inputs replace them
+	if (bDisableLegacyKeyInput && InputComponent)
+	{
+		InputComponent->KeyBindings.Reset();
+	}
 }
 
 // Called to bind functionality to input
@@ -52,33 +83,64 @@ void ABeyondCharacterBase::SetupPlayerInputComponent(UInputComponent* PlayerInpu
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
 
 	UEnhancedInputComponent* EnhancedInput = Cast<UEnhancedInputComponent>(PlayerInputComponent);
-	if (!EnhancedInput || !AbilitySet)
+	if (!EnhancedInput)
 	{
 		return;
 	}
 
-	for (const FBeyondAbilitySet_Ability& Entry : AbilitySet->Abilities)
+	for (const FBeyondInputBinding& Binding : AbilityInputBindings)
 	{
-		if (!Entry.InputAction || !Entry.Ability)
-		{
-			continue;
-		}
+		BindAbilityInput(EnhancedInput, Binding.InputAction, Binding.InputTag);
+	}
 
-		FGameplayTag InputTag = Entry.InputTag;
-		if (!InputTag.IsValid())
+	if (AbilitySet)
+	{
+		for (const FBeyondAbilitySet_Ability& Entry : AbilitySet->Abilities)
 		{
-			if (const UBeyondGameplayAbility* BeyondCDO = Cast<UBeyondGameplayAbility>(Entry.Ability->GetDefaultObject()))
+			FGameplayTag InputTag = Entry.InputTag;
+			if (!InputTag.IsValid() && Entry.Ability)
 			{
-				InputTag = BeyondCDO->InputTag;
+				if (const UBeyondGameplayAbility* BeyondCDO = Cast<UBeyondGameplayAbility>(Entry.Ability->GetDefaultObject()))
+				{
+					InputTag = BeyondCDO->InputTag;
+				}
 			}
+			BindAbilityInput(EnhancedInput, Entry.InputAction, InputTag);
 		}
-		if (!InputTag.IsValid())
-		{
-			continue;
-		}
+	}
 
-		EnhancedInput->BindAction(Entry.InputAction.Get(), ETriggerEvent::Started, this, &ThisClass::Input_AbilityPressed, InputTag);
-		EnhancedInput->BindAction(Entry.InputAction.Get(), ETriggerEvent::Completed, this, &ThisClass::Input_AbilityReleased, InputTag);
+	if (ConfirmTargetAction)
+	{
+		EnhancedInput->BindAction(ConfirmTargetAction.Get(), ETriggerEvent::Started, this, &ThisClass::Input_ConfirmTarget);
+	}
+	if (CancelTargetAction)
+	{
+		EnhancedInput->BindAction(CancelTargetAction.Get(), ETriggerEvent::Started, this, &ThisClass::Input_CancelTarget);
+	}
+}
+
+void ABeyondCharacterBase::BindAbilityInput(UEnhancedInputComponent* EnhancedInput, const UInputAction* Action, const FGameplayTag& InputTag)
+{
+	if (Action && InputTag.IsValid())
+	{
+		EnhancedInput->BindAction(Action, ETriggerEvent::Started, this, &ThisClass::Input_AbilityPressed, InputTag);
+		EnhancedInput->BindAction(Action, ETriggerEvent::Completed, this, &ThisClass::Input_AbilityReleased, InputTag);
+	}
+}
+
+void ABeyondCharacterBase::Input_ConfirmTarget()
+{
+	if (AbilitySystemComponent)
+	{
+		AbilitySystemComponent->LocalInputConfirm();
+	}
+}
+
+void ABeyondCharacterBase::Input_CancelTarget()
+{
+	if (AbilitySystemComponent)
+	{
+		AbilitySystemComponent->LocalInputCancel();
 	}
 }
 
@@ -125,6 +187,15 @@ void ABeyondCharacterBase::InitAbilitySystem()
 
 		AbilitySystemComponent->RegisterGameplayTagEvent(BeyondTags::State_Dead, EGameplayTagEventType::NewOrRemoved)
 			.AddUObject(this, &ThisClass::OnDeadTagChanged);
+
+		LegacyDamageComponent = BeyondLegacyDamage::FindComponent(this);
+		if (LegacyDamageComponent.IsValid())
+		{
+			AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(UCharacterAttributeSet::GetCurrentHealthAttribute())
+				.AddUObject(this, &ThisClass::HandleHealthAttributeChanged);
+			AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(UCharacterAttributeSet::GetMaxHealthAttribute())
+				.AddUObject(this, &ThisClass::HandleHealthAttributeChanged);
+		}
 	}
 
 	// Grant everything exactly once, no matter how often the character is possessed (swapping)
@@ -153,14 +224,58 @@ void ABeyondCharacterBase::InitializeAttributeSet()
 	if (DefaultAttributesEffect)
 	{
 		AbilitySystemComponent->ApplyGameplayEffectToSelf(DefaultAttributesEffect->GetDefaultObject<UGameplayEffect>(), 1.0f, AbilitySystemComponent->MakeEffectContext());
-		return;
+	}
+	else
+	{
+		float MaxHealthValue = DefaultMaxHealth;
+		const float LegacyMaxHealth = BeyondLegacyDamage::GetLegacyMaxHealth(LegacyDamageComponent.Get());
+		if (bUseLegacyMaxHealth && LegacyMaxHealth > 0.0f)
+		{
+			MaxHealthValue = LegacyMaxHealth;
+		}
+
+		// Max before current so the clamp in the attribute set doesn't cut the current value
+		AbilitySystemComponent->SetNumericAttributeBase(UCharacterAttributeSet::GetMaxHealthAttribute(), MaxHealthValue);
+		AbilitySystemComponent->SetNumericAttributeBase(UCharacterAttributeSet::GetCurrentHealthAttribute(), MaxHealthValue);
+		AbilitySystemComponent->SetNumericAttributeBase(UCharacterAttributeSet::GetMaxStaminaAttribute(), DefaultMaxStamina);
+		AbilitySystemComponent->SetNumericAttributeBase(UCharacterAttributeSet::GetCurrentStaminaAttribute(), DefaultMaxStamina);
 	}
 
-	// Max before current so the clamp in the attribute set doesn't cut the current value
-	AbilitySystemComponent->SetNumericAttributeBase(UCharacterAttributeSet::GetMaxHealthAttribute(), DefaultMaxHealth);
-	AbilitySystemComponent->SetNumericAttributeBase(UCharacterAttributeSet::GetCurrentHealthAttribute(), DefaultMaxHealth);
-	AbilitySystemComponent->SetNumericAttributeBase(UCharacterAttributeSet::GetMaxStaminaAttribute(), DefaultMaxStamina);
-	AbilitySystemComponent->SetNumericAttributeBase(UCharacterAttributeSet::GetCurrentStaminaAttribute(), DefaultMaxStamina);
+	SyncLegacyHealth();
+}
+
+void ABeyondCharacterBase::HandleHealthAttributeChanged(const FOnAttributeChangeData& ChangeData)
+{
+	SyncLegacyHealth();
+}
+
+void ABeyondCharacterBase::SyncLegacyHealth()
+{
+	if (AttributeSet && AbilitySystemComponent)
+	{
+		BeyondLegacyDamage::SyncHealth(LegacyDamageComponent.Get(), AttributeSet->GetCurrentHealth(), AttributeSet->GetMaxHealth(),
+			AbilitySystemComponent->HasMatchingGameplayTag(BeyondTags::State_Dead));
+	}
+}
+
+void ABeyondCharacterBase::SyncLegacyDamageState()
+{
+	BeyondLegacyDamage::SyncStateTags(LegacyDamageComponent.Get(), AbilitySystemComponent, LegacyStateMirror);
+}
+
+bool ABeyondCharacterBase::TryReserveAttackTokens(int32 Amount)
+{
+	if (Amount > AvailableAttackTokens)
+	{
+		return false;
+	}
+	AvailableAttackTokens -= Amount;
+	return true;
+}
+
+void ABeyondCharacterBase::ReleaseAttackTokens(int32 Amount)
+{
+	AvailableAttackTokens = FMath::Min(AvailableAttackTokens + FMath::Max(Amount, 0), MaxAttackTokens);
 }
 
 void ABeyondCharacterBase::HandleAttributeHitTaken(AActor* DamageInstigator, AActor* Causer, float Damage, FGameplayTag HitResponse)
@@ -173,6 +288,19 @@ void ABeyondCharacterBase::HandleAttributeHitTaken(AActor* DamageInstigator, AAc
 		if (DamageInstigator)
 		{
 			UAISense_Damage::ReportDamageEvent(this, this, DamageInstigator, Damage, DamageInstigator->GetActorLocation(), GetActorLocation());
+		}
+	}
+
+	// Drive the old Blueprint handlers bound to BPC_DamageSystem (hit reactions, block reactions)
+	if (UActorComponent* Legacy = LegacyDamageComponent.Get())
+	{
+		if (HitResponse == BeyondTags::Event_Hit_Blocked)
+		{
+			BeyondLegacyDamage::BroadcastBlocked(Legacy, true, DamageInstigator);
+		}
+		else if (Damage > 0.0f && HitResponse.IsValid() && !AbilitySystemComponent->HasMatchingGameplayTag(BeyondTags::State_Dead))
+		{
+			BeyondLegacyDamage::BroadcastDamageResponse(Legacy, BeyondLegacyDamage::HitResponseToLegacy(HitResponse), DamageInstigator);
 		}
 	}
 
@@ -232,6 +360,10 @@ void ABeyondCharacterBase::Die()
 	}
 
 	HandleDeath();
+
+	SyncLegacyHealth();
+	BeyondLegacyDamage::BroadcastDeath(LegacyDamageComponent.Get());
+
 	OnKilled(Killer);
 	OnCharacterKilled.Broadcast(this, Killer);
 
@@ -276,9 +408,16 @@ void ABeyondCharacterBase::Revive(float HealthFraction)
 	GetCharacterMovement()->SetMovementMode(MOVE_Walking);
 	SetLifeSpan(0.0f);
 
+	// The old Blueprint death handler disables the pawn's input
+	if (APlayerController* PC = Cast<APlayerController>(GetController()))
+	{
+		EnableInput(PC);
+	}
+
 	// Removing the tag calls OnRevived; heal afterwards because dead characters can't be healed
 	AbilitySystemComponent->SetLooseGameplayTagCount(BeyondTags::State_Dead, 0);
 	UBeyondCombatLibrary::ApplyHeal(this, this, FMath::Max(1.0f, AttributeSet->GetMaxHealth() * FMath::Clamp(HealthFraction, 0.0f, 1.0f)));
+	SyncLegacyHealth();
 }
 
 UAbilitySystemComponent* ABeyondCharacterBase::GetAbilitySystemComponent() const
@@ -361,7 +500,20 @@ void ABeyondCharacterBase::CollectSpecsWithInputTag(const FGameplayTag& InputTag
 
 	for (const FGameplayAbilitySpec& Spec : AbilitySystemComponent->GetActivatableAbilities())
 	{
-		if (Spec.Ability && Spec.GetDynamicSpecSourceTags().HasTagExact(InputTag))
+		if (!Spec.Ability)
+		{
+			continue;
+		}
+
+		// Specs granted through an ability set carry their slot; ones granted elsewhere (Blueprint) use the ability's own Input Tag
+		bool bMatches = Spec.GetDynamicSpecSourceTags().HasTagExact(InputTag);
+		if (!bMatches && !Spec.GetDynamicSpecSourceTags().HasTag(FGameplayTag::RequestGameplayTag(TEXT("Ability.Input"))))
+		{
+			const UBeyondGameplayAbility* BeyondAbility = Cast<UBeyondGameplayAbility>(Spec.Ability);
+			bMatches = BeyondAbility && BeyondAbility->InputTag == InputTag;
+		}
+
+		if (bMatches)
 		{
 			OutHandles.Add(Spec.Handle);
 		}

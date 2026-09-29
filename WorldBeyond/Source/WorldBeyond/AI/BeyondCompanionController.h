@@ -57,6 +57,9 @@ public:
 	UPROPERTY(EditDefaultsOnly, Category = "Companion|Combat")
 	float FallbackAttackRange = 200.0f;
 
+	// Only moves issued by this controller are accepted; old Blueprint "follow" logic on the characters is ignored
+	virtual FPathFollowingRequestResult MoveTo(const FAIMoveRequest& MoveRequest, FNavPathSharedPtr* OutPath = nullptr) override;
+
 protected:
 	virtual void OnPossess(APawn* InPawn) override;
 	virtual void OnUnPossess() override;
@@ -82,4 +85,6 @@ private:
 
 	// Alternates which side of the leader to follow on
 	float FollowSide = 1.0f;
+
+	bool bIssuingOwnMove = false;
 };

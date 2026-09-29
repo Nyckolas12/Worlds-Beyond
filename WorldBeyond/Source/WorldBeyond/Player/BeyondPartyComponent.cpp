@@ -191,6 +191,7 @@ bool UBeyondPartyComponent::SwapTo(ABeyondCharacterBase* NewLeader, bool bIgnore
 	// Possess takes the pawn away from the companion controller and releases the old leader
 	PC->Possess(NewLeader);
 	PC->SetControlRotation(ControlRotation);
+	NewLeader->EnableInput(PC);
 
 	if (OldLeader)
 	{
