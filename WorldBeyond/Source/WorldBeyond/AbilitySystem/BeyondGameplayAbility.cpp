@@ -4,6 +4,7 @@
 #include "AbilitySystem/BeyondCombatLibrary.h"
 #include "AbilitySystemComponent.h"
 #include "AIController.h"
+#include "BeyondGameplayTags.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
 #include "Characters/BeyondCharacterBase.h"
@@ -56,6 +57,15 @@ FRotator UBeyondGameplayAbility::GetAimRotation(FVector Origin) const
 bool UBeyondGameplayAbility::ApplyDamageToTarget(AActor* Target, float Amount, FGameplayTag DamageType, FGameplayTag HitResponse, bool bUnblockable)
 {
 	return UBeyondCombatLibrary::ApplyDamage(GetAvatarActorFromActorInfo(), Target, Amount, DamageType, HitResponse, bUnblockable, GetAvatarActorFromActorInfo());
+}
+
+bool UBeyondGameplayAbility::CanActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayTagContainer* SourceTags, const FGameplayTagContainer* TargetTags, FGameplayTagContainer* OptionalRelevantTags) const
+{
+	if (ActorInfo && ActorInfo->AbilitySystemComponent.IsValid() && ActorInfo->AbilitySystemComponent->HasMatchingGameplayTag(BeyondTags::State_Dead))
+	{
+		return false;
+	}
+	return Super::CanActivateAbility(Handle, ActorInfo, SourceTags, TargetTags, OptionalRelevantTags);
 }
 
 void UBeyondGameplayAbility::OnGiveAbility(const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilitySpec& Spec)

@@ -1,6 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "Player/BeyondPartyComponent.h"
+#include "WorldBeyond.h"
 #include "AI/BeyondCompanionController.h"
 #include "AbilitySystem/BeyondCombatLibrary.h"
 #include "Characters/BeyondCharacterBase.h"
@@ -14,6 +15,8 @@ UBeyondPartyComponent::UBeyondPartyComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
 	PrimaryComponentTick.TickInterval = 0.1f;
+	// Inactive components never tick; the revive check lives in TickComponent
+	bAutoActivate = true;
 	CompanionControllerClass = ABeyondCompanionController::StaticClass();
 }
 
@@ -328,6 +331,7 @@ void UBeyondPartyComponent::UpdateRevive(float DeltaTime)
 		}
 		ReviveTarget = Downed;
 		ReviveProgress = 0.0f;
+		UE_LOG(LogBeyond, Log, TEXT("Party: revive target %s"), Downed ? *Downed->GetName() : TEXT("none"));
 	}
 
 	if (!Downed)
@@ -340,6 +344,7 @@ void UBeyondPartyComponent::UpdateRevive(float DeltaTime)
 
 	if (ReviveProgress >= 1.0f)
 	{
+		UE_LOG(LogBeyond, Log, TEXT("Party: reviving %s"), *Downed->GetName());
 		Downed->Revive(ReviveHealthFraction);
 		ReviveTarget.Reset();
 		ReviveProgress = 0.0f;

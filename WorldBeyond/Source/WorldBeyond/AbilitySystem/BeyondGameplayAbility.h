@@ -77,6 +77,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Ability|Combat")
 	bool ApplyDamageToTarget(AActor* Target, float Amount, UPARAM(meta = (Categories = "DamageType")) FGameplayTag DamageType, UPARAM(meta = (Categories = "Event.Hit")) FGameplayTag HitResponse, bool bUnblockable = false);
 
+	// Dead characters can't use abilities
+	virtual bool CanActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayTagContainer* SourceTags = nullptr, const FGameplayTagContainer* TargetTags = nullptr, FGameplayTagContainer* OptionalRelevantTags = nullptr) const override;
+
 protected:
 	virtual void OnGiveAbility(const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilitySpec& Spec) override;
 };

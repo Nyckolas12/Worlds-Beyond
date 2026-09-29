@@ -19,18 +19,18 @@ struct FBeyondAbilitySet_Ability
 {
 	GENERATED_BODY()
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	TSubclassOf<UGameplayAbility> Ability;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	int32 Level = 1;
 
 	// Input slot; leave empty to use the ability's own InputTag (UBeyondGameplayAbility)
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, meta = (Categories = "Ability.Input"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (Categories = "Ability.Input"))
 	FGameplayTag InputTag;
 
 	// Enhanced Input action that presses this slot when a player controls the character
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	TObjectPtr<const UInputAction> InputAction;
 };
 
@@ -39,10 +39,10 @@ struct FBeyondAbilitySet_Effect
 {
 	GENERATED_BODY()
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	TSubclassOf<UGameplayEffect> Effect;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	float Level = 1.0f;
 };
 

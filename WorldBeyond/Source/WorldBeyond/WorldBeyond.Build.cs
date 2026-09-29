@@ -15,6 +15,12 @@ public class WorldBeyond : ModuleRules
 
 		PrivateDependencyModuleNames.AddRange(new string[] { "NavigationSystem", "UMG" });
 
+		// Automation tests (Source/WorldBeyond/Tests) drive Play In Editor
+		if (Target.bBuildEditor)
+		{
+			PrivateDependencyModuleNames.Add("UnrealEd");
+		}
+
 		// Uncomment if you are using Slate UI
 		// PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
 

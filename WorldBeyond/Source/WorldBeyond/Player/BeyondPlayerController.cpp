@@ -6,7 +6,9 @@
 #include "Characters/BeyondCharacterBase.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
+#include "Engine/LevelScriptActor.h"
 #include "Engine/LocalPlayer.h"
+#include "Engine/World.h"
 #include "Player/BeyondPartyComponent.h"
 
 ABeyondPlayerController::ABeyondPlayerController()
@@ -30,6 +32,14 @@ void ABeyondPlayerController::BeginPlay()
 	// Characters may still create their own HUD in their BeginPlay; replace it once everything has started
 	FTimerHandle RefreshTimer;
 	GetWorldTimerManager().SetTimer(RefreshTimer, this, &ThisClass::RefreshHUD, 0.2f, false);
+
+	if (bDisableLevelScriptInput)
+	{
+		if (ALevelScriptActor* LevelScript = GetWorld()->GetLevelScriptActor())
+		{
+			LevelScript->DisableInput(this);
+		}
+	}
 }
 
 void ABeyondPlayerController::OnPossess(APawn* InPawn)

@@ -34,6 +34,10 @@ public:
 	UPROPERTY(EditDefaultsOnly, Category = "Input")
 	TObjectPtr<UInputAction> SwapAction;
 
+	// Stop the level Blueprint from receiving input (it used to handle swapping with its own Possess logic)
+	UPROPERTY(EditDefaultsOnly, Category = "Input")
+	bool bDisableLevelScriptInput = true;
+
 	// Leave empty if the characters still create their own HUD
 	UPROPERTY(EditDefaultsOnly, Category = "UI")
 	TSubclassOf<UUserWidget> HUDWidgetClass;

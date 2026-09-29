@@ -13,16 +13,16 @@ struct FBeyondComboStep
 {
 	GENERATED_BODY()
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	TObjectPtr<UAnimMontage> Montage;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, meta = (ClampMin = "0"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (ClampMin = "0"))
 	float Damage = 20.0f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, meta = (Categories = "Event.Hit"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (Categories = "Event.Hit"))
 	FGameplayTag HitResponse;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, meta = (ClampMin = "0.1"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (ClampMin = "0.1"))
 	float PlayRate = 1.0f;
 };
 

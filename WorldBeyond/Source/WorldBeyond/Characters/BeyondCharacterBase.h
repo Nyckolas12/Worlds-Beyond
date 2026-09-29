@@ -29,10 +29,10 @@ struct FBeyondInputBinding
 {
 	GENERATED_BODY()
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	TObjectPtr<const UInputAction> InputAction;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, meta = (Categories = "Ability.Input"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (Categories = "Ability.Input"))
 	FGameplayTag InputTag;
 };
 
@@ -91,9 +91,13 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<const UInputAction> CancelTargetAction;
 
-	// Drop the old raw key events (Blueprint "Keyboard F / Left Mouse Button" nodes) so they don't fire alongside ability inputs
+	// Drop the old raw key events (Blueprint "Keyboard F / Left Mouse Button" nodes). Turn on once those attacks are GAS abilities.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
-	bool bDisableLegacyKeyInput = true;
+	bool bDisableLegacyKeyInput = false;
+
+	// Releasing an ability's key confirms its targeting (hold to aim, release to cast)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
+	bool bConfirmTargetingOnRelease = true;
 
 	// Weapon to equip on spawn, sent to GA_EquipWeapon as the event's target tag (e.g. Weapon.Ranged.Staff)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon", meta = (Categories = "Weapon"))

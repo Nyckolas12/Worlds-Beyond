@@ -582,5 +582,11 @@ void ABeyondCharacterBase::Input_AbilityReleased(FGameplayTag InputTag)
 			AbilitySystemComponent->InvokeReplicatedEvent(EAbilityGenericReplicatedEvent::InputReleased, Handle,
 				Instance->GetCurrentActivationInfoRef().GetActivationPredictionKey());
 		}
+
+		// Only abilities waiting on target data listen to this
+		if (bConfirmTargetingOnRelease)
+		{
+			AbilitySystemComponent->LocalInputConfirm();
+		}
 	}
 }
