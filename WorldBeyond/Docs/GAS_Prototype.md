@@ -54,9 +54,13 @@ The meter (Higgsfield concept A, built in C++ + UI materials, nothing to set up 
 - Tuning without code: make a Blueprint child of `BeyondBondMeterWidget` and set it as *Bond Widget Class* on `BP_PC`.
   *Bond | Arc* has the colours (*Color Blue / Purple / Gold*, *Purple Stop*, *Gold Start*), *Flow Speed*, the
   glyphs, sizes / curve (*Arc Radius*, *Band Thickness*…), *Show Duo Icon While Charging* and the animation speeds.
-  Its position is *Bond Meter Offset* on `BP_PC` (default 50 px up from the bottom centre so the arc ends flank the
-  ability icons). If it ever doesn't show, search the Output Log for "Bond meter": it logs the class and size it was
-  given (or that the `M_UI_*` materials are missing). The look itself (noise, flames, frame) is the Custom node in each `M_UI_*` material.
+  The look itself (noise, flames, frame) is the Custom node in each `M_UI_*` material.
+- **It lives in `W_PlayerHud`:** the player controller adds it to the HUD's canvas, anchored bottom centre like the
+  ability bar, and moves it into the new HUD on every swap. *Bond Meter Offset* on `BP_PC` positions it (default
+  50 px up from the bottom centre so the arc ends flank the ability icons). To place it yourself, drag *Beyond Bond
+  Meter Widget* from the Palette (User Created) into `W_PlayerHud` in the designer; the controller then uses that one.
+  The Output Log says where it went ("Bond meter: … in W_PlayerHud_C (added by code / placed in the designer)"), or
+  that the `M_UI_*` materials are missing.
 
 Ji-Woong walks around relaxed with the sword on his left hip. He draws it when an enemy comes within 10 m or the moment
 his sword combo starts, and puts it away after 8 s without enemies within 15 m. Tune it on

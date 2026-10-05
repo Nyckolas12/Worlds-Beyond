@@ -94,6 +94,8 @@ private:
 	void Input_Swap();
 
 	void CreateBondMeter();
+	// Puts the Bond meter in the HUD (or the viewport when there is no HUD canvas); called again whenever the HUD is rebuilt
+	void AttachBondMeter();
 	void CreateCrosshair();
 	void UpdateCrosshair();
 	void RefreshDuoIcon();
@@ -106,8 +108,16 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UUserWidget> HUDWidget;
 
+	// The Bond meter in use: ours, or one placed in the HUD in the designer
 	UPROPERTY(Transient)
 	TObjectPtr<UUserWidget> BondWidget;
+
+	// The meter this controller created (kept across HUD rebuilds so its fill and animation carry on)
+	UPROPERTY(Transient)
+	TObjectPtr<UUserWidget> OwnBondWidget;
+
+	bool bBondMeterCreated = false;
+	bool bBondMeterInViewport = false;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UUserWidget> BossBarWidget;

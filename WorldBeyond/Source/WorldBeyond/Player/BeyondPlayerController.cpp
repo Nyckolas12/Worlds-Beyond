@@ -8,9 +8,12 @@
 #include "AbilitySystemComponent.h"
 #include "Blueprint/UserWidget.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
+#include "Blueprint/WidgetTree.h"
 #include "CharacterAttributeSet.h"
 #include "Characters/BeyondAimComponent.h"
 #include "Characters/BeyondCharacterBase.h"
+#include "Components/CanvasPanel.h"
+#include "Components/CanvasPanelSlot.h"
 #include "EngineUtils.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
@@ -185,6 +188,9 @@ void ABeyondPlayerController::RefreshHUD()
 			Leader->SendAbilitiesChangedEvent();
 		}
 	}
+
+	// The Bond meter goes into the new HUD
+	AttachBondMeter();
 }
 
 void ABeyondPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -195,35 +201,106 @@ void ABeyondPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 void ABeyondPlayerController::CreateBondMeter()
 {
-	if (!BondWidgetClass || BondWidget)
+	if (bBondMeterCreated)
 	{
 		return;
 	}
-
-	BondWidget = CreateWidget<UUserWidget>(this, BondWidgetClass);
-	if (!BondWidget)
-	{
-		return;
-	}
-
-	BondWidget->AddToViewport(1);
-	BondWidget->SetAnchorsInViewport(FAnchors(0.5f, 1.0f));
-	BondWidget->SetAlignmentInViewport(FVector2D(0.5f, 1.0f));
-
-	// With a point anchor the viewport slot needs an explicit size: UE5 reads the widget's desired size once, before
-	// Slate has measured it, so without this the meter gets a 0 x 0 slot and never shows. Measure it now.
-	BondWidget->ForceLayoutPrepass();
-	FVector2D MeterSize = BondWidget->GetDesiredSize();
-	if (MeterSize.X < 1.0 || MeterSize.Y < 1.0)
-	{
-		MeterSize = FVector2D(800.0f, 320.0f);
-	}
-	BondWidget->SetDesiredSizeInViewport(MeterSize);
-	BondWidget->SetPositionInViewport(BondMeterOffset, false);
-	UE_LOG(LogBeyond, Log, TEXT("Bond meter: %s at (%.0f, %.0f) from the bottom centre, %.0f x %.0f"),
-		*GetNameSafe(BondWidget->GetClass()), BondMeterOffset.X, BondMeterOffset.Y, MeterSize.X, MeterSize.Y);
-
+	bBondMeterCreated = true;
 	PartyComponent->OnBondChanged.AddUniqueDynamic(this, &ThisClass::HandleBondChanged);
+
+	// The meter lives in the HUD, which RefreshHUD creates a moment later; without a HUD it goes on the viewport now
+	if (!HUDWidgetClass || HUDWidget)
+	{
+		AttachBondMeter();
+	}
+}
+
+void ABeyondPlayerController::AttachBondMeter()
+{
+	if (!bBondMeterCreated || !IsLocalController())
+	{
+		return;
+	}
+
+	// A meter placed in the HUD in the designer wins
+	UUserWidget* Placed = nullptr;
+	if (HUDWidget && HUDWidget->WidgetTree)
+	{
+		HUDWidget->WidgetTree->ForEachWidget([&Placed](UWidget* Widget)
+		{
+			if (!Placed && Widget && Widget->IsA<UBeyondBondMeterWidget>())
+			{
+				Placed = Cast<UUserWidget>(Widget);
+			}
+		});
+	}
+
+	const TCHAR* Where = TEXT("");
+	if (Placed)
+	{
+		if (OwnBondWidget)
+		{
+			OwnBondWidget->RemoveFromParent();
+			bBondMeterInViewport = false;
+		}
+		BondWidget = Placed;
+		Where = TEXT("placed in the designer");
+	}
+	else
+	{
+		if (!OwnBondWidget && BondWidgetClass)
+		{
+			OwnBondWidget = CreateWidget<UUserWidget>(this, BondWidgetClass);
+		}
+		BondWidget = OwnBondWidget;
+		if (!BondWidget)
+		{
+			return;
+		}
+
+		if (UCanvasPanel* HUDCanvas = HUDWidget ? Cast<UCanvasPanel>(HUDWidget->GetRootWidget()) : nullptr)
+		{
+			// A child of the HUD's canvas, anchored at the bottom centre like the ability bar: ordinary UMG layout
+			BondWidget->RemoveFromParent();
+			bBondMeterInViewport = false;
+			if (UCanvasPanelSlot* MeterSlot = HUDCanvas->AddChildToCanvas(BondWidget))
+			{
+				MeterSlot->SetAnchors(FAnchors(0.5f, 1.0f));
+				MeterSlot->SetAlignment(FVector2D(0.5f, 1.0f));
+				MeterSlot->SetAutoSize(true);
+				MeterSlot->SetPosition(BondMeterOffset);
+				MeterSlot->SetZOrder(10);
+			}
+			Where = TEXT("added by code");
+		}
+		else
+		{
+			Where = TEXT("viewport");
+			if (!bBondMeterInViewport)
+			{
+				// No HUD canvas: on the viewport. A point anchor needs an explicit size there (UE5 reads the desired
+				// size once, before Slate has measured the widget), so measure it first.
+				BondWidget->RemoveFromParent();
+				BondWidget->AddToViewport(1);
+				BondWidget->SetAnchorsInViewport(FAnchors(0.5f, 1.0f));
+				BondWidget->SetAlignmentInViewport(FVector2D(0.5f, 1.0f));
+				BondWidget->ForceLayoutPrepass();
+				FVector2D MeterSize = BondWidget->GetDesiredSize();
+				if (MeterSize.X < 1.0 || MeterSize.Y < 1.0)
+				{
+					MeterSize = FVector2D(800.0f, 320.0f);
+				}
+				BondWidget->SetDesiredSizeInViewport(MeterSize);
+				BondWidget->SetPositionInViewport(BondMeterOffset, false);
+				bBondMeterInViewport = true;
+			}
+		}
+	}
+
+	UE_LOG(LogBeyond, Log, TEXT("Bond meter: %s in %s (%s), offset (%.0f, %.0f) from the bottom centre"),
+		*GetNameSafe(BondWidget->GetClass()), HUDWidget ? *GetNameSafe(HUDWidget->GetClass()) : TEXT("the viewport"), Where,
+		BondMeterOffset.X, BondMeterOffset.Y);
+
 	HandleBondChanged(PartyComponent->GetBond(), PartyComponent->MaxBond);
 	RefreshDuoIcon();
 }
