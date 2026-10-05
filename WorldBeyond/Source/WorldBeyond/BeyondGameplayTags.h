@@ -19,6 +19,9 @@ namespace BeyondTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Branded);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Dashing);
 
+	// Owned while an attack / cast ability runs (blocks other attacks)
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Active);
+
 	// Gameplay events sent to the damaged character (mirror E_DamageResponse)
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Hit);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Hit_Light);
@@ -30,7 +33,13 @@ namespace BeyondTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Death);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Abilities_Changed);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Montage_Trigger);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_ShootProjectile);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Weapon_Equipped);
+
+	// Instigator tags on Event.Weapon.Equipped (no action tag = toggle)
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Weapon_Action_Draw);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Weapon_Action_Sheathe);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Weapon_Action_Instant);
 
 	// Damage classification carried as dynamic asset tags on the damage spec (mirror E_DamageType)
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(DamageType_Melee);

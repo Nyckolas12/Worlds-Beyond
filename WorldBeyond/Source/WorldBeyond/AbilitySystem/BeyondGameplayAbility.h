@@ -7,6 +7,7 @@
 #include "BeyondGameplayAbility.generated.h"
 
 class ABeyondCharacterBase;
+class UTexture2D;
 class UAnimInstance;
 class UAnimMontage;
 class USkeletalMeshComponent;
@@ -35,6 +36,10 @@ public:
 	// Default input slot; an entry in UBeyondAbilitySet can override it
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (Categories = "Ability.Input"))
 	FGameplayTag InputTag;
+
+	// Shown by C++ HUD pieces (the duo slot next to the Bond meter)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI")
+	TObjectPtr<UTexture2D> Icon;
 
 	// Activate as soon as the ability is granted (passives, auras)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Activation")
@@ -111,6 +116,8 @@ public:
 
 protected:
 	virtual void OnGiveAbility(const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilitySpec& Spec) override;
+	// Plays the avatar's AbilityMontages entry for this ability, then the ability itself (Blueprint graph)
+	virtual void ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData) override;
 	virtual void PreActivate(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, FOnGameplayAbilityEnded::FDelegate* OnGameplayAbilityEndedDelegate, const FGameplayEventData* TriggerEventData = nullptr) override;
 
 	/**

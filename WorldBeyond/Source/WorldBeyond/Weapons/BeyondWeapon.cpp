@@ -39,7 +39,7 @@ ABeyondWeapon* ABeyondWeapon::FindEquippedWeapon(const AActor* Character)
 	Character->GetAttachedActors(Attached, true, true);
 	for (AActor* Actor : Attached)
 	{
-		if (ABeyondWeapon* Weapon = Cast<ABeyondWeapon>(Actor))
+		if (ABeyondWeapon* Weapon = Cast<ABeyondWeapon>(Actor); Weapon && !Weapon->bHolstered)
 		{
 			return Weapon;
 		}

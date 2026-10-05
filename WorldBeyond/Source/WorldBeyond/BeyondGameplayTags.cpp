@@ -14,6 +14,8 @@ namespace BeyondTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Branded, "State.Branded", "Carries a brand (Sunbrand): takes extra damage, the brander's melee hit detonates it");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Dashing, "State.Dashing", "Mid-dash");
 
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Active, "Ability.Active", "Any attacking/casting ability is running");
+
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Event_Hit, "Event.Hit", "Parent of all hit reaction events");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Event_Hit_Light, "Event.Hit.Light", "E_DamageResponse::HitReaction");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Event_Hit_Stagger, "Event.Hit.Stagger", "E_DamageResponse::Stagger");
@@ -24,7 +26,12 @@ namespace BeyondTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Event_Death, "Event.Death", "Sent to a character when its health reaches zero");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Event_Abilities_Changed, "Event.Abilities.Changed", "Granted abilities changed (ability bar refresh)");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Event_Montage_Trigger, "Event.Montage.Trigger", "Sent by a montage notify at the moment an ability should take effect");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Event_ShootProjectile, "Event.ShootProjectile", "Sent by a cast montage notify when the spell leaves the hand");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Event_Weapon_Equipped, "Event.Weapon.Equipped", "Equip / sheathe request; the weapon tag is in TargetTags");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Weapon_Action_Draw, "Weapon.Action.Draw", "Equip event: draw the weapon (instigator tag)");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Weapon_Action_Sheathe, "Weapon.Action.Sheathe", "Equip event: put the weapon away (instigator tag)");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Weapon_Action_Instant, "Weapon.Action.Instant", "Equip event: skip the animation (instigator tag)");
 
 	UE_DEFINE_GAMEPLAY_TAG(DamageType_Melee, "DamageType.Melee");
 	UE_DEFINE_GAMEPLAY_TAG(DamageType_Projectile, "DamageType.Projectile");

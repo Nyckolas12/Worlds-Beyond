@@ -4,6 +4,7 @@
 
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 
+#include "AbilitySystem/Abilities/BeyondGA_EquipWeapon.h"
 #include "AbilitySystem/BeyondCombatLibrary.h"
 #include "AbilitySystemComponent.h"
 #include "AIController.h"
@@ -20,6 +21,8 @@
 #include "Editor.h"
 #include "EngineUtils.h"
 #include "Game/BeyondCombatSubsystem.h"
+#include "InputMappingContext.h"
+#include "Particles/ParticleSystemComponent.h"
 #include "LevelSequenceActor.h"
 #include "LevelSequencePlayer.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -161,6 +164,60 @@ namespace BeyondPowersTest
 		return false;
 	}
 
+	UBeyondGA_EquipWeapon* GetEquipAbility(const ABeyondCharacterBase* Character)
+	{
+		const UAbilitySystemComponent* ASC = Character ? Character->GetAbilitySystemComponent() : nullptr;
+		if (const FGameplayAbilitySpec* Spec = ASC ? ASC->FindAbilitySpecFromHandle(FindSpec(Character, TEXT("GA_JiWoong_EquipWeapon"))) : nullptr)
+		{
+			return Cast<UBeyondGA_EquipWeapon>(Spec->GetPrimaryInstance());
+		}
+		return nullptr;
+	}
+
+	// The anim Blueprint's current idle (IdleAnimation variable)
+	FString IdleName(const ABeyondCharacterBase* Character)
+	{
+		const UAnimInstance* Anim = Character && Character->GetCombatMesh() ? Character->GetCombatMesh()->GetAnimInstance() : nullptr;
+		const FObjectProperty* Prop = Anim ? FindFProperty<FObjectProperty>(Anim->GetClass(), TEXT("IdleAnimation")) : nullptr;
+		return Prop ? GetNameSafe(Prop->GetObjectPropertyValue_InContainer(Anim)) : FString();
+	}
+
+	bool IsHolstered(const UBeyondGA_EquipWeapon* Equip)
+	{
+		const ABeyondWeapon* Weapon = Equip ? Cast<ABeyondWeapon>(Equip->GetEquippedWeapon()) : nullptr;
+		return Weapon && Weapon->bHolstered && !Equip->IsWeaponDrawn() && !Weapon->IsHidden();
+	}
+
+	TArray<FString> AbilityBar(const ABeyondCharacterBase* Character)
+	{
+		TArray<FString> Names;
+		UAbilitySystemComponent* ASC = Character ? Character->GetAbilitySystemComponent() : nullptr;
+		TArray<FGameplayAbilitySpecHandle> Handles;
+		UBeyondCombatLibrary::GetAbilityBarAbilities(ASC, Handles);
+		for (const FGameplayAbilitySpecHandle& Handle : Handles)
+		{
+			const FGameplayAbilitySpec* Spec = ASC->FindAbilitySpecFromHandle(Handle);
+			Names.Add(Spec && Spec->Ability ? Spec->Ability->GetClass()->GetName() : FString());
+		}
+		return Names;
+	}
+
+	// Particle systems still running on a character's animated mesh
+	int32 ActiveEffectsOn(const ABeyondCharacterBase* Character)
+	{
+		int32 Count = 0;
+		if (const USkeletalMeshComponent* Mesh = Character ? Character->GetCombatMesh() : nullptr)
+		{
+			TArray<USceneComponent*> Children;
+			Mesh->GetChildrenComponents(true, Children);
+			for (const USceneComponent* Child : Children)
+			{
+				Count += (Child && Child->IsA<UFXSystemComponent>() && Child->IsActive()) ? 1 : 0;
+			}
+		}
+		return Count;
+	}
+
 	float Health(const AActor* Actor)
 	{
 		return UBeyondCombatLibrary::GetActorHealth(Actor);
@@ -255,10 +312,44 @@ bool FBeyondPowersTest::RunTest(const FString& Parameters)
 		T.TestFalse(TEXT("Ji-Woong: Blink suppressed"), FindSpec(JiWoong, TEXT("GA_Blink")).IsValid());
 		T.TestFalse(TEXT("Ji-Woong: old GA_Dash gone"), FindSpec(JiWoong, TEXT("GA_Dash_C")).IsValid());
 
-		// Sword drawn at spawn, attached to the animated mesh
-		const ABeyondWeapon* Sword = ABeyondWeapon::FindEquippedWeapon(JiWoong);
-		T.TestTrue(TEXT("Ji-Woong spawns holding his sword on the Body mesh"),
+		// The sword lives on Ji-Woong: on the hip with a relaxed idle, or in hand with the guard idle (enemies near)
+		const UBeyondGA_EquipWeapon* Equip = GetEquipAbility(JiWoong);
+		const AActor* Sword = Equip ? Equip->GetEquippedWeapon() : nullptr;
+		T.TestTrue(TEXT("Ji-Woong spawns with his sword attached to the Body mesh"),
 			Sword && Sword->GetRootComponent()->GetAttachParent() == JiWoong->GetCombatMesh() && !Sword->IsHidden());
+		if (Equip && Sword)
+		{
+			T.TestTrue(*FString::Printf(TEXT("Idle matches the sword (%s, drawn=%d)"), *IdleName(JiWoong), Equip->IsWeaponDrawn()),
+				IdleName(JiWoong) == (Equip->IsWeaponDrawn() ? TEXT("sword-idle") : TEXT("MM_Idle1")));
+			T.TestTrue(TEXT("A holstered sword doesn't count for hit detection"),
+				Equip->IsWeaponDrawn() == (ABeyondWeapon::FindEquippedWeapon(JiWoong) != nullptr));
+		}
+
+		// Ability bar: only the keys each demigod can press, in Q / E / R order
+		T.TestEqual(TEXT("Angel's ability bar"), FString::Join(AbilityBar(Angel), TEXT(",")), FString(TEXT("GA_Blink_C,GA_Angel_LightningStrike_C,GA_HealSpell_C")));
+		T.TestEqual(TEXT("Ji-Woong's ability bar"), FString::Join(AbilityBar(JiWoong), TEXT(",")), FString(TEXT("GA_JiWoong_GildedStep_C,GA_JiWoong_Sunbrand_C,GA_HealSpell_C")));
+
+		// Heal: "2" presses the heal slot (no more per-frame IA_Heal), Angel's heal plays AM_Heal through the ability
+		if (const UInputMappingContext* IMC = LoadObject<UInputMappingContext>(nullptr, TEXT("/Game/Input/IMC_Default.IMC_Default")))
+		{
+			bool bTwoIsHealSlot = false;
+			bool bTwoIsOldHeal = false;
+			for (const FEnhancedActionKeyMapping& Mapping : IMC->GetMappings())
+			{
+				if (Mapping.Key == EKeys::Two)
+				{
+					bTwoIsHealSlot |= GetNameSafe(Mapping.Action) == TEXT("IA_AbilityR");
+					bTwoIsOldHeal |= GetNameSafe(Mapping.Action) == TEXT("IA_Heal");
+				}
+			}
+			T.TestTrue(TEXT("Key 2 presses the heal slot"), bTwoIsHealSlot && !bTwoIsOldHeal);
+		}
+		bool bAngelHealMontage = false;
+		for (const TPair<TSubclassOf<UGameplayAbility>, TObjectPtr<UAnimMontage>>& Entry : Angel->AbilityMontages)
+		{
+			bAngelHealMontage |= Entry.Key && Entry.Key->GetName() == TEXT("GA_HealSpell_C") && GetNameSafe(Entry.Value) == TEXT("AM_Heal");
+		}
+		T.TestTrue(TEXT("Angel's heal ability plays AM_Heal"), bAngelHealMontage);
 
 		// Sword combo notifies
 		if (const UAnimMontage* Combo = LoadObject<UAnimMontage>(nullptr, TEXT("/Game/Animations/Melee/Montage_SwordCombo.Montage_SwordCombo")))
@@ -415,7 +506,16 @@ bool FBeyondPowersTest::RunTest(const FString& Parameters)
 		// 10 x 1.2 amplified + 40 detonation
 		T.TestTrue(TEXT("Brand amplified the hit and detonated"), TookDamage(Enemy, State->Health.FindRef(TEXT("Brand")), 51.0f));
 
-		// Buddy sword combo plays on the Body mesh
+		// Sword on the hip, automatic draw / sheathe off so the test drives it
+		if (UBeyondGA_EquipWeapon* Equip = GetEquipAbility(JiWoong))
+		{
+			Equip->AutoDrawRadius = 0.0f;
+			Equip->AutoSheatheDelay = 0.0f;
+			Equip->RequestWeaponAction(BeyondTags::Weapon_Action_Sheathe, true);
+			T.TestTrue(TEXT("Instant sheathe puts the sword on the hip"), IsHolstered(Equip) && IdleName(JiWoong) == TEXT("MM_Idle1"));
+		}
+
+		// Buddy sword combo plays on the Body mesh, and starting it quick-draws the sword
 		ABeyondCharacterBase* Target = State->Enemies[2].Get();
 		PlaceEnemy(Target, JiWoong, 150.0f);
 		if (AAIController* Tester = State->Tester.Get())
@@ -436,6 +536,81 @@ bool FBeyondPowersTest::RunTest(const FString& Parameters)
 		}
 		const UAnimInstance* Anim = JiWoong->GetCombatMesh() ? JiWoong->GetCombatMesh()->GetAnimInstance() : nullptr;
 		T.TestTrue(TEXT("Buddy sword combo montage plays on the Body mesh"), Anim && Anim->IsAnyMontagePlaying());
+
+		const UBeyondGA_EquipWeapon* Equip = GetEquipAbility(JiWoong);
+		T.TestTrue(TEXT("Starting the sword combo quick-drew the sword"),
+			Equip && Equip->IsWeaponDrawn() && ABeyondWeapon::FindEquippedWeapon(JiWoong) && IdleName(JiWoong) == TEXT("sword-idle"));
+
+		// The Blueprint combo ends a missed combo window with Stop Anim Montage (None): it has to reach Body
+		JiWoong->StopAnimMontage(nullptr);
+		return true;
+	}));
+	ADD_LATENT_AUTOMATION_COMMAND(FWaitLatentCommand(0.6f));
+	ADD_LATENT_AUTOMATION_COMMAND(FBeyondPowersStep([State]()
+	{
+		FAutomationTestBase& T = *State->Test;
+		ABeyondCharacterBase* JiWoong = State->JiWoong.Get();
+		UBeyondGA_EquipWeapon* Equip = GetEquipAbility(JiWoong);
+		if (!JiWoong || !Equip)
+		{
+			return true;
+		}
+		const UAnimInstance* Anim = JiWoong->GetCombatMesh() ? JiWoong->GetCombatMesh()->GetAnimInstance() : nullptr;
+		T.TestFalse(TEXT("Stop Anim Montage stopped the combo on the Body mesh"), Anim && Anim->IsAnyMontagePlaying());
+
+		Equip->RequestWeaponAction(BeyondTags::Weapon_Action_Sheathe, false);
+		return true;
+	}));
+	ADD_LATENT_AUTOMATION_COMMAND(FWaitLatentCommand(1.8f));
+	ADD_LATENT_AUTOMATION_COMMAND(FBeyondPowersStep([State]()
+	{
+		FAutomationTestBase& T = *State->Test;
+		ABeyondCharacterBase* JiWoong = State->JiWoong.Get();
+		UBeyondGA_EquipWeapon* Equip = GetEquipAbility(JiWoong);
+		if (!Equip)
+		{
+			return true;
+		}
+		T.TestTrue(TEXT("Animated sheathe returns the sword to the hip and relaxes the idle"), IsHolstered(Equip) && IdleName(JiWoong) == TEXT("MM_Idle1"));
+
+		// Enemies (frozen, but present) count as close with a huge radius: he draws by himself
+		Equip->AutoDrawRadius = 100000.0f;
+		return true;
+	}));
+	ADD_LATENT_AUTOMATION_COMMAND(FWaitLatentCommand(2.6f));
+	ADD_LATENT_AUTOMATION_COMMAND(FBeyondPowersStep([State]()
+	{
+		FAutomationTestBase& T = *State->Test;
+		ABeyondCharacterBase* JiWoong = State->JiWoong.Get();
+		UBeyondGA_EquipWeapon* Equip = GetEquipAbility(JiWoong);
+		if (!Equip)
+		{
+			return true;
+		}
+		T.TestTrue(TEXT("Auto draw when enemies are close"), Equip->IsWeaponDrawn() && IdleName(JiWoong) == TEXT("sword-idle"));
+
+		// Ignore enemies and calm down quickly: he puts it away by himself
+		Equip->AutoDrawRadius = 0.0f;
+		Equip->AutoSheatheRadius = 0.0f;
+		Equip->AutoSheatheDelay = 0.5f;
+		return true;
+	}));
+	ADD_LATENT_AUTOMATION_COMMAND(FWaitLatentCommand(3.0f));
+	ADD_LATENT_AUTOMATION_COMMAND(FBeyondPowersStep([State]()
+	{
+		FAutomationTestBase& T = *State->Test;
+		ABeyondCharacterBase* JiWoong = State->JiWoong.Get();
+		UBeyondGA_EquipWeapon* Equip = GetEquipAbility(JiWoong);
+		if (!JiWoong || !Equip)
+		{
+			return true;
+		}
+		T.TestTrue(TEXT("Auto sheathe after a quiet spell"), IsHolstered(Equip) && IdleName(JiWoong) == TEXT("MM_Idle1"));
+
+		const UBeyondGA_EquipWeapon* Defaults = GetDefault<UBeyondGA_EquipWeapon>(Equip->GetClass());
+		Equip->AutoDrawRadius = Defaults->AutoDrawRadius;
+		Equip->AutoSheatheRadius = Defaults->AutoSheatheRadius;
+		Equip->AutoSheatheDelay = Defaults->AutoSheatheDelay;
 
 		GiveBack(*State, JiWoong);
 		T.TestTrue(TEXT("Ji-Woong back with his companion controller"), JiWoong->GetController() && JiWoong->GetController()->IsA<ABeyondCompanionController>());
@@ -516,6 +691,16 @@ bool FBeyondPowersTest::RunTest(const FString& Parameters)
 		const ABeyondCharacterBase* Target = State->StrikeTarget.Get();
 		T.TestTrue(*FString::Printf(TEXT("Lightning Strike damaged the enemy (Angel's E): %s %.0f -> %.0f"), *GetNameSafe(Target), State->Health.FindRef(TEXT("Strike")), Health(Target)),
 			TookDamage(Target, State->Health.FindRef(TEXT("Strike")), 99.0f));
+
+		// Heal slot: the ability plays Angel's AM_Heal (animation + voice) once
+		UAbilitySystemComponent* AngelASC = Angel->GetAbilitySystemComponent();
+		AngelASC->CancelAllAbilities();
+		AngelASC->RemoveActiveEffects(FGameplayEffectQuery::MakeQuery_MatchAnyOwningTags(FGameplayTagContainer(FGameplayTag::RequestGameplayTag(TEXT("Cooldown")))));
+		T.TestTrue(TEXT("Heal slot activates"), Angel->TryActivateAbilityByInputTag(BeyondTags::Ability_Input_R));
+		const UAnimInstance* AngelAnim = Angel->GetCombatMesh() ? Angel->GetCombatMesh()->GetAnimInstance() : nullptr;
+		const UAnimMontage* CurrentMontage = AngelAnim ? AngelAnim->GetCurrentActiveMontage() : nullptr;
+		T.TestEqual(TEXT("Heal plays AM_Heal on Angel"), GetNameSafe(CurrentMontage), FString(TEXT("AM_Heal")));
+
 		GiveBack(*State, Angel);
 		return true;
 	}));
@@ -567,6 +752,7 @@ bool FBeyondPowersTest::RunTest(const FString& Parameters)
 		T.TestEqual(TEXT("Duo spent the Bond meter"), Party->GetBond(), 0.0f);
 		T.TestTrue(TEXT("Both demigods are in the duo state"), HasTag(JiWoong, BeyondTags::State_Duo) && HasTag(Angel, BeyondTags::State_Duo));
 		T.TestTrue(TEXT("Both demigods are invincible during the duo"), HasTag(JiWoong, BeyondTags::State_Invincible) && HasTag(Angel, BeyondTags::State_Invincible));
+		T.TestFalse(TEXT("No swapping in the middle of the duo"), Party->SwapLeader());
 		return true;
 	}));
 	ADD_LATENT_AUTOMATION_COMMAND(FWaitLatentCommand(4.5f));
@@ -588,6 +774,7 @@ bool FBeyondPowersTest::RunTest(const FString& Parameters)
 		}
 		T.TestFalse(TEXT("Duo state cleared on Ji-Woong"), HasTag(JiWoong, BeyondTags::State_Duo) || HasTag(JiWoong, BeyondTags::State_Invincible));
 		T.TestFalse(TEXT("Duo state cleared on Angel"), HasTag(Angel, BeyondTags::State_Duo) || HasTag(Angel, BeyondTags::State_Invincible));
+		T.TestEqual(TEXT("No effects left running on Angel after the duo"), ActiveEffectsOn(Angel), 0);
 		return true;
 	}));
 

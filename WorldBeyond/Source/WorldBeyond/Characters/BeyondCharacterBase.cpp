@@ -3,6 +3,8 @@
 
 #include "BeyondCharacterBase.h"
 #include "AIController.h"
+#include "Animation/AnimInstance.h"
+#include "Animation/AnimMontage.h"
 #include "BrainComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "EnhancedInputComponent.h"
@@ -100,6 +102,24 @@ USkeletalMeshComponent* ABeyondCharacterBase::GetCombatMesh() const
 		return Fallback;
 	}
 	return BaseMesh;
+}
+
+void ABeyondCharacterBase::StopAnimMontage(UAnimMontage* AnimMontage)
+{
+	const USkeletalMeshComponent* CombatMesh = GetCombatMesh();
+	UAnimInstance* AnimInstance = CombatMesh ? CombatMesh->GetAnimInstance() : nullptr;
+	if (!AnimInstance)
+	{
+		Super::StopAnimMontage(AnimMontage);
+		return;
+	}
+
+	// None means "whatever is playing" (the sword combo's ResumeComboWindow end uses that)
+	UAnimMontage* Montage = AnimMontage ? AnimMontage : AnimInstance->GetCurrentActiveMontage();
+	if (Montage && !AnimInstance->Montage_GetIsStopped(Montage))
+	{
+		AnimInstance->Montage_Stop(Montage->BlendOut.GetBlendTime(), Montage);
+	}
 }
 
 void ABeyondCharacterBase::UseCombatMeshForAbilities()

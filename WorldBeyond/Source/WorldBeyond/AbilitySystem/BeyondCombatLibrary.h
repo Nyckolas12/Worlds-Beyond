@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
+#include "GameplayAbilitySpecHandle.h"
 #include "GameplayTagContainer.h"
 #include "BeyondCombatLibrary.generated.h"
 
@@ -49,6 +50,13 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Beyond|Combat", meta = (DefaultToSelf = "Source"))
 	static bool ApplyHeal(AActor* Source, AActor* Target, float Amount);
+
+	/**
+	 * Drop-in for the ability system's Get All Abilities in the ability bar: only abilities on a key slot
+	 * (Q, E, R, in that order), one per ability, without the duo move (it has its own slot by the Bond meter).
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Beyond|Combat|UI")
+	static void GetAbilityBarAbilities(UAbilitySystemComponent* AbilitySystem, TArray<FGameplayAbilitySpecHandle>& OutAbilityHandles);
 
 	// Adapter for BPI_Damagable::Heal: heals Target and returns its new health
 	UFUNCTION(BlueprintCallable, Category = "Beyond|Combat|Legacy", meta = (DefaultToSelf = "Target"))

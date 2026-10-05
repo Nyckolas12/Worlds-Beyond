@@ -310,6 +310,14 @@ bool UBeyondPartyComponent::SwapTo(ABeyondCharacterBase* NewLeader, bool bIgnore
 	{
 		return false;
 	}
+	for (const ABeyondCharacterBase* Member : Members)
+	{
+		const UAbilitySystemComponent* ASC = Member ? Member->GetAbilitySystemComponent() : nullptr;
+		if (ASC && ASC->HasMatchingGameplayTag(BeyondTags::State_Duo))
+		{
+			return false;
+		}
+	}
 
 	ABeyondCompanionController* Companion = Cast<ABeyondCompanionController>(NewLeader->GetController());
 	const FRotator ControlRotation = PC->GetControlRotation();

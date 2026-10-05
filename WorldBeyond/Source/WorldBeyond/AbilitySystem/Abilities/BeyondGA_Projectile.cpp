@@ -15,17 +15,6 @@
 
 namespace
 {
-	const FGameplayTag& ShootProjectileTag()
-	{
-		static const FGameplayTag Tag = FGameplayTag::RequestGameplayTag(TEXT("Event.ShootProjectile"));
-		return Tag;
-	}
-	const FGameplayTag& MontageTriggerTag()
-	{
-		static const FGameplayTag Tag = FGameplayTag::RequestGameplayTag(TEXT("Event.Montage.Trigger"));
-		return Tag;
-	}
-
 	// Write a Blueprint variable on the projectile by name, if it has one of that type
 	template <typename TPropertyType, typename TValue>
 	void SetProjectileVariable(AActor* Projectile, FName Name, const TValue& Value)
@@ -65,8 +54,8 @@ void UBeyondGA_Projectile::ActivateAbility(const FGameplayAbilitySpecHandle Hand
 	bMontageDone = false;
 
 	UAbilitySystemComponent* ASC = ActorInfo->AbilitySystemComponent.Get();
-	ASC->GenericGameplayEventCallbacks.FindOrAdd(ShootProjectileTag()).AddUObject(this, &ThisClass::HandleFireEvent);
-	ASC->GenericGameplayEventCallbacks.FindOrAdd(MontageTriggerTag()).AddUObject(this, &ThisClass::HandleFireEvent);
+	ASC->GenericGameplayEventCallbacks.FindOrAdd(BeyondTags::Event_ShootProjectile).AddUObject(this, &ThisClass::HandleFireEvent);
+	ASC->GenericGameplayEventCallbacks.FindOrAdd(BeyondTags::Event_Montage_Trigger).AddUObject(this, &ThisClass::HandleFireEvent);
 
 	const USkeletalMeshComponent* Mesh = GetAnimatedMesh();
 	UAnimInstance* AnimInstance = Mesh ? Mesh->GetAnimInstance() : nullptr;
@@ -189,7 +178,7 @@ void UBeyondGA_Projectile::EndAbility(const FGameplayAbilitySpecHandle Handle, c
 
 	if (UAbilitySystemComponent* ASC = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr)
 	{
-		for (const FGameplayTag& Tag : { ShootProjectileTag(), MontageTriggerTag() })
+		for (const FGameplayTag& Tag : { FGameplayTag(BeyondTags::Event_ShootProjectile), FGameplayTag(BeyondTags::Event_Montage_Trigger) })
 		{
 			if (FGameplayEventMulticastDelegate* Delegate = ASC->GenericGameplayEventCallbacks.Find(Tag))
 			{

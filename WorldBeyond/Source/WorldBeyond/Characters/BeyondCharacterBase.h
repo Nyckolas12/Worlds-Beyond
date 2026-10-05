@@ -14,6 +14,7 @@
 
 class UBeyondAbilitySet;
 class UInputAction;
+class UAnimMontage;
 class USkeletalMeshComponent;
 class UUserWidget;
 
@@ -87,6 +88,16 @@ public:
 	 */
 	UFUNCTION(BlueprintPure, Category = "Character")
 	USkeletalMeshComponent* GetCombatMesh() const;
+
+	// The engine version stops montages on CharacterMesh0, which is empty on MetaHumans; this stops them on the combat mesh
+	virtual void StopAnimMontage(UAnimMontage* AnimMontage = nullptr) override;
+
+	/**
+	 * Montage this character plays when one of these (Blueprint) abilities activates, e.g. Angel: GA_HealSpell -> AM_Heal.
+	 * Lets a shared ability look and sound different per demigod; abilities with their own montage ignore it.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AbilitySystem")
+	TMap<TSubclassOf<UGameplayAbility>, TObjectPtr<UAnimMontage>> AbilityMontages;
 
 	// Part this demigod plays in the duo super move
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Party")

@@ -14,15 +14,6 @@
 #include "GameFramework/PlayerController.h"
 #include "TimerManager.h"
 
-namespace
-{
-	const FGameplayTag& ShootProjectileTag()
-	{
-		static const FGameplayTag Tag = FGameplayTag::RequestGameplayTag(TEXT("Event.ShootProjectile"));
-		return Tag;
-	}
-}
-
 UBeyondGA_GroundStrike::UBeyondGA_GroundStrike()
 {
 	InputTag = BeyondTags::Ability_Input_E;
@@ -173,7 +164,7 @@ void UBeyondGA_GroundStrike::BeginCast(const FVector& Location)
 
 	UAbilitySystemComponent* ASC = CurrentActorInfo->AbilitySystemComponent.Get();
 	ASC->GenericGameplayEventCallbacks.FindOrAdd(BeyondTags::Event_Montage_Trigger).AddUObject(this, &ThisClass::HandleCastEvent);
-	ASC->GenericGameplayEventCallbacks.FindOrAdd(ShootProjectileTag()).AddUObject(this, &ThisClass::HandleCastEvent);
+	ASC->GenericGameplayEventCallbacks.FindOrAdd(BeyondTags::Event_ShootProjectile).AddUObject(this, &ThisClass::HandleCastEvent);
 
 	const float Duration = PlayMontageOnAvatar(CastMontage);
 	UE_LOG(LogBeyond, Verbose, TEXT("%s: strike cast at %s (montage %.2f s)"), *GetNameSafe(GetAvatarActorFromActorInfo()), *Location.ToCompactString(), Duration);
@@ -290,7 +281,7 @@ void UBeyondGA_GroundStrike::UnbindCastEvents()
 {
 	if (UAbilitySystemComponent* ASC = CurrentActorInfo ? CurrentActorInfo->AbilitySystemComponent.Get() : nullptr)
 	{
-		for (const FGameplayTag& Tag : { FGameplayTag(BeyondTags::Event_Montage_Trigger), ShootProjectileTag() })
+		for (const FGameplayTag& Tag : { FGameplayTag(BeyondTags::Event_Montage_Trigger), FGameplayTag(BeyondTags::Event_ShootProjectile) })
 		{
 			if (FGameplayEventMulticastDelegate* Delegate = ASC->GenericGameplayEventCallbacks.Find(Tag))
 			{

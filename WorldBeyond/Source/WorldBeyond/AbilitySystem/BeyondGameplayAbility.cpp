@@ -146,6 +146,18 @@ bool UBeyondGameplayAbility::CanActivateAbility(const FGameplayAbilitySpecHandle
 	return Super::CanActivateAbility(Handle, ActorInfo, SourceTags, TargetTags, OptionalRelevantTags);
 }
 
+void UBeyondGameplayAbility::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData)
+{
+	if (const ABeyondCharacterBase* Character = Cast<ABeyondCharacterBase>(ActorInfo ? ActorInfo->AvatarActor.Get() : nullptr))
+	{
+		if (const TObjectPtr<UAnimMontage>* Montage = Character->AbilityMontages.Find(GetClass()); Montage && *Montage)
+		{
+			PlayMontageOnAvatar(*Montage);
+		}
+	}
+	Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
+}
+
 void UBeyondGameplayAbility::PreActivate(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, FOnGameplayAbilityEnded::FDelegate* OnGameplayAbilityEndedDelegate, const FGameplayEventData* TriggerEventData)
 {
 	++ActivationSerial;

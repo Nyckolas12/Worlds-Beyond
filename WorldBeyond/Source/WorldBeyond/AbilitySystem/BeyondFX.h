@@ -49,6 +49,10 @@ struct WORLDBEYOND_API FBeyondFX
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FX", meta = (EditCondition = "CameraShake != nullptr"))
 	float CameraShakeRadius = 2000.0f;
 
+	// Seconds before the effect is stopped, so looping systems can't linger (0: until it ends or its owner removes it)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FX", meta = (ClampMin = "0"))
+	float MaxLifetime = 5.0f;
+
 	bool IsSet() const { return System || Sound || CameraShake; }
 };
 

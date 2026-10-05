@@ -2,6 +2,8 @@
 
 #include "Player/BeyondPlayerController.h"
 #include "AbilitySystem/BeyondCombatLibrary.h"
+#include "AbilitySystem/BeyondGameplayAbility.h"
+#include "BeyondGameplayTags.h"
 #include "AbilitySystemComponent.h"
 #include "Blueprint/UserWidget.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
@@ -146,6 +148,7 @@ void ABeyondPlayerController::Input_Swap()
 void ABeyondPlayerController::HandleLeaderChanged(ABeyondCharacterBase* NewLeader, ABeyondCharacterBase* OldLeader)
 {
 	RefreshHUD();
+	RefreshDuoIcon();
 }
 
 void ABeyondPlayerController::RefreshHUD()
@@ -204,6 +207,31 @@ void ABeyondPlayerController::CreateBondMeter()
 
 	PartyComponent->OnBondChanged.AddUniqueDynamic(this, &ThisClass::HandleBondChanged);
 	HandleBondChanged(PartyComponent->GetBond(), PartyComponent->MaxBond);
+	RefreshDuoIcon();
+}
+
+void ABeyondPlayerController::RefreshDuoIcon()
+{
+	UBeyondBondMeterWidget* Meter = Cast<UBeyondBondMeterWidget>(BondWidget);
+	const ABeyondCharacterBase* Leader = PartyComponent->GetLeader();
+	const UAbilitySystemComponent* ASC = Leader ? Leader->GetAbilitySystemComponent() : nullptr;
+	if (!Meter || !ASC)
+	{
+		return;
+	}
+
+	// The icon of whatever sits on the duo slot (Ability.Input.Duo)
+	UTexture2D* Icon = nullptr;
+	for (const FGameplayAbilitySpec& Spec : ASC->GetActivatableAbilities())
+	{
+		const UBeyondGameplayAbility* Ability = Cast<UBeyondGameplayAbility>(Spec.Ability);
+		if (Ability && (Spec.GetDynamicSpecSourceTags().HasTagExact(BeyondTags::Ability_Input_Duo) || Ability->InputTag == BeyondTags::Ability_Input_Duo))
+		{
+			Icon = Ability->Icon;
+			break;
+		}
+	}
+	Meter->SetDuoIcon(Icon);
 }
 
 void ABeyondPlayerController::HandleBondChanged(float Bond, float MaxBond)

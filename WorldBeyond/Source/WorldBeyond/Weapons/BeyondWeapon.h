@@ -41,6 +41,10 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Weapon")
 	FBeyondWeaponHitSignature OnWeaponHit;
 
+	// Resting in its holster (on the hip); FindEquippedWeapon skips it
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Weapon")
+	bool bHolstered = false;
+
 	/** Start sweeping. Each hostile target hit gets EffectSpecHandle applied (or BaseDamage if the spec is empty). */
 	UFUNCTION(BlueprintCallable, Category = "Weapon|Hit Scan")
 	void HitScanStart(FGameplayEffectSpecHandle EffectSpecHandle);
@@ -58,7 +62,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Weapon")
 	AActor* GetWielder() const;
 
-	// First ABeyondWeapon attached to Character, if any
+	// First ABeyondWeapon in Character's hands (attached and not holstered), if any
 	static ABeyondWeapon* FindEquippedWeapon(const AActor* Character);
 
 	virtual void Tick(float DeltaSeconds) override;

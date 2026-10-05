@@ -10,6 +10,7 @@
 #include "Particles/ParticleSystem.h"
 #include "Particles/ParticleSystemComponent.h"
 #include "Sound/SoundBase.h"
+#include "TimerManager.h"
 
 namespace BeyondFX
 {
@@ -29,6 +30,39 @@ namespace BeyondFX
 			{
 				Cascade->SetColorParameter(FX.ColorParameter, FX.Color);
 			}
+		}
+
+		// Stop (let particles fade), then remove, once MaxLifetime is up
+		void LimitLifetime(UFXSystemComponent* Component, const FBeyondFX& FX)
+		{
+			UWorld* World = Component ? Component->GetWorld() : nullptr;
+			if (!World || FX.MaxLifetime <= 0.0f)
+			{
+				return;
+			}
+
+			TWeakObjectPtr<UFXSystemComponent> Weak(Component);
+			FTimerHandle Handle;
+			World->GetTimerManager().SetTimer(Handle, FTimerDelegate::CreateWeakLambda(Component, [Weak]()
+			{
+				UFXSystemComponent* Effect = Weak.Get();
+				if (!Effect)
+				{
+					return;
+				}
+				Effect->Deactivate();
+				if (UWorld* EffectWorld = Effect->GetWorld())
+				{
+					FTimerHandle DestroyHandle;
+					EffectWorld->GetTimerManager().SetTimer(DestroyHandle, FTimerDelegate::CreateWeakLambda(Effect, [Weak]()
+					{
+						if (UFXSystemComponent* Remaining = Weak.Get())
+						{
+							Remaining->DestroyComponent();
+						}
+					}), 2.0f, false);
+				}
+			}), FX.MaxLifetime, false);
 		}
 
 		void PlaySoundAndShake(const UObject* WorldContext, const FBeyondFX& FX, const FVector& Location)
@@ -63,6 +97,7 @@ namespace BeyondFX
 		}
 
 		ApplyTint(Spawned, FX);
+		LimitLifetime(Spawned, FX);
 		PlaySoundAndShake(WorldContext, FX, SpawnLocation);
 		return Spawned;
 	}
@@ -86,6 +121,7 @@ namespace BeyondFX
 		}
 
 		ApplyTint(Spawned, FX);
+		LimitLifetime(Spawned, FX);
 		PlaySoundAndShake(AttachTo, FX, AttachTo->GetSocketLocation(Socket));
 		return Spawned;
 	}

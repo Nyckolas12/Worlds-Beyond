@@ -120,7 +120,7 @@ void UBeyondGA_DuoStrike::ActivateAbility(const FGameplayAbilitySpecHandle Handl
 	if (AController* Controller = AvatarPawn ? AvatarPawn->GetController() : nullptr)
 	{
 		Controller->SetIgnoreMoveInput(true);
-		bIgnoringMoveInput = true;
+		LockedController = Controller;
 	}
 
 	// The Conduit turns to the Striker it is about to empower
@@ -222,8 +222,16 @@ void UBeyondGA_DuoStrike::StartAbsorb()
 
 	OnPhaseStarted(2, ConduitCharacter, StrikerCharacter);
 
-	USkeletalMeshComponent* ConduitMesh = ConduitCharacter->GetCombatMesh();
-	BeyondFX::SpawnAttached(ConduitReleaseFX, ConduitMesh, ConduitMesh && ConduitMesh->DoesSocketExist(TEXT("hand_r")) ? FName(TEXT("hand_r")) : NAME_None);
+	// The storm leaves Angel's hand (skipped if the Conduit went down mid-move)
+	if (!UBeyondCombatLibrary::IsActorDead(ConduitCharacter))
+	{
+		USkeletalMeshComponent* ConduitMesh = ConduitCharacter->GetCombatMesh();
+		if (UFXSystemComponent* Spawned = BeyondFX::SpawnAttached(ConduitReleaseFX, ConduitMesh,
+			ConduitMesh && ConduitMesh->DoesSocketExist(TEXT("hand_r")) ? FName(TEXT("hand_r")) : NAME_None))
+		{
+			ConduitComponents.Add(Spawned);
+		}
+	}
 
 	// The lightning travels from Angel to Ji-Woong in a line of strikes
 	const FVector From = ConduitCharacter->GetActorLocation();
@@ -257,6 +265,9 @@ void UBeyondGA_DuoStrike::StartJudgment()
 
 	OnPhaseStarted(3, Conduit.Get(), StrikerCharacter);
 
+	// The power has passed to the Striker: let the lightning in the Conduit's hand fade out
+	RemoveEffects(ConduitComponents, true);
+
 	if (UAbilitySystemComponent* StrikerASC = StrikerCharacter->GetAbilitySystemComponent())
 	{
 		StrikerASC->GenericGameplayEventCallbacks.FindOrAdd(BeyondTags::Event_Montage_Trigger).AddUObject(this, &ThisClass::HandleStrikerEvent);
@@ -284,14 +295,7 @@ void UBeyondGA_DuoStrike::Shockwave()
 	UnbindStrikerEvent();
 
 	// The absorbed storm leaves the blade
-	for (const TWeakObjectPtr<UFXSystemComponent>& Aura : AuraComponents)
-	{
-		if (UFXSystemComponent* Component = Aura.Get())
-		{
-			Component->DestroyComponent();
-		}
-	}
-	AuraComponents.Reset();
+	RemoveEffects(AuraComponents, false);
 
 	const FVector Center = StrikerCharacter->GetActorLocation();
 	const FVector Ground = Center - FVector(0.0f, 0.0f, StrikerCharacter->GetDefaultHalfHeight());
@@ -346,6 +350,39 @@ float UBeyondGA_DuoStrike::PlayMontageOn(ABeyondCharacterBase* Character, UAnimM
 	return (Montage && AnimInstance) ? AnimInstance->Montage_Play(Montage) : 0.0f;
 }
 
+void UBeyondGA_DuoStrike::StopMontageOn(ABeyondCharacterBase* Character, UAnimMontage* Montage)
+{
+	const USkeletalMeshComponent* Mesh = Character ? Character->GetCombatMesh() : nullptr;
+	UAnimInstance* AnimInstance = Mesh ? Mesh->GetAnimInstance() : nullptr;
+	if (Montage && AnimInstance && AnimInstance->Montage_IsPlaying(Montage))
+	{
+		AnimInstance->Montage_Stop(0.2f, Montage);
+	}
+}
+
+void UBeyondGA_DuoStrike::RemoveEffects(TArray<TWeakObjectPtr<UFXSystemComponent>>& Components, bool bLetFade)
+{
+	for (const TWeakObjectPtr<UFXSystemComponent>& Effect : Components)
+	{
+		if (UFXSystemComponent* Component = Effect.Get())
+		{
+			// Deactivate lets live particles finish; auto-destroy systems then remove themselves
+			if (bLetFade)
+			{
+				Component->Deactivate();
+			}
+			else
+			{
+				Component->DestroyComponent();
+			}
+		}
+	}
+	if (!bLetFade)
+	{
+		Components.Reset();
+	}
+}
+
 bool UBeyondGA_DuoStrike::IsBoss(const AActor* Actor)
 {
 	const ABeyondCharacterBase* Character = Cast<ABeyondCharacterBase>(Actor);
@@ -363,14 +400,16 @@ void UBeyondGA_DuoStrike::EndAbility(const FGameplayAbilitySpecHandle Handle, co
 	}
 	UnbindStrikerEvent();
 
-	for (const TWeakObjectPtr<UFXSystemComponent>& Aura : AuraComponents)
+	RemoveEffects(AuraComponents, false);
+	RemoveEffects(ConduitComponents, false);
+
+	// Cancelled part-way: nobody keeps posing
+	if (bWasCancelled)
 	{
-		if (UFXSystemComponent* Component = Aura.Get())
-		{
-			Component->DestroyComponent();
-		}
+		StopMontageOn(Conduit.Get(), ConduitMontage);
+		StopMontageOn(Striker.Get(), StrikerChargeMontage);
+		StopMontageOn(Striker.Get(), StrikerSlamMontage);
 	}
-	AuraComponents.Reset();
 
 	for (const TWeakObjectPtr<ABeyondCharacterBase>& Character : TaggedCharacters)
 	{
@@ -378,17 +417,11 @@ void UBeyondGA_DuoStrike::EndAbility(const FGameplayAbilitySpecHandle Handle, co
 	}
 	TaggedCharacters.Reset();
 
-	if (bIgnoringMoveInput)
+	if (AController* Controller = LockedController.Get())
 	{
-		bIgnoringMoveInput = false;
-		if (const APawn* Pawn = ActorInfo ? Cast<APawn>(ActorInfo->AvatarActor.Get()) : nullptr)
-		{
-			if (AController* Controller = Pawn->GetController())
-			{
-				Controller->SetIgnoreMoveInput(false);
-			}
-		}
+		Controller->SetIgnoreMoveInput(false);
 	}
+	LockedController.Reset();
 
 	Conduit.Reset();
 	Striker.Reset();

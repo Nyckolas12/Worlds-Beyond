@@ -140,15 +140,20 @@ private:
 	void Finish();
 	void UnbindStrikerEvent();
 	static float PlayMontageOn(ABeyondCharacterBase* Character, UAnimMontage* Montage);
+	static void StopMontageOn(ABeyondCharacterBase* Character, UAnimMontage* Montage);
+	static void RemoveEffects(TArray<TWeakObjectPtr<UFXSystemComponent>>& Components, bool bLetFade);
 	static bool IsBoss(const AActor* Actor);
 
 	TWeakObjectPtr<ABeyondCharacterBase> Conduit;
 	TWeakObjectPtr<ABeyondCharacterBase> Striker;
 	TArray<TWeakObjectPtr<ABeyondCharacterBase>> TaggedCharacters;
 	TArray<TWeakObjectPtr<UFXSystemComponent>> AuraComponents;
+	// Effects on the Conduit (the lightning in Angel's hand); they loop, so they must be removed explicitly
+	TArray<TWeakObjectPtr<UFXSystemComponent>> ConduitComponents;
 	int32 FlashesDone = 0;
 	bool bShockwaveDone = false;
-	bool bIgnoringMoveInput = false;
+	// The controller whose move input the move locked (unlock that one, even if the leader changed)
+	TWeakObjectPtr<AController> LockedController;
 
 	FTimerHandle FlashTimer;
 	FTimerHandle PhaseTimer;

@@ -84,6 +84,7 @@ private:
 	void Input_Swap();
 
 	void CreateBondMeter();
+	void RefreshDuoIcon();
 	void UpdateBossBar();
 	void ShowBossBar(ABeyondCharacterBase* Boss);
 	void HideBossBar();

@@ -37,6 +37,11 @@ spend Radiance for a stronger version. Not built yet; Sunbrand's detonation is t
 - Solar Vow → `State.Parrying` for the window, then react to `Event.Hit.Parried`.
 - Judgment of Noon → `UBeyondGA_GroundStrike` without the aiming reticle, plus a ring of delayed strikes.
 
+**The sword.** It rests on Ji-Woong's left hip, katana-style, and he walks relaxed (`MM_Idle1`). He draws it when an enemy
+comes within 10 m, or instantly when his sword combo starts, and his idle becomes the guard stance (`sword-idle`). After 8 s
+of calm he sheathes it again. Draw and sheathe use the AwesomeSword Unsheath / Sheath animations on the upper body, so he
+can keep walking.
+
 ## Angel — the storm (current kit)
 
 | Slot | Power | Notes |
@@ -63,6 +68,8 @@ Shared by the party, shown bottom centre (blue → purple → gold; "HEAVEN'S JU
 | Hits during Heaven's Judgment itself | none |
 
 Full at 100. Empties on use and on a party wipe. Tuned on `BP_PC → Party Component → Party | Bond`.
+The duo move sits in its own slot to the left of the meter: its icon (the **Icon** of `GA_Duo_HeavensJudgment`) is greyed
+out while charging and lights up, with the **G** key, when the meter is full.
 
 ## Heaven's Judgment (duo super move)
 

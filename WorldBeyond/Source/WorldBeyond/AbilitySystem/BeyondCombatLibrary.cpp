@@ -1,6 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "AbilitySystem/BeyondCombatLibrary.h"
+#include "AbilitySystem/BeyondGameplayAbility.h"
 #include "AbilitySystem/BeyondGameplayEffects.h"
 #include "AI/BeyondAIAbilityUtils.h"
 #include "AbilitySystemBlueprintLibrary.h"
@@ -60,6 +61,47 @@ bool UBeyondCombatLibrary::ApplyDamage(AActor* Source, AActor* Target, float Amo
 		TargetASC->ApplyGameplayEffectSpecToSelf(*Spec);
 	}
 	return true;
+}
+
+void UBeyondCombatLibrary::GetAbilityBarAbilities(UAbilitySystemComponent* AbilitySystem, TArray<FGameplayAbilitySpecHandle>& OutAbilityHandles)
+{
+	OutAbilityHandles.Reset();
+	if (!AbilitySystem)
+	{
+		return;
+	}
+
+	const FGameplayTag InputRoot = FGameplayTag::RequestGameplayTag(TEXT("Ability.Input"));
+	const ABeyondCharacterBase* Character = Cast<ABeyondCharacterBase>(AbilitySystem->GetAvatarActor());
+	for (const FGameplayTag& Slot : { FGameplayTag(BeyondTags::Ability_Input_Q), FGameplayTag(BeyondTags::Ability_Input_E), FGameplayTag(BeyondTags::Ability_Input_R) })
+	{
+		for (const FGameplayAbilitySpec& Spec : AbilitySystem->GetActivatableAbilities())
+		{
+			if (!Spec.Ability || (Character && Character->IsAbilitySuppressed(Spec.Ability->GetClass())))
+			{
+				continue;
+			}
+
+			// Same rule as player input: the ability set's slot, else the ability's own Input Tag
+			const FGameplayTagContainer& SourceTags = Spec.GetDynamicSpecSourceTags();
+			bool bInSlot = SourceTags.HasTagExact(Slot);
+			if (!bInSlot && !SourceTags.HasTag(InputRoot))
+			{
+				const UBeyondGameplayAbility* BeyondAbility = Cast<UBeyondGameplayAbility>(Spec.Ability);
+				bInSlot = BeyondAbility && BeyondAbility->InputTag == Slot;
+			}
+
+			const bool bAlreadyListed = OutAbilityHandles.ContainsByPredicate([&](const FGameplayAbilitySpecHandle& Handle)
+			{
+				const FGameplayAbilitySpec* Listed = AbilitySystem->FindAbilitySpecFromHandle(Handle);
+				return Listed && Listed->Ability && Listed->Ability->GetClass() == Spec.Ability->GetClass();
+			});
+			if (bInSlot && !bAlreadyListed)
+			{
+				OutAbilityHandles.Add(Spec.Handle);
+			}
+		}
+	}
 }
 
 bool UBeyondCombatLibrary::ApplyLegacyDamage(AActor* Source, AActor* Target, float Amount, uint8 DamageType, uint8 DamageResponse,
