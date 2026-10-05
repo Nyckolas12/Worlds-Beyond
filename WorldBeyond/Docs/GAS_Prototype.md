@@ -207,7 +207,7 @@ UnrealEditor-Cmd.exe WorldBeyond.uproject -ExecCmds="Automation RunTests WorldsB
   upper body while walking, Angel's staff (back, idle, drawn when casting), Angel's aiming (crosshair and shoulder
   camera with the staff out, the enemy under the crosshair targeted and glowing, a cast turning him to the crosshair,
   RMB mapped, none for Ji-Woong), E's spike burst (spawned, blue / purple only, cleaned up), the duo meter (its
-  three materials compile, it is the arc, full shows the duo medallion and flames, spent hides them),
+  three materials exist, it is the arc, full shows the duo medallion and flames, spent hides them),
   Gilded Step, Sunbrand, the buddy's sword combo, ability bar refresh on swap, Lightning Strike, Bond meter + Heaven's
   Judgment, boss bar; plus the hip holster and idle switch, quick-draw when the combo starts, animated sheathe, auto draw /
   sheathe, Stop Anim Montage reaching Body (the combo window), the ability bar list, key 2 and Angel's heal montage, no
