@@ -12,6 +12,8 @@ Run with the editor closed (needs the GeometryScripting plugin, enabled in World
 - Re-running starts again from the originals: tune the numbers below and run it again.
 - To go back to the original outfits, in PowerShell run `$env:BEYOND_FIT_REVERT = "1"` first, then the script
   (then `Remove-Item Env:BEYOND_FIT_REVERT`).
+- Looser / tighter without editing this file: set $env:BEYOND_FIT_KEEP, BEYOND_FIT_SNUG, BEYOND_FIT_MIN_GAP or
+  BEYOND_FIT_MAX_PULL before running (the values used are at the top of the report).
 - Report in Saved/MigrationBackups/last_run_fit.txt. Blueprints are backed up before they are saved.
 """
 import math
@@ -27,11 +29,21 @@ CHARACTERS = ["/Game/WorldsBeyond/Characters/Ji-Woong/BP_Ji-Woong",
               "/Game/WorldsBeyond/Characters/Angel/BP_Angel"]
 FITTED_SUFFIX = "_Fitted"
 
+
+def _setting(name, default):
+    """A tuning value, overridable from PowerShell: $env:BEYOND_FIT_KEEP = "0.75" (then run the script)."""
+    value = os.environ.get("BEYOND_FIT_" + name)
+    try:
+        return float(value) if value else default
+    except ValueError:
+        return default
+
+
 # All distances in cm, measured from the body's skin
-MIN_GAP = 0.6           # cloth closer than this (or inside the body) is pushed out to it
-SNUG = 1.5              # looseness that is always kept as it is
-KEEP = 0.4              # share of the looseness beyond SNUG that is kept (0 = skin tight, 1 = unchanged)
-MAX_PULL = 5.0          # no vertex moves in further than this
+MIN_GAP = _setting("MIN_GAP", 1.0)    # cloth closer than this (or inside the body) is pushed out to it
+SNUG = _setting("SNUG", 2.0)          # looseness that is always kept as it is
+KEEP = _setting("KEEP", 0.6)          # share of the looseness beyond SNUG that is kept (0 = skin tight, 1 = unchanged)
+MAX_PULL = _setting("MAX_PULL", 3.0)  # no vertex moves in further than this
 MAX_PUSH = 3.0          # ...or out further than this
 FREE_FROM = 10.0        # cloth this far from the body starts being left alone...
 FREE_BEYOND = 15.0      # ...and from here on is not moved at all (hood, drawstrings)
@@ -386,6 +398,8 @@ def process_character(gs, bp_path, revert):
 def main():
     log("backups -> %s" % BACKUP_DIR)
     revert = os.environ.get("BEYOND_FIT_REVERT") == "1"
+    if not revert:
+        log("fit: MIN_GAP %.2f cm, SNUG %.2f cm, KEEP %.2f, MAX_PULL %.2f cm" % (MIN_GAP, SNUG, KEEP, MAX_PULL))
     try:
         gs = _gs()
     except RuntimeError as e:

@@ -49,9 +49,14 @@ Angel does the same with his staff: it rests diagonally on his back, he draws it
 (LMB spell, Lightning Strike, Arcane Bolt, Heaven's Judgment) and stows it after a quiet spell; "1" still toggles it.
 His idle switches between the relaxed `MM_Idle` and the staff stance `UE5_WZ_Idle_Seq`. Tune it on
 `/Game/WorldsBeyond/Abilities/Angel/GA_Angel_EquipStaff`.
+When the hand takes the sword or staff (or puts it back), it glides between holster and hand over 0.2 s instead of
+jumping (*Handoff Blend Time* on both equip abilities; 0 snaps).
 
 Ji-Woong's sword combo (`GA_JiWoong_SwordCombo`):
-- **Window:** each combo window stays open 15 % longer than the montage's notifies say (*Combo Window Extension*).
+- **One click = one swing:** without another press inside a swing's window the combo ends after that swing. The
+  windows are the montage's own `ResumeComboWindow` markers (*Combo Window Notify Name*), the ones the old Blueprint
+  combo used, and each stays open 15 % longer than marked (*Combo Window Extension*). In play, `log LogBeyond Verbose`
+  prints every window opening / closing and every press it caught.
 - **Voice:** his attack line plays once when the combo starts, never again while you chain (*Combo Voice Line*).
 - **Moving:** while he walks or runs the swings play on the upper body and his legs keep moving; standing still he
   keeps the full-body footwork, and starting / stopping mid-combo blends between the two (*Combo → Movement*).
@@ -59,6 +64,8 @@ Ji-Woong's sword combo (`GA_JiWoong_SwordCombo`):
 Ability slots are set per character in **Input → Ability Input Bindings**, abilities in **AbilitySystem → Ability Set**
 (`/Game/WorldsBeyond/Abilities/DA_AbilitySet_*`). Once LMB attacks are GAS abilities, tick **Disable Legacy Key Input**
 (done for Ji-Woong: LMB → `IA_PrimaryAttack` → `Ability.Input.Primary`; Angel's LMB spell is still Blueprint).
+**Legacy Keys To Disable** limits it to the keys listed — Ji-Woong lists only Left Mouse Button, so his Blueprint "1"
+(draw / sheathe) keeps working.
 The ability bar shows only the controlled demigod's Q / E / R abilities (after edit 1 below). Icons come from
 `/Game/WorldsBeyond/Blueprints/Widgets/Data/DT_AbilityMetaData` (row name = ability class, e.g. `GA_JiWoong_Sunbrand_C`);
 the new abilities use placeholder icons for now.
@@ -168,15 +175,25 @@ BT/perception/EQS, and `log LogBeyond Verbose` for dash / strike / draw / sheath
 The Streetwear outfits were modelled for a bigger body, so they float off the MetaHumans. `fit_outfits.py` fixes that
 geometrically, for every outfit under a character's `Clothing` folder (footwear is skipped):
 
-- cloth further than 1.5 cm from the skin is pulled in, keeping 40 % of the extra looseness (max 5 cm per vertex), so the
-  garment still drapes and its folds survive; cloth that clips into the body is pushed out to 0.6 cm;
+- cloth further than 2 cm from the skin is pulled in, keeping 60 % of the extra looseness (max 3 cm per vertex), so the
+  garment still drapes and its folds survive; cloth that clips into the body is pushed out to 1 cm;
 - anything more than 10–15 cm away (the hood, drawstrings) and vertices skinned to the neck / head are left alone;
 - the movement is smoothed across the mesh, every LOD is fitted, normals are recomputed.
 
 It writes `<Outfit>_Fitted` next to each original (never touched) and puts it on `BP_Angel` / `BP_Ji-Woong`.
-Look at both demigods up close in a T-pose and in motion. Too tight → raise `KEEP` or `SNUG`; still loose → lower `KEEP`;
-a part that shouldn't move → raise `FREE_FROM` / `FREE_BEYOND` or add its bone to `PROTECT_BONES`. Re-running always
-starts from the originals. To go back: `$env:BEYOND_FIT_REVERT = "1"`, run it again, `Remove-Item Env:BEYOND_FIT_REVERT`.
+Look at both demigods up close in a T-pose and in motion. Tune without editing the script by setting these in
+PowerShell before running it (the values used are printed at the top of `last_run_fit.txt`):
+
+| Variable | Default | Looser | Tighter |
+|---|---|---|---|
+| `BEYOND_FIT_KEEP` (share of the extra looseness kept) | 0.6 | 0.75 | 0.45 |
+| `BEYOND_FIT_SNUG` (cm always kept) | 2.0 | 3.0 | 1.5 |
+| `BEYOND_FIT_MIN_GAP` (cm from the skin, fixes poke-through) | 1.0 | 1.5 | 0.6 |
+| `BEYOND_FIT_MAX_PULL` (cm a vertex may move in) | 3.0 | 2.0 | 5.0 |
+
+e.g. `$env:BEYOND_FIT_KEEP = "0.75"`, run the script, then `Remove-Item Env:BEYOND_FIT_KEEP`. A part that shouldn't move
+→ raise `FREE_FROM` / `FREE_BEYOND` or add its bone to `PROTECT_BONES` in the script. Re-running always starts from the
+originals. To go back: `$env:BEYOND_FIT_REVERT = "1"`, run it again, `Remove-Item Env:BEYOND_FIT_REVERT`.
 
 If a garment needs real re-tailoring (a different cut, sleeves that are too long), refit it in the MetaHuman tools
 instead: make an **Outfit Asset** (*Physics → Outfit Asset*, *Resizable Outfit* template) from the garment's Cloth Asset,
