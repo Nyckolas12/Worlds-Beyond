@@ -261,6 +261,14 @@ def step_angel_aim():
 
 def main():
     log("pass 5")
+    # The new C++ classes only exist once the editor module is rebuilt; stop before touching any asset
+    missing = [name for name in ("BeyondSpikeBurst", "BeyondAimSettings") if not hasattr(unreal, name)]
+    if missing:
+        warn("the editor is running an old build of the WorldBeyond module (%s missing). Close the editor, build "
+             "WorldBeyondEditor (Development Editor, Win64) in Rider until it says Build succeeded, then run this "
+             "script again. Nothing was changed." % ", ".join(missing))
+        write_report("last_run_pass5.txt")
+        raise RuntimeError("WorldBeyond C++ not rebuilt: %s missing" % ", ".join(missing))
     step_arcane_spikes()
     step_angel_aim()
     write_report("last_run_pass5.txt")
