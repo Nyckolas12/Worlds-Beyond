@@ -17,6 +17,7 @@
 #include "GenericTeamAgentInterface.h"
 #include "LevelSequenceActor.h"
 #include "LevelSequencePlayer.h"
+#include "Player/BeyondPartyComponent.h"
 
 UAbilitySystemComponent* UBeyondCombatLibrary::GetASC(const AActor* Actor)
 {
@@ -392,4 +393,58 @@ bool UBeyondCombatLibrary::HasAnimSlot(const UAnimInstance* AnimInstance, FName 
 		}
 	}
 	return false;
+}
+
+namespace
+{
+	// Leeway around the crosshair when looking for a character under it (cm)
+	constexpr float AimPawnSweepRadius = 12.0f;
+}
+
+bool UBeyondCombatLibrary::TraceAlongView(const APawn* Pawn, float Range, FHitResult& OutHit)
+{
+	const APlayerController* PC = Pawn ? Cast<APlayerController>(Pawn->GetController()) : nullptr;
+	UWorld* World = Pawn ? Pawn->GetWorld() : nullptr;
+	if (!PC || !World)
+	{
+		return false;
+	}
+
+	FVector ViewLocation;
+	FRotator ViewRotation;
+	PC->GetPlayerViewPoint(ViewLocation, ViewRotation);
+	const FVector TraceEnd = ViewLocation + ViewRotation.Vector() * Range;
+
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(BeyondAimTrace), false, Pawn);
+	TArray<AActor*> Ignored;
+	Pawn->GetAttachedActors(Ignored, true, true);
+	// The buddy often stands between the camera and the crosshair
+	if (const UBeyondPartyComponent* Party = PC->FindComponentByClass<UBeyondPartyComponent>())
+	{
+		for (ABeyondCharacterBase* Member : Party->GetMembers())
+		{
+			if (Member && Member != Pawn)
+			{
+				Ignored.Add(Member);
+				Member->GetAttachedActors(Ignored, false, true);
+			}
+		}
+	}
+	Params.AddIgnoredActors(Ignored);
+
+	if (!World->LineTraceSingleByChannel(OutHit, ViewLocation, TraceEnd, ECC_Visibility, Params))
+	{
+		OutHit = FHitResult(ViewLocation, TraceEnd);
+	}
+
+	// Character capsules ignore the Visibility channel: look for one in front of the wall separately (a thin sweep,
+	// so the crosshair doesn't have to be pixel-perfect on a limb)
+	const FVector PawnEnd = OutHit.bBlockingHit ? OutHit.ImpactPoint : TraceEnd;
+	FHitResult PawnHit;
+	if (World->SweepSingleByObjectType(PawnHit, ViewLocation, PawnEnd, FQuat::Identity, FCollisionObjectQueryParams(ECC_Pawn),
+		FCollisionShape::MakeSphere(AimPawnSweepRadius), Params))
+	{
+		OutHit = PawnHit;
+	}
+	return true;
 }

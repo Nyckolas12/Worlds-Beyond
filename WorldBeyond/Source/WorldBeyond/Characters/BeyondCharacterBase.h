@@ -9,6 +9,7 @@
 #include "GenericTeamAgentInterface.h"
 #include "InputCoreTypes.h"
 #include "AbilitySystem/BeyondAbilitySet.h"
+#include "Characters/BeyondAimComponent.h"
 #include "Characters/BeyondLegacyDamageBridge.h"
 #include "WorldBeyond/CharacterAttributeSet.h"
 #include "BeyondCharacterBase.generated.h"
@@ -123,6 +124,12 @@ public:
 
 	const TArray<FKey>& GetLegacyKeysToDisable() const { return LegacyKeysToDisable; }
 
+	const FBeyondAimSettings& GetAimSettings() const { return AimSettings; }
+
+	// Crosshair, shoulder camera and aim input; only exists when Aim Settings are enabled (Angel)
+	UFUNCTION(BlueprintPure, Category = "Aim")
+	UBeyondAimComponent* GetAimComponent() const { return AimComponent; }
+
 protected:
 	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category = "AbilitySystem")
 	EGameplayEffectReplicationMode ASCReplicationMode = EGameplayEffectReplicationMode::Mixed;
@@ -168,6 +175,10 @@ protected:
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (EditCondition = "bDisableLegacyKeyInput"))
 	TArray<FKey> LegacyKeysToDisable;
+
+	// Third-person aiming for casters: crosshair, over-the-shoulder camera, hold-to-aim (Angel)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Aim")
+	FBeyondAimSettings AimSettings;
 
 	// Releasing an ability's key confirms its targeting (hold to aim, release to cast)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
@@ -291,10 +302,16 @@ private:
 	void BindAbilityInput(class UEnhancedInputComponent* EnhancedInput, const UInputAction* Action, const FGameplayTag& InputTag);
 	void Input_ConfirmTarget();
 	void Input_CancelTarget();
+	void Input_AimStarted();
+	void Input_AimStopped();
+	void CreateAimComponent();
 
 	void Input_AbilityPressed(FGameplayTag InputTag);
 	void Input_AbilityReleased(FGameplayTag InputTag);
 	void CollectSpecsWithInputTag(const FGameplayTag& InputTag, TArray<FGameplayAbilitySpecHandle>& OutHandles) const;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UBeyondAimComponent> AimComponent;
 
 	bool bAbilitySystemBound = false;
 	bool bStartupGiven = false;

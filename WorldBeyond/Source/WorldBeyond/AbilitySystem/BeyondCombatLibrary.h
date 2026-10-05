@@ -125,6 +125,14 @@ public:
 	// The anim Blueprint has a Slot node with this name (a montage on a slot it doesn't have shows nothing)
 	static bool HasAnimSlot(const UAnimInstance* AnimInstance, FName SlotName);
 
+	/**
+	 * What the crosshair is on: a trace from the player's camera along the view, ignoring Pawn, its party and what they
+	 * hold. The world is traced on Visibility; characters (whose capsules ignore Visibility) are found with a thin sweep
+	 * in front of it. False when Pawn has no player controller; OutHit.bBlockingHit tells if it hit anything
+	 * (OutHit.TraceEnd is always set).
+	 */
+	static bool TraceAlongView(const APawn* Pawn, float Range, FHitResult& OutHit);
+
 private:
 	static UAbilitySystemComponent* GetASC(const AActor* Actor);
 	static bool ApplyDamageInfoImpl(AActor* Target, AActor* DamageCauser, const UStruct* InfoStruct, const void* InfoData);

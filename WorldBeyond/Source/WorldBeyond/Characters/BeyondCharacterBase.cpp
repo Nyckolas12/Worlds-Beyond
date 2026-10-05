@@ -52,6 +52,7 @@ void ABeyondCharacterBase::BeginPlay()
 
 	// Before Super so Blueprint BeginPlay already sees attributes and abilities
 	InitAbilitySystem();
+	CreateAimComponent();
 	Super::BeginPlay();
 
 	// Blueprint BeginPlay may have granted abilities this character has replaced
@@ -299,6 +300,12 @@ void ABeyondCharacterBase::SetupPlayerInputComponent(UInputComponent* PlayerInpu
 	{
 		EnhancedInput->BindAction(CancelTargetAction.Get(), ETriggerEvent::Started, this, &ThisClass::Input_CancelTarget);
 	}
+	if (AimSettings.bEnabled && AimSettings.AimAction)
+	{
+		EnhancedInput->BindAction(AimSettings.AimAction.Get(), ETriggerEvent::Started, this, &ThisClass::Input_AimStarted);
+		EnhancedInput->BindAction(AimSettings.AimAction.Get(), ETriggerEvent::Completed, this, &ThisClass::Input_AimStopped);
+		EnhancedInput->BindAction(AimSettings.AimAction.Get(), ETriggerEvent::Canceled, this, &ThisClass::Input_AimStopped);
+	}
 }
 
 void ABeyondCharacterBase::BindAbilityInput(UEnhancedInputComponent* EnhancedInput, const UInputAction* Action, const FGameplayTag& InputTag)
@@ -323,6 +330,34 @@ void ABeyondCharacterBase::Input_CancelTarget()
 	if (AbilitySystemComponent)
 	{
 		AbilitySystemComponent->LocalInputCancel();
+	}
+}
+
+void ABeyondCharacterBase::CreateAimComponent()
+{
+	if (!AimSettings.bEnabled || AimComponent)
+	{
+		return;
+	}
+	AimComponent = NewObject<UBeyondAimComponent>(this, TEXT("BeyondAimComponent"));
+	AimComponent->RegisterComponent();
+}
+
+void ABeyondCharacterBase::Input_AimStarted()
+{
+	// Input can arrive before BeginPlay when the pawn is possessed early
+	CreateAimComponent();
+	if (AimComponent)
+	{
+		AimComponent->StartAim();
+	}
+}
+
+void ABeyondCharacterBase::Input_AimStopped()
+{
+	if (AimComponent)
+	{
+		AimComponent->StopAim();
 	}
 }
 

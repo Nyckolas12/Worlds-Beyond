@@ -56,6 +56,13 @@ public:
 	UPROPERTY(EditDefaultsOnly, Category = "UI|Bond")
 	FVector2D BondMeterOffset = FVector2D(0.0f, -140.0f);
 
+	// Crosshair shown while the leader is a combat-ready caster (Angel with Aim Settings); leave empty to hide it
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Crosshair")
+	TSubclassOf<UUserWidget> CrosshairWidgetClass;
+
+	UFUNCTION(BlueprintPure, Category = "UI|Crosshair")
+	UUserWidget* GetCrosshairWidget() const { return CrosshairWidget; }
+
 	// Seconds the boss bar stays up after the boss dies
 	UPROPERTY(EditDefaultsOnly, Category = "UI|Boss", meta = (ClampMin = "0"))
 	float BossBarLingerAfterDeath = 2.0f;
@@ -84,6 +91,8 @@ private:
 	void Input_Swap();
 
 	void CreateBondMeter();
+	void CreateCrosshair();
+	void UpdateCrosshair();
 	void RefreshDuoIcon();
 	void UpdateBossBar();
 	void ShowBossBar(ABeyondCharacterBase* Boss);
@@ -99,6 +108,11 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UUserWidget> BossBarWidget;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UUserWidget> CrosshairWidget;
+
+	FTimerHandle CrosshairTimer;
 
 	TWeakObjectPtr<ABeyondCharacterBase> ShownBoss;
 	FDelegateHandle BossHealthHandle;

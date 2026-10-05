@@ -8,16 +8,19 @@
 #include "Blueprint/UserWidget.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
 #include "CharacterAttributeSet.h"
+#include "Characters/BeyondAimComponent.h"
 #include "Characters/BeyondCharacterBase.h"
 #include "EngineUtils.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "Engine/LevelScriptActor.h"
 #include "Engine/LocalPlayer.h"
 #include "Engine/World.h"
 #include "Player/BeyondPartyComponent.h"
 #include "TimerManager.h"
 #include "UI/BeyondBondMeterWidget.h"
+#include "UI/BeyondCrosshairWidget.h"
 #include "UObject/UnrealType.h"
 
 namespace
@@ -72,6 +75,7 @@ ABeyondPlayerController::ABeyondPlayerController()
 {
 	PartyComponent = CreateDefaultSubobject<UBeyondPartyComponent>(TEXT("PartyComponent"));
 	BondWidgetClass = UBeyondBondMeterWidget::StaticClass();
+	CrosshairWidgetClass = UBeyondCrosshairWidget::StaticClass();
 }
 
 void ABeyondPlayerController::BeginPlay()
@@ -94,6 +98,7 @@ void ABeyondPlayerController::BeginPlay()
 	if (IsLocalController())
 	{
 		CreateBondMeter();
+		CreateCrosshair();
 		GetWorldTimerManager().SetTimer(BossBarTimer, this, &ThisClass::UpdateBossBar, 0.25f, true, 0.5f);
 	}
 
@@ -208,6 +213,51 @@ void ABeyondPlayerController::CreateBondMeter()
 	PartyComponent->OnBondChanged.AddUniqueDynamic(this, &ThisClass::HandleBondChanged);
 	HandleBondChanged(PartyComponent->GetBond(), PartyComponent->MaxBond);
 	RefreshDuoIcon();
+}
+
+void ABeyondPlayerController::CreateCrosshair()
+{
+	if (!CrosshairWidgetClass || CrosshairWidget)
+	{
+		return;
+	}
+
+	CrosshairWidget = CreateWidget<UUserWidget>(this, CrosshairWidgetClass);
+	if (!CrosshairWidget)
+	{
+		return;
+	}
+	// Full screen; the crosshair draws itself at the centre
+	CrosshairWidget->AddToViewport(2);
+	CrosshairWidget->SetVisibility(ESlateVisibility::Collapsed);
+	GetWorldTimerManager().SetTimer(CrosshairTimer, this, &ThisClass::UpdateCrosshair, 0.05f, true);
+}
+
+void ABeyondPlayerController::UpdateCrosshair()
+{
+	if (!CrosshairWidget)
+	{
+		return;
+	}
+
+	const ABeyondCharacterBase* Leader = Cast<ABeyondCharacterBase>(GetPawn());
+	const UBeyondAimComponent* Aim = Leader ? Leader->GetAimComponent() : nullptr;
+	const bool bShow = Aim && Aim->ShouldShowCrosshair();
+	const ESlateVisibility Wanted = bShow ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed;
+	if (CrosshairWidget->GetVisibility() != Wanted)
+	{
+		CrosshairWidget->SetVisibility(Wanted);
+	}
+
+	if (bShow)
+	{
+		if (UBeyondCrosshairWidget* Crosshair = Cast<UBeyondCrosshairWidget>(CrosshairWidget))
+		{
+			const UCharacterMovementComponent* Movement = Leader->GetCharacterMovement();
+			const float MaxSpeed = Movement ? FMath::Max(Movement->GetMaxSpeed(), 1.0f) : 600.0f;
+			Crosshair->SetAimState(Aim->GetAimTarget() != nullptr, Aim->IsAiming(), Leader->GetVelocity().Size2D() / MaxSpeed);
+		}
+	}
 }
 
 void ABeyondPlayerController::RefreshDuoIcon()
