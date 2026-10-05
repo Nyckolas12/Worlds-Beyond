@@ -73,7 +73,8 @@ enemy and gives extra Bond. (Hook: `UBeyondCombatSubsystem::IsBranded`.)
 
 ## Bond meter
 
-Shared by the party, shown bottom centre (blue → purple → gold; "HEAVEN'S JUDGMENT READY [G]" when full).
+Shared by the party. An animated arc over the ability bar: Angel's medallion on the left end, Ji-Woong's sun on the
+right; it fills left → right, blue and purple swirling together on the left into solid gold on the right.
 
 | Gain | Amount |
 |---|---|
@@ -83,8 +84,8 @@ Shared by the party, shown bottom centre (blue → purple → gold; "HEAVEN'S JU
 | Hits during Heaven's Judgment itself | none |
 
 Full at 100. Empties on use and on a party wipe. Tuned on `BP_PC → Party Component → Party | Bond`.
-The duo move sits in its own slot to the left of the meter: its icon (the **Icon** of `GA_Duo_HeavensJudgment`) is greyed
-out while charging and lights up, with the **G** key, when the meter is full.
+When it is full the duo move's medallion (the **Icon** of `GA_Duo_HeavensJudgment`, or a lightning bolt) appears above
+the middle of the arc with blue, purple and gold flames circling it and "READY [G]".
 
 ## Heaven's Judgment (duo super move)
 
@@ -112,8 +113,7 @@ All timings, damage, radii, montages and effects are properties on `GA_Duo_Heave
   to Ji-Woong's blade during Absorb, a ground-cracking shockwave ring.
 - Camera: pull back and orbit during Heaven, snap in on the slam; 0.1 s hit-stop at impact.
 - Audio: thunder layers per flash, a rising charge during Absorb, a bass drop on impact; both voice actors call it out.
-- UI: pulse / sound when the meter fills; a hint when the partner is too far away. Concept art for a designed duo
-  meter (curved bronze arc / braided twin bars / radial ring around the Heaven's Judgment icon) was made in Higgsfield
-  during pass 5.
+- UI: a sound when the meter fills; a hint when the partner is too far away. The meter follows Higgsfield concept A
+  (pass 6); painted medallion art could replace the drawn sun / bolt and the staff glyph.
 - Arcane Spikes: a dust / shard burst and a ground-crack decal when the crystals break through.
 - Icons: the new abilities show placeholder icons in the ability bar (`DT_AbilityMetaData`).

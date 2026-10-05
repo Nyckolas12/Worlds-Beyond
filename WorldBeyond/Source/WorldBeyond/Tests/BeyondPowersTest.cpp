@@ -21,6 +21,7 @@
 #include "Camera/PlayerCameraManager.h"
 #include "Characters/BeyondAimComponent.h"
 #include "Characters/BeyondCharacterBase.h"
+#include "Components/Image.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/InputComponent.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -32,6 +33,9 @@
 #include "Particles/ParticleSystemComponent.h"
 #include "LevelSequenceActor.h"
 #include "LevelSequencePlayer.h"
+#include "MaterialShared.h"
+#include "Materials/Material.h"
+#include "RHI.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Misc/AutomationTest.h"
 #include "Perception/AIPerceptionComponent.h"
@@ -40,6 +44,7 @@
 #include "Player/BeyondPlayerController.h"
 #include "Tests/AutomationCommon.h"
 #include "Tests/AutomationEditorCommon.h"
+#include "UI/BeyondBondMeterWidget.h"
 #include "UI/BeyondCrosshairWidget.h"
 #include "Weapons/BeyondWeapon.h"
 
@@ -47,8 +52,9 @@
  * Passes 2-5 in MAP_Demo_Main (Play In Editor, no rendering needed): MetaHuman combat mesh, companion walk fix,
  * the buddy holding still during the intro, enemy perception, Ji-Woong's sword and his LMB sword combo (voice once,
  * upper body while moving), Gilded Step, Sunbrand, Angel's staff, aiming (crosshair, shoulder camera, target under
- * the crosshair, casts facing it) and his E crystal spikes, the Bond meter and the duo super move, the ability bar
- * refresh on swap, and the boss health bar.
+ * the crosshair, casts facing it) and his E crystal spikes, the Bond meter (the animated arc: materials compile,
+ * the duo medallion and flames appear when full) and the duo super move, the ability bar refresh on swap, and the
+ * boss health bar.
  *
  * UnrealEditor-Cmd.exe WorldBeyond.uproject -ExecCmds="Automation RunTests WorldsBeyond.Prototype;Quit" -unattended -nullrhi -nosplash
  */
@@ -1112,6 +1118,62 @@ bool FBeyondPowersTest::RunTest(const FString& Parameters)
 		T.TestEqual(TEXT("Heal plays AM_Heal on Angel"), GetNameSafe(CurrentMontage), FString(TEXT("AM_Heal")));
 
 		GiveBack(*State, Angel);
+		return true;
+	}));
+
+	// The Bond meter is the animated arc; full shows the duo medallion with its flames, spent hides them again
+	ADD_LATENT_AUTOMATION_COMMAND(FBeyondPowersStep([State]()
+	{
+		FAutomationTestBase& T = *State->Test;
+		ABeyondPlayerController* PC = State->PC.Get();
+		if (!PC)
+		{
+			return true;
+		}
+
+		// HLSL mistakes in the Custom nodes only show up when the shaders compile
+		for (const TCHAR* Path : { TEXT("/Game/WorldsBeyond/UI/DuoMeter/M_UI_BondArc.M_UI_BondArc"),
+			TEXT("/Game/WorldsBeyond/UI/DuoMeter/M_UI_DuoFlames.M_UI_DuoFlames"),
+			TEXT("/Game/WorldsBeyond/UI/DuoMeter/M_UI_DuoMedallion.M_UI_DuoMedallion") })
+		{
+			UMaterial* Material = LoadObject<UMaterial>(nullptr, Path);
+			if (!T.TestNotNull(*FString::Printf(TEXT("Duo meter material %s exists (run migrate_pass6.py)"), Path), Material))
+			{
+				continue;
+			}
+			if (FMaterialResource* Resource = Material->GetMaterialResource(GMaxRHIFeatureLevel))
+			{
+				Resource->FinishCompilation();
+				const TArray<FString>& Errors = Resource->GetCompileErrors();
+				T.TestTrue(*FString::Printf(TEXT("%s compiles%s%s"), *Material->GetName(), Errors.Num() ? TEXT(": ") : TEXT(""),
+					Errors.Num() ? *Errors[0] : TEXT("")), Errors.Num() == 0);
+			}
+		}
+
+		UBeyondBondMeterWidget* Meter = Cast<UBeyondBondMeterWidget>(PC->GetBondWidget());
+		if (!T.TestTrue(TEXT("The Bond meter is the animated arc"), Meter && Meter->IsUsingArcStyle()))
+		{
+			return true;
+		}
+		Meter->SetBond(100.0f, 100.0f);
+		for (int32 Frame = 0; Frame < 40; ++Frame)
+		{
+			Meter->AdvanceAnimation(1.0f / 60.0f);
+		}
+		T.TestTrue(TEXT("Full: the arc fills"), Meter->GetDisplayedFill() > 0.95f);
+		T.TestTrue(TEXT("Full: the duo medallion appears with its flames"),
+			Meter->GetReadyBlend() > 0.99f && Meter->GetDuoImage() && Meter->GetDuoImage()->IsVisible() && Meter->GetFlameImage() && Meter->GetFlameImage()->IsVisible());
+
+		Meter->SetBond(0.0f, 100.0f);
+		for (int32 Frame = 0; Frame < 40; ++Frame)
+		{
+			Meter->AdvanceAnimation(1.0f / 60.0f);
+		}
+		T.TestTrue(TEXT("Spent: the duo medallion and flames fade away"),
+			Meter->GetReadyBlend() < 0.01f && !Meter->GetDuoImage()->IsVisible() && !Meter->GetFlameImage()->IsVisible());
+
+		// Back to the party's real value
+		Meter->SetBond(PC->PartyComponent->GetBond(), PC->PartyComponent->MaxBond);
 		return true;
 	}));
 

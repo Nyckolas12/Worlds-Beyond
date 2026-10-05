@@ -18,7 +18,7 @@ Ji-Woong's new powers and the duo super move are designed in [Powers_Design.md](
 | `FBeyondFX` | `AbilitySystem/BeyondFX.*` | One visual beat on an ability: Niagara/Cascade system, sound, camera shake, optional colour |
 | `ABeyondWeapon` | `Weapons/BeyondWeapon.*` | Parent of both `BP_Weapon_Base`s; melee hit-scan (`HitScanStart` / `HitScanEnd`) |
 | Party | `Player/BeyondPlayerController.*`, `Player/BeyondPartyComponent.*` | Tab swaps demigods, the other one is the AI buddy, auto-swap on death, stand next to a downed buddy for 3 s to revive, HUD follows the controlled demigod, **Bond meter**, **boss health bar** |
-| `UBeyondBondMeterWidget` | `UI/BeyondBondMeterWidget.*` | Bond meter HUD built in C++ (blue → purple → gold); swap `Bond Widget Class` on `BP_PC` for a designed one |
+| `UBeyondBondMeterWidget` | `UI/BeyondBondMeterWidget.*` | The duo meter, built in C++ on three UI materials (`/Game/WorldsBeyond/UI/DuoMeter/`): an animated arc over the ability bar with Angel's and Ji-Woong's medallions on its ends; when full the Heaven's Judgment medallion appears with circling flames. Falls back to a plain bar without the materials; swap `Bond Widget Class` on `BP_PC` for a designed one |
 | Aiming | `Characters/BeyondAimComponent.*`, `UI/BeyondCrosshairWidget.*` | Created on characters whose **Aim Settings** are on (Angel): shoulder camera with the weapon out, crosshair (shown by the player controller), the enemy under it glows, hold RMB to aim, casts face the crosshair |
 | `ABeyondSpikeBurst` | `AbilitySystem/BeyondSpikeBurst.*` | Crystal spikes bursting out of the ground in a wave (Angel's E, `BP_Beyond_ArcaneSpikes`); `GroundStrike` spawns it via *Spike Burst Class* |
 | `ABeyondCompanionController` | `AI/BeyondCompanionController.*` | Buddy AI: follow (with walk animation), defend the leader, use abilities by their AI hints, regroup; stands still while a cutscene (level sequence) has it or its leader |
@@ -39,10 +39,23 @@ Ji-Woong's new powers and the duo super move are designed in [Powers_Design.md](
 | **G** | **Heaven's Judgment** (duo) when the Bond meter is full — its own slot left of the meter | same |
 | Tab | Swap | Swap |
 
-The Bond meter (bottom centre) fills as the demigods deal and take damage, faster when both hit the same enemy.
+The Bond meter fills as the demigods deal and take damage, faster when both hit the same enemy.
 Heaven's Judgment needs a full meter and both demigods alive within 15 m of each other; you can't Tab-swap while it plays.
-Its icon is greyed out until the meter is full. To use your own picture, import the PNG and set it as **Icon** on
-`/Game/WorldsBeyond/Abilities/Duo/GA_Duo_HeavensJudgment` (until then it shows the empty frame).
+
+The meter (Higgsfield concept A, built in C++ + UI materials, nothing to set up in UMG):
+- A curved steel arc over the ability bar. Angel's medallion (his staff glyph from the ability icons over a turning
+  rune ring) sits on the left end, Ji-Woong's gold sun on the right end.
+- The fill runs left → right: **blue and purple swirling together on the left, solid gold on the right**. The energy
+  flows and crackles, the front flashes on every Bond gain, and each medallion lights up as its side fills.
+- **Full:** the Heaven's Judgment medallion pops in above the middle with **blue, purple and gold flames circling it**
+  and "READY [G]"; the arc gets a sweeping shine. Using the move empties it and everything fades away.
+- The duo medallion shows the **Icon** of `/Game/WorldsBeyond/Abilities/Duo/GA_Duo_HeavensJudgment` when it has one
+  (import a PNG and set it), otherwise a drawn lightning bolt.
+- Tuning without code: make a Blueprint child of `BeyondBondMeterWidget` and set it as *Bond Widget Class* on `BP_PC`.
+  *Bond | Arc* has the colours (*Color Blue / Purple / Gold*, *Purple Stop*, *Gold Start*), *Flow Speed*, the
+  glyphs, sizes / curve (*Arc Radius*, *Band Thickness*…), *Show Duo Icon While Charging* and the animation speeds.
+  Its position is *Bond Meter Offset* on `BP_PC` (default 50 px up from the bottom centre so the arc ends flank the
+  ability icons). The look itself (noise, flames, frame) is the Custom node in each `M_UI_*` material.
 
 Ji-Woong walks around relaxed with the sword on his left hip. He draws it when an enemy comes within 10 m or the moment
 his sword combo starts, and puts it away after 8 s without enemies within 15 m. Tune it on
@@ -155,7 +168,7 @@ Done earlier: TakeDamage routed into GAS, attack tokens, enemy heal, death handl
 Run with the editor closed (build the C++ first):
 
 ```
-UnrealEditor-Cmd.exe WorldBeyond.uproject -run=pythonscript -script=<repo>/WorldBeyond/Scripts/Migration/migrate_pass5.py -unattended -nosplash -NullRHI
+UnrealEditor-Cmd.exe WorldBeyond.uproject -run=pythonscript -script=<repo>/WorldBeyond/Scripts/Migration/migrate_pass6.py -unattended -nosplash -NullRHI
 UnrealEditor-Cmd.exe WorldBeyond.uproject -run=pythonscript -script=<repo>/WorldBeyond/Scripts/Migration/fit_outfits.py -unattended -nosplash -NullRHI
 UnrealEditor-Cmd.exe WorldBeyond.uproject -run=pythonscript -script=<repo>/WorldBeyond/Scripts/Migration/cleanup_legacy.py -unattended -nosplash -NullRHI
 UnrealEditor-Cmd.exe WorldBeyond.uproject -ExecCmds="Automation RunTests WorldsBeyond.Prototype;Quit" -unattended -nullrhi -nosplash -TestExit="Automation Test Queue Empty"
@@ -175,6 +188,10 @@ UnrealEditor-Cmd.exe WorldBeyond.uproject -ExecCmds="Automation RunTests WorldsB
   and his E as crystal spikes (`M_Beyond_ArcaneCrystal`, `SM_Beyond_CrystalSpike` made with Geometry Script — the engine
   cone if that fails —, `BP_Beyond_ArcaneSpikes`; the yellow lightning cue removed, purple circle). The materials and
   the mesh are only created when missing, so editor tweaks survive a re-run. Report: `last_run_pass5.txt`.
+- `migrate_pass6.py` — pass 6: the duo meter's UI materials `M_UI_BondArc`, `M_UI_DuoFlames`, `M_UI_DuoMedallion` in
+  `/Game/WorldsBeyond/UI/DuoMeter/` (procedural HLSL in Custom nodes; uses the existing `crescent-staff` glyph and the
+  FX pack's `T_ky_magicCircle020`). Rebuilt on every run, so hand edits to these three are overwritten. Report:
+  `last_run_pass6.txt`.
 - `fit_outfits.py` — snug-fits the outfits (see *Clothing fit* below). Needs the **GeometryScripting** plugin, which
   `WorldBeyond.uproject` now enables (editor only).
 - All passes are idempotent and back up every asset they save to `Saved/MigrationBackups/<timestamp>/`; shared helpers live in
@@ -189,7 +206,8 @@ UnrealEditor-Cmd.exe WorldBeyond.uproject -ExecCmds="Automation RunTests WorldsB
   enemy perception, Ji-Woong's sword, LMB on the GAS combo, the combo's voice line once / full-body footwork when standing /
   upper body while walking, Angel's staff (back, idle, drawn when casting), Angel's aiming (crosshair and shoulder
   camera with the staff out, the enemy under the crosshair targeted and glowing, a cast turning him to the crosshair,
-  RMB mapped, none for Ji-Woong), E's spike burst (spawned, blue / purple only, cleaned up),
+  RMB mapped, none for Ji-Woong), E's spike burst (spawned, blue / purple only, cleaned up), the duo meter (its
+  three materials compile, it is the arc, full shows the duo medallion and flames, spent hides them),
   Gilded Step, Sunbrand, the buddy's sword combo, ability bar refresh on swap, Lightning Strike, Bond meter + Heaven's
   Judgment, boss bar; plus the hip holster and idle switch, quick-draw when the combo starts, animated sheathe, auto draw /
   sheathe, Stop Anim Montage reaching Body (the combo window), the ability bar list, key 2 and Angel's heal montage, no
