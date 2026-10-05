@@ -5,8 +5,10 @@
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 
 #include "AbilitySystem/Abilities/BeyondGA_EquipWeapon.h"
+#include "AbilitySystem/Abilities/BeyondGA_GroundStrike.h"
 #include "AbilitySystem/Abilities/BeyondGA_MeleeCombo.h"
 #include "AbilitySystem/BeyondCombatLibrary.h"
+#include "AbilitySystem/BeyondSpikeBurst.h"
 #include "AbilitySystemComponent.h"
 #include "AIController.h"
 #include "AI/BeyondCompanionController.h"
@@ -16,6 +18,8 @@
 #include "BeyondGameplayTags.h"
 #include "Blueprint/UserWidget.h"
 #include "BrainComponent.h"
+#include "Camera/PlayerCameraManager.h"
+#include "Characters/BeyondAimComponent.h"
 #include "Characters/BeyondCharacterBase.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/InputComponent.h"
@@ -36,13 +40,15 @@
 #include "Player/BeyondPlayerController.h"
 #include "Tests/AutomationCommon.h"
 #include "Tests/AutomationEditorCommon.h"
+#include "UI/BeyondCrosshairWidget.h"
 #include "Weapons/BeyondWeapon.h"
 
 /**
- * Passes 2-4 in MAP_Demo_Main (Play In Editor, no rendering needed): MetaHuman combat mesh, companion walk fix,
+ * Passes 2-5 in MAP_Demo_Main (Play In Editor, no rendering needed): MetaHuman combat mesh, companion walk fix,
  * the buddy holding still during the intro, enemy perception, Ji-Woong's sword and his LMB sword combo (voice once,
- * upper body while moving), Gilded Step, Sunbrand, Angel's staff and Lightning Strike, the Bond meter and the duo
- * super move, the ability bar refresh on swap, and the boss health bar.
+ * upper body while moving), Gilded Step, Sunbrand, Angel's staff, aiming (crosshair, shoulder camera, target under
+ * the crosshair, casts facing it) and his E crystal spikes, the Bond meter and the duo super move, the ability bar
+ * refresh on swap, and the boss health bar.
  *
  * UnrealEditor-Cmd.exe WorldBeyond.uproject -ExecCmds="Automation RunTests WorldsBeyond.Prototype;Quit" -unattended -nullrhi -nosplash
  */
@@ -64,6 +70,10 @@ namespace BeyondPowersTest
 		TMap<FString, float> Health;
 		int32 AbilitiesChangedEvents = 0;
 		int32 VoiceLinesBefore = 0;
+		TWeakObjectPtr<ABeyondCharacterBase> AimEnemy;
+		float AimYaw = 0.0f;
+		TWeakObjectPtr<ABeyondSpikeBurst> SpikeBurst;
+		FDelegateHandle SpawnHandle;
 	};
 
 	UWorld* GetPlayWorld()
@@ -252,6 +262,24 @@ namespace BeyondPowersTest
 	{
 		return UBeyondCombatLibrary::IsActorDead(Actor) || Before - Health(Actor) >= AtLeast;
 	}
+
+	// Point the player's camera at the middle of Target (run it twice: the shoulder camera moves as it turns)
+	void LookAt(ABeyondPlayerController* PC, const AActor* Target)
+	{
+		if (!PC || !Target || !PC->PlayerCameraManager)
+		{
+			return;
+		}
+		FVector Origin, Extent;
+		Target->GetActorBounds(true, Origin, Extent);
+		PC->SetControlRotation((Origin - PC->PlayerCameraManager->GetCameraLocation()).Rotation());
+	}
+
+	bool IsCrosshairShown(const ABeyondPlayerController* PC)
+	{
+		const UUserWidget* Crosshair = PC ? PC->GetCrosshairWidget() : nullptr;
+		return Crosshair && Crosshair->GetVisibility() == ESlateVisibility::HitTestInvisible;
+	}
 }
 
 DEFINE_LATENT_AUTOMATION_COMMAND_ONE_PARAMETER(FBeyondPowersStep, TFunction<bool()>, Step);
@@ -415,6 +443,21 @@ bool FBeyondPowersTest::RunTest(const FString& Parameters)
 
 		T.TestTrue(TEXT("Sword and staff glide between holster and hand (no pop)"),
 			Equip && Equip->HandoffBlendTime > 0.0f && AngelEquip && AngelEquip->HandoffBlendTime > 0.0f);
+
+		// Aiming: Angel has a crosshair / shoulder camera / hold-RMB aim, Ji-Woong doesn't
+		T.TestTrue(TEXT("Angel aims (Aim Settings on, IA_Aim, aim component)"),
+			Angel->GetAimSettings().bEnabled && Angel->GetAimSettings().AimAction && Angel->GetAimComponent());
+		T.TestTrue(TEXT("Angel's casts turn him to the crosshair"), Angel->GetAimSettings().FaceAimMontages.Num() >= 2);
+		T.TestTrue(TEXT("Ji-Woong has no crosshair"), !JiWoong->GetAimSettings().bEnabled && !JiWoong->GetAimComponent());
+		bool bAimMapped = false;
+		if (const UInputMappingContext* IMC = LoadObject<UInputMappingContext>(nullptr, TEXT("/Game/Input/IMC_Default.IMC_Default")))
+		{
+			for (const FEnhancedActionKeyMapping& Mapping : IMC->GetMappings())
+			{
+				bAimMapped |= Mapping.Action == Angel->GetAimSettings().AimAction && Mapping.Key == EKeys::RightMouseButton;
+			}
+		}
+		T.TestTrue(TEXT("Right mouse button aims"), bAimMapped);
 
 		// Ability bar: only the keys each demigod can press, in Q / E / R order
 		T.TestEqual(TEXT("Angel's ability bar"), FString::Join(AbilityBar(Angel), TEXT(",")), FString(TEXT("GA_Blink_C,GA_Angel_LightningStrike_C,GA_HealSpell_C")));
@@ -807,6 +850,107 @@ bool FBeyondPowersTest::RunTest(const FString& Parameters)
 		JiWoong->StopAnimMontage(nullptr);
 		return true;
 	}));
+	// Angel's aiming (he leads): staff out -> crosshair and shoulder camera; the enemy under it is the target
+	ADD_LATENT_AUTOMATION_COMMAND(FBeyondPowersStep([State]()
+	{
+		FAutomationTestBase& T = *State->Test;
+		ABeyondCharacterBase* Angel = State->Angel.Get();
+		ABeyondPlayerController* PC = State->PC.Get();
+		if (!Angel || !PC || !T.TestTrue(TEXT("Angel leads for the aiming checks"), PC->GetPawn() == Angel))
+		{
+			return true;
+		}
+
+		TArray<FVector> Spots = { Angel->GetActorLocation() };
+		if (const ABeyondCharacterBase* JiWoong = State->JiWoong.Get())
+		{
+			Spots.Add(JiWoong->GetActorLocation());
+		}
+		T.TestTrue(TEXT("Found open ground to aim along"), MoveToOpenGround(Angel, Spots, 900.0f));
+		if (UBeyondGA_EquipWeapon* Staff = GetEquipAbility(Angel))
+		{
+			Staff->RequestWeaponAction(BeyondTags::Weapon_Action_Draw, true);
+		}
+
+		for (TActorIterator<ABeyondCharacterBase> It(Angel->GetWorld()); It; ++It)
+		{
+			if (It->TeamAffiliation == EBeyondTeam::Enemy && !It->BossBarWidgetClass && !UBeyondCombatLibrary::IsActorDead(*It))
+			{
+				State->AimEnemy = *It;
+				break;
+			}
+		}
+		PlaceEnemy(State->AimEnemy.Get(), Angel, 700.0f);
+		PC->SetControlRotation(FRotator(-5.0f, Angel->GetActorRotation().Yaw, 0.0f));
+		return true;
+	}));
+	ADD_LATENT_AUTOMATION_COMMAND(FWaitLatentCommand(0.5f));
+	ADD_LATENT_AUTOMATION_COMMAND(FBeyondPowersStep([State]()
+	{
+		FAutomationTestBase& T = *State->Test;
+		ABeyondCharacterBase* Angel = State->Angel.Get();
+		ABeyondPlayerController* PC = State->PC.Get();
+		const UBeyondAimComponent* Aim = Angel ? Angel->GetAimComponent() : nullptr;
+		if (!Aim || !PC || PC->GetPawn() != Angel)
+		{
+			return true;
+		}
+		T.TestTrue(TEXT("Staff out: the crosshair shows"), Aim->IsCombatReady() && IsCrosshairShown(PC));
+		T.TestTrue(*FString::Printf(TEXT("Staff out: the camera moved over the right shoulder (offset Y %.0f)"), Aim->GetAppliedCameraOffset().Y),
+			Aim->GetAppliedCameraOffset().Y > Angel->GetAimSettings().ReadyCameraOffset.Y * 0.5f);
+		LookAt(PC, State->AimEnemy.Get());
+		return true;
+	}));
+	ADD_LATENT_AUTOMATION_COMMAND(FWaitLatentCommand(0.3f));
+	ADD_LATENT_AUTOMATION_COMMAND(FBeyondPowersStep([State]()
+	{
+		LookAt(State->PC.Get(), State->AimEnemy.Get());
+		return true;
+	}));
+	ADD_LATENT_AUTOMATION_COMMAND(FWaitLatentCommand(0.3f));
+	ADD_LATENT_AUTOMATION_COMMAND(FBeyondPowersStep([State]()
+	{
+		FAutomationTestBase& T = *State->Test;
+		ABeyondCharacterBase* Angel = State->Angel.Get();
+		ABeyondPlayerController* PC = State->PC.Get();
+		const UBeyondAimComponent* Aim = Angel ? Angel->GetAimComponent() : nullptr;
+		ABeyondCharacterBase* Enemy = State->AimEnemy.Get();
+		if (!Aim || !PC || !Enemy || PC->GetPawn() != Angel)
+		{
+			return true;
+		}
+		T.TestTrue(*FString::Printf(TEXT("The enemy under the crosshair is the aim target (%s)"), *GetNameSafe(Aim->GetAimTarget())), Aim->GetAimTarget() == Enemy);
+		const UBeyondCrosshairWidget* Crosshair = Cast<UBeyondCrosshairWidget>(PC->GetCrosshairWidget());
+		T.TestTrue(TEXT("The crosshair turns purple over the enemy"), Crosshair && Crosshair->IsOverHostile());
+		if (UMaterialInterface* Highlight = Angel->GetAimSettings().AimHighlightMaterial)
+		{
+			T.TestTrue(TEXT("The aimed-at enemy glows"), Enemy->GetCombatMesh() && Enemy->GetCombatMesh()->GetOverlayMaterial() == Highlight);
+		}
+
+		// Look 90 degrees to his right and cast: he turns to the crosshair
+		State->AimYaw = FRotator::NormalizeAxis(Angel->GetActorRotation().Yaw + 90.0f);
+		PC->SetControlRotation(FRotator(-5.0f, State->AimYaw, 0.0f));
+		UAnimMontage* CastMontage = LoadObject<UAnimMontage>(nullptr, TEXT("/Game/EssentialAnimation/MagicStaff/Animation/UE5/Sequence/Attack/UE5_WZ_Attack_02_Seq_Montage.UE5_WZ_Attack_02_Seq_Montage"));
+		UAnimInstance* Anim = Angel->GetCombatMesh() ? Angel->GetCombatMesh()->GetAnimInstance() : nullptr;
+		T.TestTrue(TEXT("Angel's cast montage plays"), CastMontage && Anim && Anim->Montage_Play(CastMontage) > 0.0f);
+		return true;
+	}));
+	ADD_LATENT_AUTOMATION_COMMAND(FWaitLatentCommand(0.4f));
+	ADD_LATENT_AUTOMATION_COMMAND(FBeyondPowersStep([State]()
+	{
+		FAutomationTestBase& T = *State->Test;
+		ABeyondCharacterBase* Angel = State->Angel.Get();
+		ABeyondPlayerController* PC = State->PC.Get();
+		if (!Angel || !PC || PC->GetPawn() != Angel)
+		{
+			return true;
+		}
+		const float Off = FMath::Abs(FMath::FindDeltaAngleDegrees(Angel->GetActorRotation().Yaw, State->AimYaw));
+		T.TestTrue(*FString::Printf(TEXT("Casting turned Angel to the crosshair (%.0f degrees off)"), Off), Off < 10.0f);
+		Angel->StopAnimMontage(nullptr);
+		return true;
+	}));
+
 	ADD_LATENT_AUTOMATION_COMMAND(FBeyondPowersStep([State]()
 	{
 		FAutomationTestBase& T = *State->Test;
@@ -893,10 +1037,54 @@ bool FBeyondPowersTest::RunTest(const FString& Parameters)
 		PlaceEnemy(Enemy, Angel, 700.0f);
 		Tester->SetFocus(Enemy, EAIFocusPriority::Gameplay);
 		State->Health.Add(TEXT("Strike"), Health(Enemy));
+
+		// E: crystal spikes instead of the yellow lightning
+		const FGameplayAbilitySpec* StrikeSpec = ASC->FindAbilitySpecFromHandle(FindSpec(Angel, TEXT("GA_Angel_LightningStrike")));
+		const UBeyondGA_GroundStrike* Strike = StrikeSpec ? Cast<UBeyondGA_GroundStrike>(StrikeSpec->Ability) : nullptr;
+		T.TestTrue(TEXT("Angel's E bursts spikes, without the yellow lightning cue, and has a purple reticle"),
+			Strike && Strike->SpikeBurstClass && !Strike->StrikeCueTag.IsValid() && Strike->bOverrideTargetDecalColor);
+		State->SpikeBurst.Reset();
+		State->SpawnHandle = Angel->GetWorld()->AddOnActorSpawnedHandler(FOnActorSpawned::FDelegate::CreateLambda([State](AActor* Spawned)
+		{
+			if (ABeyondSpikeBurst* Burst = Cast<ABeyondSpikeBurst>(Spawned))
+			{
+				State->SpikeBurst = Burst;
+			}
+		}));
+
 		T.TestTrue(TEXT("Lightning Strike activates"), Angel->GetAbilitySystemComponent()->TryActivateAbility(FindSpec(Angel, TEXT("GA_Angel_LightningStrike"))));
 		return true;
 	}));
-	ADD_LATENT_AUTOMATION_COMMAND(FWaitLatentCommand(2.5f));
+	ADD_LATENT_AUTOMATION_COMMAND(FWaitLatentCommand(1.0f));
+	ADD_LATENT_AUTOMATION_COMMAND(FBeyondPowersStep([State]()
+	{
+		FAutomationTestBase& T = *State->Test;
+		ABeyondCharacterBase* Angel = State->Angel.Get();
+		if (!Angel || State->Enemies.Num() < 3)
+		{
+			return true;
+		}
+		ABeyondSpikeBurst* Burst = State->SpikeBurst.Get();
+		for (TActorIterator<ABeyondSpikeBurst> It(Angel->GetWorld()); It && !Burst; ++It)
+		{
+			Burst = *It;
+		}
+		if (!T.TestNotNull(TEXT("Angel's E burst crystal spikes out of the ground"), Burst))
+		{
+			return true;
+		}
+		State->SpikeBurst = Burst;
+		T.TestTrue(*FString::Printf(TEXT("A full ring of spikes (%d)"), Burst->GetSpikeCount()), Burst->GetSpikeCount() >= 10);
+		bool bBlueOrPurple = Burst->GetSpikeCount() > 0;
+		for (int32 Index = 0; Index < Burst->GetSpikeCount(); ++Index)
+		{
+			const FLinearColor Color = Burst->GetSpikeColor(Index);
+			bBlueOrPurple &= Color.B > Color.R && Color.B > Color.G;
+		}
+		T.TestTrue(TEXT("Every spike is blue or purple (never yellow)"), bBlueOrPurple);
+		return true;
+	}));
+	ADD_LATENT_AUTOMATION_COMMAND(FWaitLatentCommand(1.5f));
 	ADD_LATENT_AUTOMATION_COMMAND(FBeyondPowersStep([State]()
 	{
 		FAutomationTestBase& T = *State->Test;
@@ -908,6 +1096,8 @@ bool FBeyondPowersTest::RunTest(const FString& Parameters)
 		const ABeyondCharacterBase* Target = State->StrikeTarget.Get();
 		T.TestTrue(*FString::Printf(TEXT("Lightning Strike damaged the enemy (Angel's E): %s %.0f -> %.0f"), *GetNameSafe(Target), State->Health.FindRef(TEXT("Strike")), Health(Target)),
 			TookDamage(Target, State->Health.FindRef(TEXT("Strike")), 99.0f));
+		Angel->GetWorld()->RemoveOnActorSpawnedHandler(State->SpawnHandle);
+		T.TestTrue(TEXT("The spikes sink back and clean up"), !State->SpikeBurst.IsValid() || State->SpikeBurst->IsActorBeingDestroyed());
 		const UBeyondGA_EquipWeapon* Staff = GetEquipAbility(Angel);
 		T.TestTrue(TEXT("Casting near enemies, Angel has the staff in hand and its idle"),
 			Staff && Staff->IsWeaponDrawn() && IdleName(Angel) == TEXT("UE5_WZ_Idle_Seq"));
