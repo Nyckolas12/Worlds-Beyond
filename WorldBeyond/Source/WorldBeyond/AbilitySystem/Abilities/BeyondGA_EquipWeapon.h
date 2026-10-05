@@ -94,6 +94,13 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation")
 	FName AnimationSlot = TEXT("UpperBody");
 
+	/**
+	 * When the hand takes the weapon (draw) or puts it back (sheathe), it glides between holster and hand over this many
+	 * seconds instead of jumping there in one frame. 0 snaps. Spawning and quick-draws for attacks always snap.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation", meta = (ClampMin = "0"))
+	float HandoffBlendTime = 0.2f;
+
 	// Anim Blueprint variable that holds the idle animation (ABP_JI-Woong: IdleAnimation)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation")
 	FName IdleVariable = TEXT("IdleAnimation");
@@ -146,8 +153,12 @@ private:
 
 	bool SpawnWeapon(const FBeyondWeaponLoadout& Loadout);
 	void DestroyWeapon();
-	void PlaceInHand();
-	void PlaceInHolster();
+	void PlaceInHand(bool bBlend = false);
+	void PlaceInHolster(bool bBlend = false);
+	// Attaches the weapon to Socket on the animated mesh at TargetRelative, gliding there over HandoffBlendTime if bBlend
+	void AttachWeapon(FName Socket, const FTransform& TargetRelative, bool bBlend);
+	void TickHandoff();
+	void StopHandoff();
 	void ApplyStance(bool bArmed);
 
 	void BeginDraw(bool bInstant);
@@ -178,4 +189,9 @@ private:
 	FTimerHandle MoveTimer;
 	FTimerHandle FinishTimer;
 	FTimerHandle AutoTimer;
+	FTimerHandle HandoffTimer;
+
+	FTransform HandoffStart;
+	FTransform HandoffTarget;
+	float HandoffStartTime = 0.0f;
 };

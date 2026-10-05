@@ -413,6 +413,9 @@ bool FBeyondPowersTest::RunTest(const FString& Parameters)
 				IdleName(Angel) == (AngelEquip->IsWeaponDrawn() ? TEXT("UE5_WZ_Idle_Seq") : TEXT("MM_Idle")));
 		}
 
+		T.TestTrue(TEXT("Sword and staff glide between holster and hand (no pop)"),
+			Equip && Equip->HandoffBlendTime > 0.0f && AngelEquip && AngelEquip->HandoffBlendTime > 0.0f);
+
 		// Ability bar: only the keys each demigod can press, in Q / E / R order
 		T.TestEqual(TEXT("Angel's ability bar"), FString::Join(AbilityBar(Angel), TEXT(",")), FString(TEXT("GA_Blink_C,GA_Angel_LightningStrike_C,GA_HealSpell_C")));
 		T.TestEqual(TEXT("Ji-Woong's ability bar"), FString::Join(AbilityBar(JiWoong), TEXT(",")), FString(TEXT("GA_JiWoong_GildedStep_C,GA_JiWoong_Sunbrand_C,GA_HealSpell_C")));
