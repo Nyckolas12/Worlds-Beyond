@@ -13,12 +13,12 @@ public class WorldBeyond : ModuleRules
 
 		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput", "GameplayAbilities", "GameplayTags", "GameplayTasks", "AIModule" });
 
-		PrivateDependencyModuleNames.AddRange(new string[] { "NavigationSystem", "UMG" });
+		PrivateDependencyModuleNames.AddRange(new string[] { "NavigationSystem", "UMG", "Slate", "SlateCore", "Niagara" });
 
 		// Automation tests (Source/WorldBeyond/Tests) drive Play In Editor
 		if (Target.bBuildEditor)
 		{
-			PrivateDependencyModuleNames.Add("UnrealEd");
+			PrivateDependencyModuleNames.AddRange(new string[] { "UnrealEd", "LevelSequence", "MovieScene" });
 		}
 
 		// Uncomment if you are using Slate UI

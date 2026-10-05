@@ -1,0 +1,644 @@
+// Fill out your copyright notice in the Description page of Project Settings.
+
+#include "CoreMinimal.h"
+
+#if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
+
+#include "AbilitySystem/BeyondCombatLibrary.h"
+#include "AbilitySystemComponent.h"
+#include "AIController.h"
+#include "AI/BeyondCompanionController.h"
+#include "Animation/AnimInstance.h"
+#include "Animation/AnimMontage.h"
+#include "Animation/AnimNotifies/AnimNotify.h"
+#include "BeyondGameplayTags.h"
+#include "Blueprint/UserWidget.h"
+#include "BrainComponent.h"
+#include "Characters/BeyondCharacterBase.h"
+#include "Components/CapsuleComponent.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Editor.h"
+#include "EngineUtils.h"
+#include "Game/BeyondCombatSubsystem.h"
+#include "LevelSequenceActor.h"
+#include "LevelSequencePlayer.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "Misc/AutomationTest.h"
+#include "Perception/AIPerceptionComponent.h"
+#include "Perception/AISenseConfig_Sight.h"
+#include "Player/BeyondPartyComponent.h"
+#include "Player/BeyondPlayerController.h"
+#include "Tests/AutomationCommon.h"
+#include "Tests/AutomationEditorCommon.h"
+#include "Weapons/BeyondWeapon.h"
+
+/**
+ * Pass 2 in MAP_Demo_Main (Play In Editor, no rendering needed): MetaHuman combat mesh, companion walk fix,
+ * enemy perception, Ji-Woong's sword, Gilded Step, Sunbrand, Angel's Lightning Strike, the buddy's sword combo,
+ * the Bond meter and the duo super move, the ability bar refresh on swap, and the boss health bar.
+ *
+ * UnrealEditor-Cmd.exe WorldBeyond.uproject -ExecCmds="Automation RunTests WorldsBeyond.Prototype;Quit" -unattended -nullrhi -nosplash
+ */
+
+namespace BeyondPowersTest
+{
+	struct FState
+	{
+		FAutomationTestBase* Test = nullptr;
+		TWeakObjectPtr<ABeyondPlayerController> PC;
+		TWeakObjectPtr<ABeyondCharacterBase> Angel;
+		TWeakObjectPtr<ABeyondCharacterBase> JiWoong;
+		TArray<TWeakObjectPtr<ABeyondCharacterBase>> Enemies;
+		TWeakObjectPtr<ABeyondCharacterBase> Boss;
+		TWeakObjectPtr<ABeyondCharacterBase> StrikeTarget;
+		TWeakObjectPtr<AAIController> Tester;
+		TWeakObjectPtr<AController> SavedCompanionController;
+		FVector StartLocation = FVector::ZeroVector;
+		TMap<FString, float> Health;
+		int32 AbilitiesChangedEvents = 0;
+	};
+
+	UWorld* GetPlayWorld()
+	{
+		return GEditor ? GEditor->PlayWorld.Get() : nullptr;
+	}
+
+	FGameplayAbilitySpecHandle FindSpec(const ABeyondCharacterBase* Character, const TCHAR* NameFragment)
+	{
+		if (const UAbilitySystemComponent* ASC = Character ? Character->GetAbilitySystemComponent() : nullptr)
+		{
+			for (const FGameplayAbilitySpec& Spec : ASC->GetActivatableAbilities())
+			{
+				if (Spec.Ability && Spec.Ability->GetClass()->GetName().Contains(NameFragment))
+				{
+					return Spec.Handle;
+				}
+			}
+		}
+		return FGameplayAbilitySpecHandle();
+	}
+
+	bool HasTag(const ABeyondCharacterBase* Character, const FGameplayTag& Tag)
+	{
+		const UAbilitySystemComponent* ASC = Character ? Character->GetAbilitySystemComponent() : nullptr;
+		return ASC && ASC->HasMatchingGameplayTag(Tag);
+	}
+
+	// Freeze an enemy's AI and park it relative to Anchor
+	void PlaceEnemy(ABeyondCharacterBase* Enemy, const AActor* Anchor, float Forward, float Right = 0.0f)
+	{
+		if (!Enemy || !Anchor)
+		{
+			return;
+		}
+		if (AAIController* AI = Cast<AAIController>(Enemy->GetController()))
+		{
+			AI->StopMovement();
+			if (UBrainComponent* Brain = AI->GetBrainComponent())
+			{
+				Brain->StopLogic(TEXT("Powers test"));
+			}
+		}
+		if (UAbilitySystemComponent* ASC = Enemy->GetAbilitySystemComponent())
+		{
+			ASC->SetLooseGameplayTagCount(BeyondTags::State_Blocking, 0);
+			ASC->SetLooseGameplayTagCount(BeyondTags::State_Parrying, 0);
+		}
+		const FVector Location = Anchor->GetActorLocation() + Anchor->GetActorForwardVector() * Forward + Anchor->GetActorRightVector() * Right;
+		Enemy->SetActorLocation(Location, false, nullptr, ETeleportType::TeleportPhysics);
+		Enemy->GetCharacterMovement()->StopMovementImmediately();
+	}
+
+	// Drive a demigod with a plain AI controller (no companion thinking) so an ability can be tested on its own
+	AAIController* TakeOver(FState& State, ABeyondCharacterBase* Character)
+	{
+		UWorld* World = Character->GetWorld();
+		State.SavedCompanionController = Character->GetController();
+		AAIController* Tester = State.Tester.Get();
+		if (!Tester)
+		{
+			Tester = World->SpawnActor<AAIController>();
+			State.Tester = Tester;
+		}
+		Tester->Possess(Character);
+		return Tester;
+	}
+
+	void GiveBack(FState& State, ABeyondCharacterBase* Character)
+	{
+		if (AAIController* Tester = State.Tester.Get())
+		{
+			Tester->ClearFocus(EAIFocusPriority::Gameplay);
+			Tester->UnPossess();
+		}
+		if (AController* Companion = State.SavedCompanionController.Get())
+		{
+			Companion->Possess(Character);
+		}
+	}
+
+	// Stand Character on open ground facing a clear lane (level geometry would stop a dash test)
+	bool MoveToOpenGround(ACharacter* Character, const TArray<FVector>& Candidates, float Distance)
+	{
+		const UCapsuleComponent* Capsule = Character->GetCapsuleComponent();
+		const FCollisionShape Shape = FCollisionShape::MakeCapsule(Capsule->GetScaledCapsuleRadius(), Capsule->GetScaledCapsuleHalfHeight() * 0.7f);
+		FCollisionQueryParams Params(SCENE_QUERY_STAT(BeyondTestOpenGround), false, Character);
+		for (const FVector& Candidate : Candidates)
+		{
+			const FVector Start = Candidate + FVector(0.0f, 0.0f, 40.0f);
+			for (int32 Step = 0; Step < 16; ++Step)
+			{
+				const FRotator Facing(0.0f, Step * 22.5f, 0.0f);
+				FHitResult Hit;
+				if (!Character->GetWorld()->SweepSingleByObjectType(Hit, Start, Start + Facing.Vector() * Distance, FQuat::Identity,
+					FCollisionObjectQueryParams(FCollisionObjectQueryParams::AllStaticObjects), Shape, Params))
+				{
+					Character->SetActorLocationAndRotation(Candidate, Facing, false, nullptr, ETeleportType::TeleportPhysics);
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	float Health(const AActor* Actor)
+	{
+		return UBeyondCombatLibrary::GetActorHealth(Actor);
+	}
+
+	bool TookDamage(const AActor* Actor, float Before, float AtLeast)
+	{
+		return UBeyondCombatLibrary::IsActorDead(Actor) || Before - Health(Actor) >= AtLeast;
+	}
+}
+
+DEFINE_LATENT_AUTOMATION_COMMAND_ONE_PARAMETER(FBeyondPowersStep, TFunction<bool()>, Step);
+bool FBeyondPowersStep::Update()
+{
+	return Step();
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBeyondPowersTest, "WorldsBeyond.Prototype.Powers",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FBeyondPowersTest::RunTest(const FString& Parameters)
+{
+	using namespace BeyondPowersTest;
+	TSharedRef<FState> State = MakeShared<FState>();
+	State->Test = this;
+
+	ADD_LATENT_AUTOMATION_COMMAND(FEditorLoadMap(TEXT("/Game/SICKA_PERSEPOLIS/MAPS/MAP_Demo_Main")));
+	ADD_LATENT_AUTOMATION_COMMAND(FStartPIECommand(false));
+	ADD_LATENT_AUTOMATION_COMMAND(FWaitLatentCommand(4.0f));
+
+	// Setup and configuration checks
+	ADD_LATENT_AUTOMATION_COMMAND(FBeyondPowersStep([State]()
+	{
+		FAutomationTestBase& T = *State->Test;
+		UWorld* World = GetPlayWorld();
+		ABeyondPlayerController* PC = World ? Cast<ABeyondPlayerController>(World->GetFirstPlayerController()) : nullptr;
+		if (!T.TestNotNull(TEXT("Beyond player controller"), PC))
+		{
+			return true;
+		}
+		State->PC = PC;
+		UBeyondPartyComponent* Party = PC->PartyComponent;
+		Party->SwapCooldown = 0.0f;
+
+		// The intro cutscene is still running this early and pins the demigods' transforms; skip to its end
+		for (TActorIterator<ALevelSequenceActor> It(World); It; ++It)
+		{
+			if (ULevelSequencePlayer* Player = It->GetSequencePlayer(); Player && Player->IsPlaying())
+			{
+				Player->GoToEndAndStop();
+			}
+		}
+
+		for (ABeyondCharacterBase* Member : Party->GetMembers())
+		{
+			if (Member->DuoRole == EBeyondDuoRole::Conduit) { State->Angel = Member; }
+			if (Member->DuoRole == EBeyondDuoRole::Striker) { State->JiWoong = Member; }
+		}
+		ABeyondCharacterBase* Angel = State->Angel.Get();
+		ABeyondCharacterBase* JiWoong = State->JiWoong.Get();
+		if (!T.TestNotNull(TEXT("Angel is the duo Conduit"), Angel) || !T.TestNotNull(TEXT("Ji-Woong is the duo Striker"), JiWoong))
+		{
+			return true;
+		}
+
+		// Angel leads, Ji-Woong follows
+		if (Party->GetLeader() != Angel)
+		{
+			Party->SwapLeader();
+		}
+		T.TestTrue(TEXT("Angel leads"), Party->GetLeader() == Angel);
+
+		for (ABeyondCharacterBase* Member : { Angel, JiWoong })
+		{
+			USkeletalMeshComponent* CombatMesh = Member->GetCombatMesh();
+			T.TestTrue(*FString::Printf(TEXT("%s animates a mesh with an asset (Body)"), *Member->GetName()),
+				CombatMesh && CombatMesh->GetSkeletalMeshAsset() && CombatMesh->GetAnimInstance());
+			const FGameplayAbilityActorInfo* Info = Member->GetAbilitySystemComponent()->AbilityActorInfo.Get();
+			T.TestTrue(*FString::Printf(TEXT("%s: GAS plays montages on the combat mesh"), *Member->GetName()),
+				Info && Info->SkeletalMeshComponent.Get() == CombatMesh);
+			T.TestTrue(*FString::Printf(TEXT("%s has the duo move"), *Member->GetName()), FindSpec(Member, TEXT("GA_Duo_HeavensJudgment")).IsValid());
+		}
+
+		T.TestTrue(TEXT("Companion path following accelerates (walk animation)"),
+			JiWoong->GetCharacterMovement()->GetNavMovementProperties()->bUseAccelerationForPaths);
+
+		T.TestTrue(TEXT("Angel: Lightning Strike"), FindSpec(Angel, TEXT("GA_Angel_LightningStrike")).IsValid());
+		T.TestFalse(TEXT("Angel: old GA_AOEAttack gone"), FindSpec(Angel, TEXT("GA_AOEAttack")).IsValid());
+		T.TestTrue(TEXT("Ji-Woong: Gilded Step"), FindSpec(JiWoong, TEXT("GA_JiWoong_GildedStep")).IsValid());
+		T.TestTrue(TEXT("Ji-Woong: Sunbrand"), FindSpec(JiWoong, TEXT("GA_JiWoong_Sunbrand")).IsValid());
+		T.TestTrue(TEXT("Ji-Woong: sword equip"), FindSpec(JiWoong, TEXT("GA_JiWoong_EquipWeapon")).IsValid());
+		T.TestFalse(TEXT("Ji-Woong: Blink suppressed"), FindSpec(JiWoong, TEXT("GA_Blink")).IsValid());
+		T.TestFalse(TEXT("Ji-Woong: old GA_Dash gone"), FindSpec(JiWoong, TEXT("GA_Dash_C")).IsValid());
+
+		// Sword drawn at spawn, attached to the animated mesh
+		const ABeyondWeapon* Sword = ABeyondWeapon::FindEquippedWeapon(JiWoong);
+		T.TestTrue(TEXT("Ji-Woong spawns holding his sword on the Body mesh"),
+			Sword && Sword->GetRootComponent()->GetAttachParent() == JiWoong->GetCombatMesh() && !Sword->IsHidden());
+
+		// Sword combo notifies
+		if (const UAnimMontage* Combo = LoadObject<UAnimMontage>(nullptr, TEXT("/Game/Animations/Melee/Montage_SwordCombo.Montage_SwordCombo")))
+		{
+			int32 HitScanNotifies = 0;
+			for (const FAnimNotifyEvent& Notify : Combo->Notifies)
+			{
+				HitScanNotifies += (Notify.Notify && Notify.Notify->GetClass()->GetName().StartsWith(TEXT("AN_HitScan"))) ? 1 : 0;
+			}
+			T.TestEqual(TEXT("Montage_SwordCombo hit-scan notifies"), HitScanNotifies, 6);
+		}
+
+		// Enemies: perception now detects the (hostile) demigods
+		for (TActorIterator<ABeyondCharacterBase> It(World); It; ++It)
+		{
+			if (It->TeamAffiliation != EBeyondTeam::Enemy || UBeyondCombatLibrary::IsActorDead(*It))
+			{
+				continue;
+			}
+			if (It->BossBarWidgetClass)
+			{
+				State->Boss = *It;
+			}
+			else
+			{
+				State->Enemies.Add(*It);
+			}
+		}
+		T.TestTrue(TEXT("At least 3 regular enemies in the map"), State->Enemies.Num() >= 3);
+		T.TestTrue(TEXT("A boss with a boss bar"), State->Boss.IsValid());
+
+		if (State->Enemies.Num() > 0)
+		{
+			const AController* EnemyController = State->Enemies[0]->GetController();
+			const UAIPerceptionComponent* Perception = EnemyController ? EnemyController->FindComponentByClass<UAIPerceptionComponent>() : nullptr;
+			bool bSightDetectsEnemies = false;
+			if (Perception)
+			{
+				for (auto It = Perception->GetSensesConfigIterator(); It; ++It)
+				{
+					if (const UAISenseConfig_Sight* Sight = Cast<UAISenseConfig_Sight>(*It))
+					{
+						bSightDetectsEnemies = Sight->DetectionByAffiliation.bDetectEnemies;
+					}
+				}
+			}
+			T.TestTrue(TEXT("Enemy sight detects hostile teams (enemies aggro on the demigods again)"), bSightDetectsEnemies);
+		}
+
+		// From here on, enemies stand still: their attacks would interrupt the abilities under test
+		for (TActorIterator<ABeyondCharacterBase> It(World); It; ++It)
+		{
+			if (It->TeamAffiliation == EBeyondTeam::Enemy)
+			{
+				PlaceEnemy(*It, *It, 0.0f);
+			}
+		}
+		return true;
+	}));
+
+	// Gilded Step: Ji-Woong dashes through an enemy
+	ADD_LATENT_AUTOMATION_COMMAND(FBeyondPowersStep([State]()
+	{
+		FAutomationTestBase& T = *State->Test;
+		ABeyondCharacterBase* JiWoong = State->JiWoong.Get();
+		if (!JiWoong || State->Enemies.Num() < 3)
+		{
+			return true;
+		}
+		ABeyondCharacterBase* Enemy = State->Enemies[0].Get();
+		AAIController* Tester = TakeOver(*State, JiWoong);
+		TArray<FVector> Spots = { JiWoong->GetActorLocation() };
+		if (const ABeyondCharacterBase* Angel = State->Angel.Get())
+		{
+			Spots.Add(Angel->GetActorLocation());
+		}
+		for (const TWeakObjectPtr<ABeyondCharacterBase>& Other : State->Enemies)
+		{
+			if (Other.IsValid())
+			{
+				Spots.Add(Other->GetActorLocation());
+			}
+		}
+		T.TestTrue(TEXT("Found open ground for the dash"), MoveToOpenGround(JiWoong, Spots, 900.0f));
+		PlaceEnemy(Enemy, JiWoong, 350.0f);
+		Tester->SetFocus(Enemy, EAIFocusPriority::Gameplay);
+
+		State->StartLocation = JiWoong->GetActorLocation();
+		State->Health.Add(TEXT("Dash"), Health(Enemy));
+		T.TestTrue(TEXT("Gilded Step activates"), JiWoong->GetAbilitySystemComponent()->TryActivateAbility(FindSpec(JiWoong, TEXT("GA_JiWoong_GildedStep"))));
+		return true;
+	}));
+	ADD_LATENT_AUTOMATION_COMMAND(FWaitLatentCommand(1.5f));
+	ADD_LATENT_AUTOMATION_COMMAND(FBeyondPowersStep([State]()
+	{
+		FAutomationTestBase& T = *State->Test;
+		ABeyondCharacterBase* JiWoong = State->JiWoong.Get();
+		if (!JiWoong || State->Enemies.Num() < 3)
+		{
+			return true;
+		}
+		const ABeyondCharacterBase* Enemy = State->Enemies[0].Get();
+		T.TestTrue(TEXT("Gilded Step moved Ji-Woong"), FVector::Dist2D(JiWoong->GetActorLocation(), State->StartLocation) > 300.0f);
+		T.TestTrue(TEXT("Gilded Step hit the enemy it crossed"), TookDamage(Enemy, State->Health.FindRef(TEXT("Dash")), 29.0f));
+		T.TestFalse(TEXT("Dash invincibility is gone again"), HasTag(JiWoong, BeyondTags::State_Invincible));
+		return true;
+	}));
+
+	// Sunbrand: brand an enemy, then a melee hit from Ji-Woong detonates it
+	ADD_LATENT_AUTOMATION_COMMAND(FBeyondPowersStep([State]()
+	{
+		FAutomationTestBase& T = *State->Test;
+		ABeyondCharacterBase* JiWoong = State->JiWoong.Get();
+		AAIController* Tester = State->Tester.Get();
+		if (!JiWoong || !Tester || State->Enemies.Num() < 3)
+		{
+			return true;
+		}
+		ABeyondCharacterBase* Enemy = State->Enemies[1].Get();
+		PlaceEnemy(Enemy, JiWoong, 600.0f);
+		Tester->SetFocus(Enemy, EAIFocusPriority::Gameplay);
+		T.TestTrue(TEXT("Sunbrand activates"), JiWoong->GetAbilitySystemComponent()->TryActivateAbility(FindSpec(JiWoong, TEXT("GA_JiWoong_Sunbrand"))));
+		return true;
+	}));
+	ADD_LATENT_AUTOMATION_COMMAND(FWaitLatentCommand(2.0f));
+	ADD_LATENT_AUTOMATION_COMMAND(FBeyondPowersStep([State]()
+	{
+		FAutomationTestBase& T = *State->Test;
+		ABeyondCharacterBase* JiWoong = State->JiWoong.Get();
+		if (!JiWoong || State->Enemies.Num() < 3)
+		{
+			return true;
+		}
+		ABeyondCharacterBase* Enemy = State->Enemies[1].Get();
+		UBeyondCombatSubsystem* Combat = UBeyondCombatSubsystem::Get(JiWoong);
+		T.TestTrue(TEXT("Sunbrand branded the enemy"), Combat && Combat->IsBranded(Enemy) && HasTag(Enemy, BeyondTags::State_Branded));
+
+		State->Health.Add(TEXT("Brand"), Health(Enemy));
+		UBeyondCombatLibrary::ApplyDamage(JiWoong, Enemy, 10.0f, BeyondTags::DamageType_Melee, BeyondTags::Event_Hit_Light);
+		return true;
+	}));
+	ADD_LATENT_AUTOMATION_COMMAND(FWaitLatentCommand(0.5f));
+	ADD_LATENT_AUTOMATION_COMMAND(FBeyondPowersStep([State]()
+	{
+		FAutomationTestBase& T = *State->Test;
+		ABeyondCharacterBase* JiWoong = State->JiWoong.Get();
+		if (!JiWoong || State->Enemies.Num() < 3)
+		{
+			return true;
+		}
+		const ABeyondCharacterBase* Enemy = State->Enemies[1].Get();
+		const UBeyondCombatSubsystem* Combat = UBeyondCombatSubsystem::Get(JiWoong);
+		T.TestFalse(TEXT("Melee hit consumed the brand"), Combat && Combat->IsBranded(Enemy));
+		// 10 x 1.2 amplified + 40 detonation
+		T.TestTrue(TEXT("Brand amplified the hit and detonated"), TookDamage(Enemy, State->Health.FindRef(TEXT("Brand")), 51.0f));
+
+		// Buddy sword combo plays on the Body mesh
+		ABeyondCharacterBase* Target = State->Enemies[2].Get();
+		PlaceEnemy(Target, JiWoong, 150.0f);
+		if (AAIController* Tester = State->Tester.Get())
+		{
+			Tester->SetFocus(Target, EAIFocusPriority::Gameplay);
+		}
+		T.TestTrue(TEXT("Sword combo activates"), JiWoong->GetAbilitySystemComponent()->TryActivateAbility(FindSpec(JiWoong, TEXT("GA_JiWoong_SwordCombo"))));
+		return true;
+	}));
+	ADD_LATENT_AUTOMATION_COMMAND(FWaitLatentCommand(0.3f));
+	ADD_LATENT_AUTOMATION_COMMAND(FBeyondPowersStep([State]()
+	{
+		FAutomationTestBase& T = *State->Test;
+		ABeyondCharacterBase* JiWoong = State->JiWoong.Get();
+		if (!JiWoong)
+		{
+			return true;
+		}
+		const UAnimInstance* Anim = JiWoong->GetCombatMesh() ? JiWoong->GetCombatMesh()->GetAnimInstance() : nullptr;
+		T.TestTrue(TEXT("Buddy sword combo montage plays on the Body mesh"), Anim && Anim->IsAnyMontagePlaying());
+
+		GiveBack(*State, JiWoong);
+		T.TestTrue(TEXT("Ji-Woong back with his companion controller"), JiWoong->GetController() && JiWoong->GetController()->IsA<ABeyondCompanionController>());
+
+		// Swap: Ji-Woong leads, the HUD is rebuilt and the ability bar is told to refill
+		ABeyondPlayerController* PC = State->PC.Get();
+		if (UAbilitySystemComponent* ASC = JiWoong->GetAbilitySystemComponent())
+		{
+			ASC->GenericGameplayEventCallbacks.FindOrAdd(BeyondTags::Event_Abilities_Changed).AddLambda([State](const FGameplayEventData*)
+			{
+				++State->AbilitiesChangedEvents;
+			});
+		}
+		if (PC)
+		{
+			PC->PartyComponent->SwapLeader();
+			T.TestTrue(TEXT("Ji-Woong leads after the swap"), PC->PartyComponent->GetLeader() == JiWoong);
+			T.TestTrue(TEXT("Swap refreshed the ability bar (Event.Abilities.Changed)"), State->AbilitiesChangedEvents > 0);
+		}
+		return true;
+	}));
+	ADD_LATENT_AUTOMATION_COMMAND(FWaitLatentCommand(0.5f));
+
+	// Angel's Lightning Strike (AI path) damages the enemy it targets
+	ADD_LATENT_AUTOMATION_COMMAND(FBeyondPowersStep([State]()
+	{
+		FAutomationTestBase& T = *State->Test;
+		ABeyondCharacterBase* Angel = State->Angel.Get();
+		if (!Angel || State->Enemies.Num() < 3)
+		{
+			return true;
+		}
+		// An enemy still standing, preferably one the earlier steps didn't hit (hit enemies may raise their guard)
+		ABeyondCharacterBase* Enemy = nullptr;
+		for (TActorIterator<ABeyondCharacterBase> It(Angel->GetWorld()); It; ++It)
+		{
+			if (It->TeamAffiliation != EBeyondTeam::Enemy || It->BossBarWidgetClass || UBeyondCombatLibrary::IsActorDead(*It))
+			{
+				continue;
+			}
+			const bool bUsedEarlier = State->Enemies.Num() >= 3 && (State->Enemies[0] == *It || State->Enemies[1] == *It || State->Enemies[2] == *It);
+			if (!Enemy || !bUsedEarlier)
+			{
+				Enemy = *It;
+			}
+			if (!bUsedEarlier)
+			{
+				break;
+			}
+		}
+		if (!T.TestNotNull(TEXT("An enemy left for Lightning Strike"), Enemy))
+		{
+			return true;
+		}
+		State->StrikeTarget = Enemy;
+
+		// As a buddy she may already be casting (or have used the strike herself): start clean
+		AAIController* Tester = TakeOver(*State, Angel);
+		UAbilitySystemComponent* ASC = Angel->GetAbilitySystemComponent();
+		ASC->CancelAllAbilities();
+		ASC->RemoveActiveEffects(FGameplayEffectQuery::MakeQuery_MatchAnyOwningTags(FGameplayTagContainer(FGameplayTag::RequestGameplayTag(TEXT("Cooldown")))));
+
+		PlaceEnemy(Enemy, Angel, 700.0f);
+		Tester->SetFocus(Enemy, EAIFocusPriority::Gameplay);
+		State->Health.Add(TEXT("Strike"), Health(Enemy));
+		T.TestTrue(TEXT("Lightning Strike activates"), Angel->GetAbilitySystemComponent()->TryActivateAbility(FindSpec(Angel, TEXT("GA_Angel_LightningStrike"))));
+		return true;
+	}));
+	ADD_LATENT_AUTOMATION_COMMAND(FWaitLatentCommand(2.5f));
+	ADD_LATENT_AUTOMATION_COMMAND(FBeyondPowersStep([State]()
+	{
+		FAutomationTestBase& T = *State->Test;
+		ABeyondCharacterBase* Angel = State->Angel.Get();
+		if (!Angel || State->Enemies.Num() < 3)
+		{
+			return true;
+		}
+		const ABeyondCharacterBase* Target = State->StrikeTarget.Get();
+		T.TestTrue(*FString::Printf(TEXT("Lightning Strike damaged the enemy (Angel's E): %s %.0f -> %.0f"), *GetNameSafe(Target), State->Health.FindRef(TEXT("Strike")), Health(Target)),
+			TookDamage(Target, State->Health.FindRef(TEXT("Strike")), 99.0f));
+		GiveBack(*State, Angel);
+		return true;
+	}));
+
+	// Bond meter fills from damage; a full meter fires Heaven's Judgment
+	ADD_LATENT_AUTOMATION_COMMAND(FBeyondPowersStep([State]()
+	{
+		FAutomationTestBase& T = *State->Test;
+		ABeyondPlayerController* PC = State->PC.Get();
+		ABeyondCharacterBase* JiWoong = State->JiWoong.Get();
+		ABeyondCharacterBase* Angel = State->Angel.Get();
+		if (!PC || !JiWoong || !Angel)
+		{
+			return true;
+		}
+		UBeyondPartyComponent* Party = PC->PartyComponent;
+
+		// Fresh targets for the duo: every living regular enemy, gathered around Ji-Woong
+		TArray<ABeyondCharacterBase*> Targets;
+		for (TActorIterator<ABeyondCharacterBase> It(JiWoong->GetWorld()); It; ++It)
+		{
+			if (It->TeamAffiliation == EBeyondTeam::Enemy && !It->BossBarWidgetClass && !UBeyondCombatLibrary::IsActorDead(*It) && Targets.Num() < 3)
+			{
+				Targets.Add(*It);
+			}
+		}
+		if (!T.TestTrue(TEXT("Enemies left for the duo move"), Targets.Num() > 0))
+		{
+			return true;
+		}
+
+		const float BondBefore = Party->GetBond();
+		UBeyondCombatLibrary::ApplyDamage(JiWoong, Targets[0], 20.0f, BeyondTags::DamageType_Melee, BeyondTags::Event_Hit_Light);
+		T.TestTrue(TEXT("Damage dealt fills the Bond meter"), Party->GetBond() > BondBefore);
+
+		T.TestFalse(TEXT("Duo needs a full Bond meter"), JiWoong->TryActivateAbilityByInputTag(BeyondTags::Ability_Input_Duo));
+
+		Angel->SetActorLocation(JiWoong->GetActorLocation() - JiWoong->GetActorForwardVector() * 300.0f, false, nullptr, ETeleportType::TeleportPhysics);
+		State->Health.Reset();
+		for (int32 i = 0; i < Targets.Num(); ++i)
+		{
+			PlaceEnemy(Targets[i], JiWoong, 250.0f + 120.0f * i, (i - 1) * 150.0f);
+			State->Health.Add(Targets[i]->GetName(), Health(Targets[i]));
+		}
+
+		Party->AddBond(Party->MaxBond);
+		T.TestTrue(TEXT("Bond full"), Party->IsBondFull());
+		T.TestTrue(TEXT("Heaven's Judgment fires on G"), JiWoong->TryActivateAbilityByInputTag(BeyondTags::Ability_Input_Duo));
+		T.TestEqual(TEXT("Duo spent the Bond meter"), Party->GetBond(), 0.0f);
+		T.TestTrue(TEXT("Both demigods are in the duo state"), HasTag(JiWoong, BeyondTags::State_Duo) && HasTag(Angel, BeyondTags::State_Duo));
+		T.TestTrue(TEXT("Both demigods are invincible during the duo"), HasTag(JiWoong, BeyondTags::State_Invincible) && HasTag(Angel, BeyondTags::State_Invincible));
+		return true;
+	}));
+	ADD_LATENT_AUTOMATION_COMMAND(FWaitLatentCommand(4.5f));
+	ADD_LATENT_AUTOMATION_COMMAND(FBeyondPowersStep([State]()
+	{
+		FAutomationTestBase& T = *State->Test;
+		ABeyondCharacterBase* JiWoong = State->JiWoong.Get();
+		ABeyondCharacterBase* Angel = State->Angel.Get();
+		if (!JiWoong || !Angel)
+		{
+			return true;
+		}
+		for (TActorIterator<ABeyondCharacterBase> It(JiWoong->GetWorld()); It; ++It)
+		{
+			if (const float* Before = State->Health.Find(It->GetName()))
+			{
+				T.TestTrue(*FString::Printf(TEXT("Heaven's Judgment hit %s"), *It->GetName()), TookDamage(*It, *Before, 80.0f));
+			}
+		}
+		T.TestFalse(TEXT("Duo state cleared on Ji-Woong"), HasTag(JiWoong, BeyondTags::State_Duo) || HasTag(JiWoong, BeyondTags::State_Invincible));
+		T.TestFalse(TEXT("Duo state cleared on Angel"), HasTag(Angel, BeyondTags::State_Duo) || HasTag(Angel, BeyondTags::State_Invincible));
+		return true;
+	}));
+
+	// Boss bar: appears near the boss, follows GAS health, goes away when far
+	ADD_LATENT_AUTOMATION_COMMAND(FBeyondPowersStep([State]()
+	{
+		ABeyondPlayerController* PC = State->PC.Get();
+		ABeyondCharacterBase* Boss = State->Boss.Get();
+		if (!PC || !Boss)
+		{
+			return true;
+		}
+		PlaceEnemy(Boss, Boss, 0.0f);
+		ABeyondCharacterBase* Leader = PC->PartyComponent->GetLeader();
+		Leader->SetActorLocation(Boss->GetActorLocation() + Boss->GetActorForwardVector() * 900.0f, false, nullptr, ETeleportType::TeleportPhysics);
+		return true;
+	}));
+	ADD_LATENT_AUTOMATION_COMMAND(FWaitLatentCommand(1.0f));
+	ADD_LATENT_AUTOMATION_COMMAND(FBeyondPowersStep([State]()
+	{
+		FAutomationTestBase& T = *State->Test;
+		ABeyondPlayerController* PC = State->PC.Get();
+		ABeyondCharacterBase* Boss = State->Boss.Get();
+		if (!PC || !Boss)
+		{
+			return true;
+		}
+		T.TestTrue(TEXT("Boss bar shows near the boss"), PC->GetBossBarWidget() != nullptr && PC->GetShownBoss() == Boss);
+		UBeyondCombatLibrary::ApplyDamage(PC->PartyComponent->GetLeader(), Boss, 10.0f, BeyondTags::DamageType_Melee, BeyondTags::Event_Hit_Light);
+
+		ABeyondCharacterBase* Leader = PC->PartyComponent->GetLeader();
+		Leader->SetActorLocation(Boss->GetActorLocation() + Boss->GetActorForwardVector() * (Boss->BossBarShowRadius * 2.0f), false, nullptr, ETeleportType::TeleportPhysics);
+		return true;
+	}));
+	ADD_LATENT_AUTOMATION_COMMAND(FWaitLatentCommand(0.8f));
+	ADD_LATENT_AUTOMATION_COMMAND(FBeyondPowersStep([State]()
+	{
+		FAutomationTestBase& T = *State->Test;
+		if (ABeyondPlayerController* PC = State->PC.Get())
+		{
+			T.TestTrue(TEXT("Boss bar hides when the party walks away"), PC->GetBossBarWidget() == nullptr);
+		}
+		if (AAIController* Tester = State->Tester.Get())
+		{
+			Tester->Destroy();
+		}
+		return true;
+	}));
+
+	ADD_LATENT_AUTOMATION_COMMAND(FEndPlayMapCommand());
+	return true;
+}
+
+#endif

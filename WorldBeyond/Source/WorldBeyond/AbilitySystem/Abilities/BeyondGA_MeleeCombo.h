@@ -54,6 +54,17 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combo|Fallback", meta = (ClampMin = "0", ClampMax = "1"))
 	float FallbackComboWindowStart = 0.35f;
 
+	/**
+	 * For one long montage holding the whole combo (Montage_SwordCombo): when a combo window closes
+	 * (AN_ContinueComboEnd) without a press, the montage blends out there instead of playing the next swings.
+	 * The AI always presses, so it plays the full combo.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combo")
+	bool bStopIfComboWindowMissed = false;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combo", meta = (ClampMin = "0", EditCondition = "bStopIfComboWindowMissed"))
+	float MissedWindowBlendOutTime = 0.25f;
+
 	// Sweep used when the character has no ABeyondWeapon equipped
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combo|Unarmed")
 	float UnarmedReach = 170.0f;
@@ -73,8 +84,10 @@ private:
 	void StopHitWindow();
 	void UnarmedSweep();
 	void OpenComboWindow();
-	void HandleMontageBlendingOut(UAnimMontage* Montage, bool bInterrupted, int32 StepIndex);
-	void HandleMontageEnded(UAnimMontage* Montage, bool bInterrupted, int32 StepIndex);
+	void HandleMontageBlendingOut(UAnimMontage* Montage, bool bInterrupted, int32 StepIndex, int32 Serial);
+	void HandleMontageEnded(UAnimMontage* Montage, bool bInterrupted, int32 StepIndex, int32 Serial);
+	void CloseComboWindow();
+	class UAnimInstance* GetAnimInstance() const;
 
 	int32 CurrentStep = 0;
 	bool bComboWindowOpen = false;

@@ -14,6 +14,8 @@
 
 class UBeyondAbilitySet;
 class UInputAction;
+class USkeletalMeshComponent;
+class UUserWidget;
 
 UENUM(BlueprintType)
 enum class EBeyondTeam : uint8
@@ -22,6 +24,17 @@ enum class EBeyondTeam : uint8
 	Neutral = 0,
 	Player = 1,
 	Enemy = 2
+};
+
+// Part a demigod plays in the duo super move
+UENUM(BlueprintType)
+enum class EBeyondDuoRole : uint8
+{
+	None,
+	// Channels raw power into the partner (Angel's lightning)
+	Conduit,
+	// Absorbs the conduit's power and releases it (Ji-Woong's shockwave)
+	Striker
 };
 
 USTRUCT(BlueprintType)
@@ -68,6 +81,27 @@ public:
 
 	void InitializeAttributeSet();
 
+	/**
+	 * The skeletal mesh that actually animates. MetaHumans keep CharacterMesh0 empty and animate a "Body"
+	 * child, so abilities play montages and attach weapons here instead of on GetMesh().
+	 */
+	UFUNCTION(BlueprintPure, Category = "Character")
+	USkeletalMeshComponent* GetCombatMesh() const;
+
+	// Part this demigod plays in the duo super move
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Party")
+	EBeyondDuoRole DuoRole = EBeyondDuoRole::None;
+
+	// Show a boss health bar (e.g. W_BossHealthBar, which needs an UpdateHealthPercentage(Health, MaxHealth) function) while the player is near
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI|Boss")
+	TSubclassOf<UUserWidget> BossBarWidgetClass;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI|Boss", meta = (ClampMin = "0", EditCondition = "BossBarWidgetClass != nullptr"))
+	float BossBarShowRadius = 2500.0f;
+
+	// Weapon to equip on spawn, sent to the equip ability as the event's target tag (e.g. Weapon.Melee.Sword)
+	const FGameplayTag& GetDefaultWeaponTag() const { return DefaultWeaponTag; }
+
 protected:
 	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category = "AbilitySystem")
 	EGameplayEffectReplicationMode ASCReplicationMode = EGameplayEffectReplicationMode::Mixed;
@@ -79,6 +113,18 @@ protected:
 	// Legacy list, granted in addition to AbilitySet. Prefer AbilitySet for new work.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AbilitySystem")
 	TArray<TSubclassOf<UGameplayAbility>> StartingAbilities;
+
+	// Never granted to this character, even when Blueprint BeginPlay gives them (abilities replaced by newer ones)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AbilitySystem")
+	TArray<TSubclassOf<UGameplayAbility>> SuppressedAbilities;
+
+	// Name of the component that animates when CharacterMesh0 has no mesh (MetaHumans)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Character")
+	FName CombatMeshName = TEXT("Body");
+
+	// AI controllers of this character also perceive hostile teams (the old sense configs only detected neutrals/friendlies)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Team")
+	bool bAIPerceivesHostileTeams = true;
 
 	// Input actions that press an ability slot. Abilities granted anywhere (ability set or Blueprint) are matched by their Input Tag.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (TitleProperty = "InputTag"))
@@ -99,7 +145,7 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	bool bConfirmTargetingOnRelease = true;
 
-	// Weapon to equip on spawn, sent to GA_EquipWeapon as the event's target tag (e.g. Weapon.Ranged.Staff)
+	// Weapon to equip on spawn (instantly), sent to the equip ability as the event's target tag (e.g. Weapon.Melee.Sword)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon", meta = (Categories = "Weapon"))
 	FGameplayTag DefaultWeaponTag;
 
@@ -185,6 +231,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "AbilitySystem")
 	void SendAbilitiesChangedEvent();
 
+	UFUNCTION(BlueprintPure, Category = "AbilitySystem")
+	bool IsAbilitySuppressed(TSubclassOf<UGameplayAbility> AbilityClass) const;
+
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "AbilitySystem")
 	void ServerSendGameplayEventToSelf(FGameplayEventData EventData);
 
@@ -200,6 +249,9 @@ public:
 
 private:
 	void InitAbilitySystem();
+	void UseCombatMeshForAbilities();
+	void RemoveSuppressedAbilities();
+	void ConfigureAIPerception(AController* NewController) const;
 	void HandleAttributeHitTaken(AActor* DamageInstigator, AActor* Causer, float Damage, FGameplayTag HitResponse);
 	void HandleOutOfHealth(AActor* DamageInstigator, AActor* Causer, float Damage, FGameplayTag HitResponse);
 	void Die();
@@ -224,6 +276,8 @@ private:
 	TWeakObjectPtr<AActor> LastDamageInstigator;
 
 	int32 AvailableAttackTokens = 0;
+
+	mutable TWeakObjectPtr<USkeletalMeshComponent> CachedCombatMesh;
 
 	// The old Blueprint BPC_DamageSystem component, kept in sync with GAS
 	TWeakObjectPtr<UActorComponent> LegacyDamageComponent;

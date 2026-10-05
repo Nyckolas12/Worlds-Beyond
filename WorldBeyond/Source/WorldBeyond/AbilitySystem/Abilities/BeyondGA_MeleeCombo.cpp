@@ -6,6 +6,8 @@
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "BeyondGameplayTags.h"
+#include "Characters/BeyondCharacterBase.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/Character.h"
 #include "TimerManager.h"
@@ -71,8 +73,7 @@ void UBeyondGA_MeleeCombo::PlayStep(int32 StepIndex)
 	StopHitWindow();
 
 	const FBeyondComboStep& Step = ComboSteps[StepIndex];
-	ACharacter* Character = Cast<ACharacter>(GetAvatarActorFromActorInfo());
-	UAnimInstance* AnimInstance = Character ? Character->GetMesh()->GetAnimInstance() : nullptr;
+	UAnimInstance* AnimInstance = GetAnimInstance();
 	if (!Step.Montage || !AnimInstance)
 	{
 		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
@@ -88,11 +89,11 @@ void UBeyondGA_MeleeCombo::PlayStep(int32 StepIndex)
 
 	// Chain on blend-out so combos flow; the step index lets stale callbacks from earlier steps be ignored
 	FOnMontageBlendingOutStarted BlendOutDelegate;
-	BlendOutDelegate.BindUObject(this, &ThisClass::HandleMontageBlendingOut, StepIndex);
+	BlendOutDelegate.BindUObject(this, &ThisClass::HandleMontageBlendingOut, StepIndex, ActivationSerial);
 	AnimInstance->Montage_SetBlendingOutDelegate(BlendOutDelegate, Step.Montage);
 
 	FOnMontageEnded EndDelegate;
-	EndDelegate.BindUObject(this, &ThisClass::HandleMontageEnded, StepIndex);
+	EndDelegate.BindUObject(this, &ThisClass::HandleMontageEnded, StepIndex, ActivationSerial);
 	AnimInstance->Montage_SetEndDelegate(EndDelegate, Step.Montage);
 
 	// Fallback timings; cancelled as soon as real notifies arrive
@@ -128,7 +129,43 @@ void UBeyondGA_MeleeCombo::HandleGameplayEvent(const FGameplayEventData* Payload
 	else if (Tag == ComboEndTag())
 	{
 		bGotComboNotify = true;
-		bComboWindowOpen = false;
+		CloseComboWindow();
+	}
+}
+
+UAnimInstance* UBeyondGA_MeleeCombo::GetAnimInstance() const
+{
+	const AActor* Avatar = GetAvatarActorFromActorInfo();
+	USkeletalMeshComponent* Mesh = nullptr;
+	if (const ABeyondCharacterBase* BeyondCharacter = Cast<ABeyondCharacterBase>(Avatar))
+	{
+		Mesh = BeyondCharacter->GetCombatMesh();
+	}
+	else if (const ACharacter* Character = Cast<ACharacter>(Avatar))
+	{
+		Mesh = Character->GetMesh();
+	}
+	return Mesh ? Mesh->GetAnimInstance() : nullptr;
+}
+
+void UBeyondGA_MeleeCombo::CloseComboWindow()
+{
+	const bool bWasOpen = bComboWindowOpen;
+	bComboWindowOpen = false;
+
+	// One-montage combo: no press during the window ends the combo here
+	if (bWasOpen && bStopIfComboWindowMissed && !bNextStepQueued && ComboSteps.IsValidIndex(CurrentStep))
+	{
+		StopHitWindow();
+		if (UAnimInstance* AnimInstance = GetAnimInstance())
+		{
+			AnimInstance->Montage_Stop(MissedWindowBlendOutTime, ComboSteps[CurrentStep].Montage);
+		}
+	}
+	else if (bStopIfComboWindowMissed)
+	{
+		// The press kept this montage going; the next window needs a fresh one
+		bNextStepQueued = false;
 	}
 }
 
@@ -216,9 +253,9 @@ void UBeyondGA_MeleeCombo::UnarmedSweep()
 	}
 }
 
-void UBeyondGA_MeleeCombo::HandleMontageBlendingOut(UAnimMontage* Montage, bool bInterrupted, int32 StepIndex)
+void UBeyondGA_MeleeCombo::HandleMontageBlendingOut(UAnimMontage* Montage, bool bInterrupted, int32 StepIndex, int32 Serial)
 {
-	if (!IsActive() || StepIndex != CurrentStep || bInterrupted)
+	if (!IsCurrentActivation(Serial) || StepIndex != CurrentStep || bInterrupted)
 	{
 		return;
 	}
@@ -230,10 +267,10 @@ void UBeyondGA_MeleeCombo::HandleMontageBlendingOut(UAnimMontage* Montage, bool 
 	}
 }
 
-void UBeyondGA_MeleeCombo::HandleMontageEnded(UAnimMontage* Montage, bool bInterrupted, int32 StepIndex)
+void UBeyondGA_MeleeCombo::HandleMontageEnded(UAnimMontage* Montage, bool bInterrupted, int32 StepIndex, int32 Serial)
 {
-	// A later step already started (chained on blend-out)
-	if (!IsActive() || StepIndex != CurrentStep)
+	// A later step already started (chained on blend-out), or this is an earlier activation's montage
+	if (!IsCurrentActivation(Serial) || StepIndex != CurrentStep)
 	{
 		return;
 	}
@@ -266,12 +303,9 @@ void UBeyondGA_MeleeCombo::EndAbility(const FGameplayAbilitySpecHandle Handle, c
 		// Stop the montage if we were cancelled mid-swing
 		if (bWasCancelled && ComboSteps.IsValidIndex(CurrentStep))
 		{
-			if (const ACharacter* Character = Cast<ACharacter>(ActorInfo->AvatarActor.Get()))
+			if (UAnimInstance* AnimInstance = GetAnimInstance())
 			{
-				if (UAnimInstance* AnimInstance = Character->GetMesh()->GetAnimInstance())
-				{
-					AnimInstance->Montage_Stop(0.2f, ComboSteps[CurrentStep].Montage);
-				}
+				AnimInstance->Montage_Stop(0.2f, ComboSteps[CurrentStep].Montage);
 			}
 		}
 	}

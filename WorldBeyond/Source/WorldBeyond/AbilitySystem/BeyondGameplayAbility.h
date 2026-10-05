@@ -7,6 +7,9 @@
 #include "BeyondGameplayAbility.generated.h"
 
 class ABeyondCharacterBase;
+class UAnimInstance;
+class UAnimMontage;
+class USkeletalMeshComponent;
 
 UENUM(BlueprintType)
 enum class EBeyondAITargeting : uint8
@@ -59,6 +62,16 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AI", meta = (EditCondition = "bAIUsable", ClampMin = "0", ClampMax = "1"))
 	float AIUseBelowHealthPercent = 1.0f;
 
+	/**
+	 * Simple cooldown without making a Gameplay Effect asset: when above 0 and no Cooldown Gameplay Effect Class
+	 * is set, committing applies UBeyondGE_Cooldown for this many seconds, granting Cooldown Tags.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Cooldowns", meta = (ClampMin = "0"))
+	float CooldownDuration = 0.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Cooldowns", meta = (Categories = "Cooldown"))
+	FGameplayTagContainer CooldownTags;
+
 	UFUNCTION(BlueprintPure, Category = "Ability")
 	ABeyondCharacterBase* GetBeyondCharacter() const;
 
@@ -77,9 +90,37 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Ability|Combat")
 	bool ApplyDamageToTarget(AActor* Target, float Amount, UPARAM(meta = (Categories = "DamageType")) FGameplayTag DamageType, UPARAM(meta = (Categories = "Event.Hit")) FGameplayTag HitResponse, bool bUnblockable = false);
 
+	// Living characters hostile to the avatar within Radius of Center
+	UFUNCTION(BlueprintCallable, Category = "Ability|Combat")
+	TArray<AActor*> FindHostilesInRadius(FVector Center, float Radius) const;
+
+	// The mesh that animates (Body on MetaHumans)
+	UFUNCTION(BlueprintPure, Category = "Ability")
+	USkeletalMeshComponent* GetAnimatedMesh() const;
+
+	// Plays Montage on the animated mesh; returns its length (0 if it could not play)
+	UFUNCTION(BlueprintCallable, Category = "Ability")
+	float PlayMontageOnAvatar(UAnimMontage* Montage, float PlayRate = 1.0f);
+
+	//~ UGameplayAbility
+	virtual const FGameplayTagContainer* GetCooldownTags() const override;
+	virtual void ApplyCooldown(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo) const override;
+
 	// Dead characters can't use abilities
 	virtual bool CanActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayTagContainer* SourceTags = nullptr, const FGameplayTagContainer* TargetTags = nullptr, FGameplayTagContainer* OptionalRelevantTags = nullptr) const override;
 
 protected:
 	virtual void OnGiveAbility(const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilitySpec& Spec) override;
+	virtual void PreActivate(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, FOnGameplayAbilityEnded::FDelegate* OnGameplayAbilityEndedDelegate, const FGameplayEventData* TriggerEventData = nullptr) override;
+
+	/**
+	 * Bumped on every activation. Montage callbacks carry it, so when an ability is cancelled and cast again right away
+	 * (the same instance), the old montage finishing its blend-out isn't mistaken for the new cast being interrupted.
+	 */
+	int32 ActivationSerial = 0;
+
+	bool IsCurrentActivation(int32 Serial) const { return IsActive() && Serial == ActivationSerial; }
+
+	// Abilities are blocked while their owner performs the duo super move (State.Duo), except the move itself
+	bool bUsableDuringDuo = false;
 };

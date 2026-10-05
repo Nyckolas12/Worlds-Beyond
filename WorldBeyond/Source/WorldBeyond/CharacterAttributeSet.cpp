@@ -4,6 +4,7 @@
 #include "CharacterAttributeSet.h"
 #include "AbilitySystem/BeyondCombatLibrary.h"
 #include "BeyondGameplayTags.h"
+#include "Game/BeyondCombatSubsystem.h"
 #include "GameplayEffectExtension.h"
 #include "Net/UnrealNetwork.h"
 
@@ -191,6 +192,14 @@ void UCharacterAttributeSet::HandleIncomingDamage(const FGameplayEffectModCallba
 		SendHitEvent(&TargetASC, BeyondTags::Event_Hit_Blocked, Instigator, 0.0f);
 		OnHitTaken.Broadcast(Instigator, Causer, 0.0f, BeyondTags::Event_Hit_Blocked);
 		return;
+	}
+
+	// Brands (Sunbrand) amplify damage and detonate on the brander's melee hit
+	if (UBeyondCombatSubsystem* Combat = UBeyondCombatSubsystem::Get(TargetASC.GetAvatarActor()))
+	{
+		FGameplayTagContainer AssetTags;
+		Spec.GetAllAssetTags(AssetTags);
+		Damage = Combat->ModifyIncomingDamage(TargetASC, Instigator, AssetTags, Damage);
 	}
 
 	SetCurrentHealth(FMath::Clamp(GetCurrentHealth() - Damage, 0.0f, GetMaxHealth()));

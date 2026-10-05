@@ -7,168 +7,27 @@ Run with the editor closed:
 Every asset this script saves is copied to Saved/MigrationBackups/<timestamp>/ first.
 Each step checks the current state, so running it twice is safe.
 """
-import datetime
 import os
-import shutil
+import sys
 
 import unreal
 
-BEL = unreal.BlueprintEditorLibrary
-EAL = unreal.EditorAssetLibrary
-ASSET_TOOLS = unreal.AssetToolsHelpers.get_asset_tools()
-
-CONTENT_DIR = os.path.abspath(unreal.Paths.project_content_dir())
-BACKUP_DIR = os.path.join(os.path.abspath(unreal.Paths.project_saved_dir()), "MigrationBackups",
-                          datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
-
-LOG = []
-_backed_up = set()
-
-
-def log(msg):
-    LOG.append(msg)
-    unreal.log("MIGRATE " + msg)
-
-
-def warn(msg):
-    LOG.append("WARNING: " + msg)
-    unreal.log_warning("MIGRATE " + msg)
-
-
-# ---------------------------------------------------------------- helpers
-
-def package_file(asset_path):
-    rel = asset_path.replace("/Game/", "", 1)
-    for ext in (".uasset", ".umap"):
-        candidate = os.path.join(CONTENT_DIR, rel + ext)
-        if os.path.exists(candidate):
-            return candidate
-    return None
-
-
-def backup(asset_path):
-    if asset_path in _backed_up:
-        return
-    src = package_file(asset_path)
-    if src:
-        dst = os.path.join(BACKUP_DIR, os.path.relpath(src, CONTENT_DIR))
-        os.makedirs(os.path.dirname(dst), exist_ok=True)
-        shutil.copy2(src, dst)
-    _backed_up.add(asset_path)
-
-
-def load(asset_path):
-    asset = EAL.load_asset(asset_path)
-    if asset is None:
-        warn("could not load %s" % asset_path)
-    return asset
-
-
-def save(asset, asset_path):
-    backup(asset_path)
-    if not EAL.save_loaded_asset(asset, False):
-        warn("failed to save %s" % asset_path)
-
-
-def bp_class(asset_path):
-    return EAL.load_blueprint_class(asset_path)
-
-
-def cdo(bp):
-    return unreal.get_default_object(bp.generated_class())
-
-
-def tag(name):
-    t = unreal.GameplayTag()
-    t.import_text('(TagName="%s")' % name)
-    return t
-
-
-def tag_container(*names):
-    c = unreal.GameplayTagContainer()
-    c.import_text("(GameplayTags=(%s))" % ",".join('(TagName="%s")' % n for n in names))
-    return c
-
-
-def reparent(asset_path, new_parent):
-    bp = load(asset_path)
-    if bp is None:
-        return None
-    current = BEL.get_blueprint_parent_class(bp)
-    if current is not None and current.get_name() == new_parent.static_class().get_name():
-        return bp
-    backup(asset_path)
-    BEL.reparent_blueprint(bp, new_parent)
-    ok = BEL.compile_blueprint(bp)
-    log("reparented %s: %s -> %s (compiles=%s)" % (asset_path, current.get_name() if current else None,
-                                                  new_parent.static_class().get_name(), ok))
-    return bp
-
-
-def set_props(bp, asset_path, **props):
-    obj = cdo(bp)
-    for name, value in props.items():
-        try:
-            obj.set_editor_property(name, value)
-        except Exception as e:  # keep going; report at the end
-            warn("%s: could not set %s (%s)" % (asset_path, name, e))
-    save(bp, asset_path)
-
-
-def ensure_blueprint(asset_path, parent):
-    bp = EAL.load_asset(asset_path) if EAL.does_asset_exist(asset_path) else None
-    if bp is None:
-        bp = BEL.create_blueprint_asset_with_parent(asset_path, parent)
-        log("created %s (%s)" % (asset_path, parent.static_class().get_name()))
-    BEL.compile_blueprint(bp)
-    return bp
-
-
-def ensure_input_action(name):
-    path = "/Game/Input/Actions/" + name
-    if EAL.does_asset_exist(path):
-        return load(path)
-    factory = unreal.InputAction_Factory() if hasattr(unreal, "InputAction_Factory") else None
-    action = ASSET_TOOLS.create_asset(name, "/Game/Input/Actions", unreal.InputAction, factory)
-    action.set_editor_property("value_type", unreal.InputActionValueType.BOOLEAN)
-    EAL.save_loaded_asset(action, False)
-    log("created input action %s" % path)
-    return action
-
-
-def make_key(name):
-    key = unreal.Key()
-    key.set_editor_property("key_name", name)
-    return key
+sys.path.insert(0, os.path.join(os.path.abspath(unreal.Paths.project_dir()), "Scripts", "Migration"))
+from migration_common import (ASSET_TOOLS, BACKUP_DIR, BEL, EAL, bp_class, cdo, ensure_blueprint,  # noqa: E402
+                              load, log, map_keys, reparent, save, set_props, tag, tag_container,
+                              write_report)
 
 
 # ---------------------------------------------------------------- steps
 
 def step_input():
     """New ability slots on free keys (Q/E/R), right mouse cancels targeting."""
-    imc_path = "/Game/Input/IMC_Default"
-    imc = load(imc_path)
-    wanted = {
+    return map_keys("/Game/Input/IMC_Default", {
         "IA_AbilityQ": "Q",
         "IA_AbilityE": "E",
         "IA_AbilityR": "R",
         "IA_TargetCancel": "RightMouseButton",
-    }
-    existing = {(m.get_editor_property("action").get_name() if m.get_editor_property("action") else "",
-                 str(m.get_editor_property("key").get_editor_property("key_name")))
-                for m in imc.get_editor_property("default_key_mappings").get_editor_property("mappings")}
-    changed = False
-    actions = {}
-    for action_name, key_name in wanted.items():
-        action = ensure_input_action(action_name)
-        actions[action_name] = action
-        if (action_name, key_name) not in existing:
-            imc.map_key(action, make_key(key_name))
-            log("mapped %s -> %s" % (key_name, action_name))
-            changed = True
-    if changed:
-        save(imc, imc_path)
-    return actions
+    })
 
 
 def step_fix_nexus_effects():
@@ -254,10 +113,10 @@ def step_abilities():
 def ensure_ability_set(path, entries, effects):
     folder, name = path.rsplit("/", 1)
     if EAL.does_asset_exist(path):
-        data = load(path)
-    else:
-        data = ASSET_TOOLS.create_asset(name, folder, unreal.BeyondAbilitySet, unreal.DataAssetFactory())
-        log("created ability set %s" % path)
+        # Later passes (migrate_pass2.py) own the contents; don't put the first-pass abilities back
+        return load(path)
+    data = ASSET_TOOLS.create_asset(name, folder, unreal.BeyondAbilitySet, unreal.DataAssetFactory())
+    log("created ability set %s" % path)
     abilities = []
     for ability_class, input_tag in entries:
         entry = unreal.BeyondAbilitySet_Ability()
@@ -290,9 +149,12 @@ def step_characters(actions, bolt, combo):
                                      # Angel's Blueprint handles stamina regen itself; Ji-Woong never had it
                                      [bp_class("/Game/WorldsBeyond/Blueprints/Gameplay_Abilites/Effects/GE_Status_StaminaRegen")])
 
-    def bindings():
-        result = []
-        for action_name, slot in (("IA_AbilityQ", "Ability.Input.Q"), ("IA_AbilityE", "Ability.Input.E"), ("IA_AbilityR", "Ability.Input.R")):
+    def bindings(bp):
+        slots = (("IA_AbilityQ", "Ability.Input.Q"), ("IA_AbilityE", "Ability.Input.E"), ("IA_AbilityR", "Ability.Input.R"))
+        # Keep slots added by later passes (e.g. Ability.Input.Duo)
+        result = [b for b in cdo(bp).get_editor_property("ability_input_bindings")
+                  if str(b.get_editor_property("input_tag").get_editor_property("tag_name")) not in {s for _, s in slots}]
+        for action_name, slot in slots:
             b = unreal.BeyondInputBinding()
             b.set_editor_property("input_action", actions[action_name])
             b.set_editor_property("input_tag", tag(slot))
@@ -308,7 +170,7 @@ def step_characters(actions, bolt, combo):
         set_props(bp, path,
                   team_affiliation=unreal.BeyondTeam.PLAYER,
                   ability_set=ability_set,
-                  ability_input_bindings=bindings(),
+                  ability_input_bindings=bindings(bp),
                   cancel_target_action=actions["IA_TargetCancel"],
                   swap_in_sound=load(sound),
                   max_attack_tokens=2)
@@ -362,11 +224,7 @@ def main():
     step_characters(actions, bolt, combo)
     step_enemies()
     step_game_framework()
-    report = os.path.join(os.path.abspath(unreal.Paths.project_saved_dir()), "MigrationBackups", "last_run.txt")
-    os.makedirs(os.path.dirname(report), exist_ok=True)
-    with open(report, "w", encoding="utf-8") as fh:
-        fh.write("\n".join(LOG))
-    log("done - report at %s" % report)
+    write_report("last_run.txt")
 
 
 main()

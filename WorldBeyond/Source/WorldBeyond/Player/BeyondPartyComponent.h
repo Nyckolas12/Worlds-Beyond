@@ -13,11 +13,12 @@ class APlayerController;
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FBeyondLeaderChangedSignature, ABeyondCharacterBase*, NewLeader, ABeyondCharacterBase*, OldLeader);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FBeyondReviveProgressSignature, ABeyondCharacterBase*, DownedMember, float, Progress);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FBeyondPartyWipedSignature);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FBeyondBondChangedSignature, float, Bond, float, MaxBond);
 
 /**
  * The two demigods: the player controls the leader, the other is driven by a companion controller.
- * Handles swapping, auto-swap when the leader falls, proximity revives and party wipes.
- * Lives on ABeyondPlayerController.
+ * Handles swapping, auto-swap when the leader falls, proximity revives, party wipes, and the shared
+ * Bond meter that charges the duo super move. Lives on ABeyondPlayerController.
  */
 UCLASS(ClassGroup = (Beyond), meta = (BlueprintSpawnableComponent))
 class WORLDBEYOND_API UBeyondPartyComponent : public UActorComponent
@@ -66,6 +67,45 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Party")
 	FBeyondPartyWipedSignature OnPartyWiped;
 
+	// Bond: fills as the demigods fight, spent by the duo super move
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Party|Bond", meta = (ClampMin = "1"))
+	float MaxBond = 100.0f;
+
+	// Per point of damage a party member deals
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Party|Bond", meta = (ClampMin = "0"))
+	float BondPerDamageDealt = 0.2f;
+
+	// Per point of damage a party member takes
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Party|Bond", meta = (ClampMin = "0"))
+	float BondPerDamageTaken = 0.1f;
+
+	// Bonus when both demigods hit the same enemy within SynergyWindow seconds
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Party|Bond", meta = (ClampMin = "0"))
+	float SynergyBond = 4.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Party|Bond", meta = (ClampMin = "0"))
+	float SynergyWindow = 3.0f;
+
+	UPROPERTY(BlueprintAssignable, Category = "Party|Bond")
+	FBeyondBondChangedSignature OnBondChanged;
+
+	UFUNCTION(BlueprintPure, Category = "Party|Bond")
+	float GetBond() const { return Bond; }
+
+	UFUNCTION(BlueprintPure, Category = "Party|Bond")
+	bool IsBondFull() const { return Bond >= MaxBond; }
+
+	UFUNCTION(BlueprintCallable, Category = "Party|Bond")
+	void AddBond(float Amount);
+
+	// Empties the meter if it is full; returns whether it was
+	UFUNCTION(BlueprintCallable, Category = "Party|Bond")
+	bool ConsumeBond();
+
+	// The party member behind an actor (itself, or the owner / instigator of its projectile or weapon)
+	UFUNCTION(BlueprintPure, Category = "Party")
+	ABeyondCharacterBase* FindMemberFor(const AActor* Actor) const;
+
 	// Called by the player controller once it possesses its first pawn
 	void InitializeParty(APawn* InitialLeader);
 
@@ -89,8 +129,14 @@ public:
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
 protected:
+	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
 	UFUNCTION()
 	void HandleMemberKilled(ABeyondCharacterBase* Member, AActor* Killer);
+
+	UFUNCTION()
+	void HandleDamageDealt(AActor* DamageInstigator, AActor* Target, float Damage);
 
 private:
 	APlayerController* GetPlayerController() const;
@@ -103,6 +149,17 @@ private:
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<ABeyondCharacterBase>> Members;
+
+	void SetBond(float NewBond);
+
+	struct FRecentHit
+	{
+		TWeakObjectPtr<ABeyondCharacterBase> Member;
+		float Time = 0.0f;
+		float LastSynergyTime = -1000.0f;
+	};
+	TMap<TWeakObjectPtr<AActor>, FRecentHit> RecentHits;
+	float Bond = 0.0f;
 
 	TWeakObjectPtr<ABeyondCharacterBase> ReviveTarget;
 	float ReviveProgress = 0.0f;

@@ -6,6 +6,7 @@
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "BeyondGameplayTags.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/Character.h"
 #include "TimerManager.h"
@@ -67,14 +68,14 @@ void UBeyondGA_Projectile::ActivateAbility(const FGameplayAbilitySpecHandle Hand
 	ASC->GenericGameplayEventCallbacks.FindOrAdd(ShootProjectileTag()).AddUObject(this, &ThisClass::HandleFireEvent);
 	ASC->GenericGameplayEventCallbacks.FindOrAdd(MontageTriggerTag()).AddUObject(this, &ThisClass::HandleFireEvent);
 
-	const ACharacter* Character = Cast<ACharacter>(ActorInfo->AvatarActor.Get());
-	UAnimInstance* AnimInstance = Character ? Character->GetMesh()->GetAnimInstance() : nullptr;
+	const USkeletalMeshComponent* Mesh = GetAnimatedMesh();
+	UAnimInstance* AnimInstance = Mesh ? Mesh->GetAnimInstance() : nullptr;
 	const float Duration = (CastMontage && AnimInstance) ? AnimInstance->Montage_Play(CastMontage) : 0.0f;
 
 	if (Duration > 0.0f)
 	{
 		FOnMontageEnded EndDelegate;
-		EndDelegate.BindUObject(this, &ThisClass::HandleMontageEnded);
+		EndDelegate.BindUObject(this, &ThisClass::HandleMontageEnded, ActivationSerial);
 		AnimInstance->Montage_SetEndDelegate(EndDelegate, CastMontage);
 		GetWorld()->GetTimerManager().SetTimer(FireTimer, this, &ThisClass::Fire, FMath::Min(FallbackFireDelay, Duration * 0.9f), false);
 	}
@@ -93,12 +94,9 @@ void UBeyondGA_Projectile::HandleFireEvent(const FGameplayEventData* Payload)
 FVector UBeyondGA_Projectile::GetProjectileSpawnLocation_Implementation() const
 {
 	const AActor* Avatar = GetAvatarActorFromActorInfo();
-	if (const ACharacter* Character = Cast<ACharacter>(Avatar))
+	if (const USkeletalMeshComponent* Mesh = GetAnimatedMesh(); Mesh && Mesh->DoesSocketExist(SpawnSocket))
 	{
-		if (Character->GetMesh()->DoesSocketExist(SpawnSocket))
-		{
-			return Character->GetMesh()->GetSocketLocation(SpawnSocket);
-		}
+		return Mesh->GetSocketLocation(SpawnSocket);
 	}
 
 	// A staff with a SpawnPoint component (BP_Weapon_Staff)
@@ -164,8 +162,12 @@ void UBeyondGA_Projectile::Fire()
 	}
 }
 
-void UBeyondGA_Projectile::HandleMontageEnded(UAnimMontage* Montage, bool bInterrupted)
+void UBeyondGA_Projectile::HandleMontageEnded(UAnimMontage* Montage, bool bInterrupted, int32 Serial)
 {
+	if (!IsCurrentActivation(Serial))
+	{
+		return;
+	}
 	bMontageDone = true;
 	if (!bFired && !bInterrupted)
 	{

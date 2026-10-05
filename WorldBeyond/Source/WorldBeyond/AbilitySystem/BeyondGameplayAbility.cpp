@@ -2,8 +2,13 @@
 
 #include "AbilitySystem/BeyondGameplayAbility.h"
 #include "AbilitySystem/BeyondCombatLibrary.h"
+#include "AbilitySystem/BeyondGameplayEffects.h"
 #include "AbilitySystemComponent.h"
 #include "AIController.h"
+#include "Animation/AnimInstance.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Engine/OverlapResult.h"
+#include "GameFramework/Character.h"
 #include "BeyondGameplayTags.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
@@ -59,13 +64,92 @@ bool UBeyondGameplayAbility::ApplyDamageToTarget(AActor* Target, float Amount, F
 	return UBeyondCombatLibrary::ApplyDamage(GetAvatarActorFromActorInfo(), Target, Amount, DamageType, HitResponse, bUnblockable, GetAvatarActorFromActorInfo());
 }
 
+TArray<AActor*> UBeyondGameplayAbility::FindHostilesInRadius(FVector Center, float Radius) const
+{
+	TArray<AActor*> Result;
+	const AActor* Avatar = GetAvatarActorFromActorInfo();
+	const UWorld* World = GetWorld();
+	if (!Avatar || !World || Radius <= 0.0f)
+	{
+		return Result;
+	}
+
+	TArray<FOverlapResult> Overlaps;
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(BeyondHostilesInRadius), false, Avatar);
+	World->OverlapMultiByObjectType(Overlaps, Center, FQuat::Identity, FCollisionObjectQueryParams(ECC_Pawn), FCollisionShape::MakeSphere(Radius), Params);
+
+	for (const FOverlapResult& Overlap : Overlaps)
+	{
+		AActor* Actor = Overlap.GetActor();
+		if (Actor && !Result.Contains(Actor) && UBeyondCombatLibrary::AreHostile(Avatar, Actor) && !UBeyondCombatLibrary::IsActorDead(Actor))
+		{
+			Result.Add(Actor);
+		}
+	}
+	return Result;
+}
+
+USkeletalMeshComponent* UBeyondGameplayAbility::GetAnimatedMesh() const
+{
+	const AActor* Avatar = GetAvatarActorFromActorInfo();
+	if (const ABeyondCharacterBase* BeyondCharacter = Cast<ABeyondCharacterBase>(Avatar))
+	{
+		return BeyondCharacter->GetCombatMesh();
+	}
+	const ACharacter* Character = Cast<ACharacter>(Avatar);
+	return Character ? Character->GetMesh() : nullptr;
+}
+
+float UBeyondGameplayAbility::PlayMontageOnAvatar(UAnimMontage* Montage, float PlayRate)
+{
+	const USkeletalMeshComponent* Mesh = GetAnimatedMesh();
+	UAnimInstance* AnimInstance = Mesh ? Mesh->GetAnimInstance() : nullptr;
+	return (Montage && AnimInstance) ? AnimInstance->Montage_Play(Montage, PlayRate) : 0.0f;
+}
+
+const FGameplayTagContainer* UBeyondGameplayAbility::GetCooldownTags() const
+{
+	if (CooldownDuration > 0.0f && !CooldownGameplayEffectClass && !CooldownTags.IsEmpty())
+	{
+		return &CooldownTags;
+	}
+	return Super::GetCooldownTags();
+}
+
+void UBeyondGameplayAbility::ApplyCooldown(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo) const
+{
+	if (CooldownGameplayEffectClass || CooldownDuration <= 0.0f || CooldownTags.IsEmpty())
+	{
+		Super::ApplyCooldown(Handle, ActorInfo, ActivationInfo);
+		return;
+	}
+
+	FGameplayEffectSpecHandle Spec = MakeOutgoingGameplayEffectSpec(Handle, ActorInfo, ActivationInfo, UBeyondGE_Cooldown::StaticClass(), GetAbilityLevel(Handle, ActorInfo));
+	if (Spec.IsValid())
+	{
+		Spec.Data->DynamicGrantedTags.AppendTags(CooldownTags);
+		Spec.Data->SetSetByCallerMagnitude(BeyondTags::SetByCaller_Duration, CooldownDuration);
+		ApplyGameplayEffectSpecToOwner(Handle, ActorInfo, ActivationInfo, Spec);
+	}
+}
+
 bool UBeyondGameplayAbility::CanActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayTagContainer* SourceTags, const FGameplayTagContainer* TargetTags, FGameplayTagContainer* OptionalRelevantTags) const
 {
-	if (ActorInfo && ActorInfo->AbilitySystemComponent.IsValid() && ActorInfo->AbilitySystemComponent->HasMatchingGameplayTag(BeyondTags::State_Dead))
+	if (ActorInfo && ActorInfo->AbilitySystemComponent.IsValid())
 	{
-		return false;
+		const UAbilitySystemComponent* ASC = ActorInfo->AbilitySystemComponent.Get();
+		if (ASC->HasMatchingGameplayTag(BeyondTags::State_Dead) || (!bUsableDuringDuo && ASC->HasMatchingGameplayTag(BeyondTags::State_Duo)))
+		{
+			return false;
+		}
 	}
 	return Super::CanActivateAbility(Handle, ActorInfo, SourceTags, TargetTags, OptionalRelevantTags);
+}
+
+void UBeyondGameplayAbility::PreActivate(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, FOnGameplayAbilityEnded::FDelegate* OnGameplayAbilityEndedDelegate, const FGameplayEventData* TriggerEventData)
+{
+	++ActivationSerial;
+	Super::PreActivate(Handle, ActorInfo, ActivationInfo, OnGameplayAbilityEndedDelegate, TriggerEventData);
 }
 
 void UBeyondGameplayAbility::OnGiveAbility(const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilitySpec& Spec)

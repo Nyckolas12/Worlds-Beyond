@@ -13,6 +13,11 @@
 #include "AbilitySystem/BeyondCombatLibrary.h"
 #include "AbilitySystem/BeyondGameplayAbility.h"
 #include "BeyondGameplayTags.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Game/BeyondCombatSubsystem.h"
+#include "Perception/AIPerceptionComponent.h"
+#include "Perception/AISenseConfig_Hearing.h"
+#include "Perception/AISenseConfig_Sight.h"
 #include "Perception/AISense_Damage.h"
 
 // Sets default values
@@ -47,8 +52,148 @@ void ABeyondCharacterBase::BeginPlay()
 	InitAbilitySystem();
 	Super::BeginPlay();
 
+	// Blueprint BeginPlay may have granted abilities this character has replaced
+	RemoveSuppressedAbilities();
+
 	// Next tick, so abilities granted by Blueprint BeginPlay (GA_EquipWeapon) exist
-	GetWorldTimerManager().SetTimerForNextTick(this, &ThisClass::EquipDefaultWeapon);
+	GetWorldTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(this, [this]()
+	{
+		RemoveSuppressedAbilities();
+		EquipDefaultWeapon();
+	}));
+}
+
+USkeletalMeshComponent* ABeyondCharacterBase::GetCombatMesh() const
+{
+	USkeletalMeshComponent* BaseMesh = GetMesh();
+	if (BaseMesh && BaseMesh->GetSkeletalMeshAsset())
+	{
+		return BaseMesh;
+	}
+	if (CachedCombatMesh.IsValid())
+	{
+		return CachedCombatMesh.Get();
+	}
+
+	TInlineComponentArray<USkeletalMeshComponent*> Meshes(this);
+	USkeletalMeshComponent* Fallback = nullptr;
+	for (USkeletalMeshComponent* Candidate : Meshes)
+	{
+		if (Candidate == BaseMesh || !Candidate->GetSkeletalMeshAsset())
+		{
+			continue;
+		}
+		if (Candidate->GetFName() == CombatMeshName)
+		{
+			CachedCombatMesh = Candidate;
+			return Candidate;
+		}
+		if (!Fallback && Candidate->GetAnimInstance())
+		{
+			Fallback = Candidate;
+		}
+	}
+
+	if (Fallback)
+	{
+		CachedCombatMesh = Fallback;
+		return Fallback;
+	}
+	return BaseMesh;
+}
+
+void ABeyondCharacterBase::UseCombatMeshForAbilities()
+{
+	// GAS picks the first skeletal mesh it finds; on MetaHumans that is the empty CharacterMesh0,
+	// so PlayMontageAndWait in Blueprint abilities would have nothing to play on
+	FGameplayAbilityActorInfo* ActorInfo = AbilitySystemComponent ? AbilitySystemComponent->AbilityActorInfo.Get() : nullptr;
+	if (!ActorInfo)
+	{
+		return;
+	}
+
+	const USkeletalMeshComponent* Current = ActorInfo->SkeletalMeshComponent.Get();
+	if (!Current || !Current->GetSkeletalMeshAsset())
+	{
+		ActorInfo->SkeletalMeshComponent = GetCombatMesh();
+	}
+}
+
+bool ABeyondCharacterBase::IsAbilitySuppressed(TSubclassOf<UGameplayAbility> AbilityClass) const
+{
+	if (!AbilityClass)
+	{
+		return false;
+	}
+	for (const TSubclassOf<UGameplayAbility>& Suppressed : SuppressedAbilities)
+	{
+		if (Suppressed && AbilityClass->IsChildOf(Suppressed))
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+void ABeyondCharacterBase::RemoveSuppressedAbilities()
+{
+	if (!AbilitySystemComponent || !HasAuthority() || SuppressedAbilities.IsEmpty())
+	{
+		return;
+	}
+
+	TArray<FGameplayAbilitySpecHandle> ToClear;
+	for (const FGameplayAbilitySpec& Spec : AbilitySystemComponent->GetActivatableAbilities())
+	{
+		if (Spec.Ability && IsAbilitySuppressed(Spec.Ability->GetClass()))
+		{
+			ToClear.Add(Spec.Handle);
+		}
+	}
+
+	for (const FGameplayAbilitySpecHandle& Handle : ToClear)
+	{
+		AbilitySystemComponent->ClearAbility(Handle);
+	}
+	if (!ToClear.IsEmpty())
+	{
+		SendAbilitiesChangedEvent();
+	}
+}
+
+void ABeyondCharacterBase::ConfigureAIPerception(AController* NewController) const
+{
+	if (!bAIPerceivesHostileTeams || !Cast<AAIController>(NewController))
+	{
+		return;
+	}
+
+	UAIPerceptionComponent* Perception = NewController->FindComponentByClass<UAIPerceptionComponent>();
+	if (!Perception)
+	{
+		return;
+	}
+
+	// Characters are team agents now, so the demigods count as hostile to enemies and must be detected as such
+	bool bChanged = false;
+	for (auto It = Perception->GetSensesConfigIterator(); It; ++It)
+	{
+		if (UAISenseConfig_Sight* Sight = Cast<UAISenseConfig_Sight>(*It); Sight && !Sight->DetectionByAffiliation.bDetectEnemies)
+		{
+			Sight->DetectionByAffiliation.bDetectEnemies = true;
+			bChanged = true;
+		}
+		else if (UAISenseConfig_Hearing* Hearing = Cast<UAISenseConfig_Hearing>(*It); Hearing && !Hearing->DetectionByAffiliation.bDetectEnemies)
+		{
+			Hearing->DetectionByAffiliation.bDetectEnemies = true;
+			bChanged = true;
+		}
+	}
+
+	if (bChanged)
+	{
+		Perception->RequestStimuliListenerUpdate();
+	}
 }
 
 void ABeyondCharacterBase::EquipDefaultWeapon()
@@ -63,6 +208,8 @@ void ABeyondCharacterBase::EquipDefaultWeapon()
 	Payload.Instigator = this;
 	Payload.Target = this;
 	Payload.TargetTags.AddTag(DefaultWeaponTag);
+	// Spawning with the weapon already in hand: skip the draw animation
+	Payload.EventMagnitude = 1.0f;
 	AbilitySystemComponent->HandleGameplayEvent(EquipWeaponEventTag, &Payload);
 }
 
@@ -155,6 +302,7 @@ void ABeyondCharacterBase::PossessedBy(AController* NewControl)
 	{
 		TeamAgent->SetGenericTeamId(GetGenericTeamId());
 	}
+	ConfigureAIPerception(NewControl);
 }
 
 void ABeyondCharacterBase::OnRep_PlayerState()
@@ -163,6 +311,7 @@ void ABeyondCharacterBase::OnRep_PlayerState()
 	if (AbilitySystemComponent)
 	{
 		AbilitySystemComponent->InitAbilityActorInfo(this,this);
+		UseCombatMeshForAbilities();
 	}
 }
 
@@ -174,6 +323,7 @@ void ABeyondCharacterBase::InitAbilitySystem()
 	}
 
 	AbilitySystemComponent->InitAbilityActorInfo(this, this);
+	UseCombatMeshForAbilities();
 
 	if (!bAbilitySystemBound)
 	{
@@ -288,6 +438,12 @@ void ABeyondCharacterBase::HandleAttributeHitTaken(AActor* DamageInstigator, AAc
 		if (DamageInstigator)
 		{
 			UAISense_Damage::ReportDamageEvent(this, this, DamageInstigator, Damage, DamageInstigator->GetActorLocation(), GetActorLocation());
+		}
+
+		// World-wide damage feed (the party's Bond meter listens to it)
+		if (UBeyondCombatSubsystem* Combat = UBeyondCombatSubsystem::Get(this))
+		{
+			Combat->OnDamageDealt.Broadcast(DamageInstigator, this, Damage);
 		}
 	}
 
@@ -446,8 +602,15 @@ TArray<FGameplayAbilitySpecHandle> ABeyondCharacterBase::GrantAbilities(
 	TArray<FGameplayAbilitySpecHandle> AbilityHandles;
 	for (TSubclassOf<UGameplayAbility> Ability : AbilitiesToGrant)
 	{
-		if (!Ability)
+		if (!Ability || IsAbilitySuppressed(Ability))
 		{
+			continue;
+		}
+
+		// Granted already (ability set, or a second Blueprint call): hand back the existing spec
+		if (const FGameplayAbilitySpec* Existing = AbilitySystemComponent->FindAbilitySpecFromClass(Ability))
+		{
+			AbilityHandles.Add(Existing->Handle);
 			continue;
 		}
 

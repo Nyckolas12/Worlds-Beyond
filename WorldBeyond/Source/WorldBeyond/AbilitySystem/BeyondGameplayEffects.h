@@ -29,3 +29,29 @@ class WORLDBEYOND_API UBeyondGE_Heal : public UGameplayEffect
 public:
 	UBeyondGE_Heal();
 };
+
+/**
+ * Cooldown used by UBeyondGameplayAbility's Cooldown Duration: lasts SetByCaller.Duration seconds and grants
+ * the ability's Cooldown Tags through the spec, so one effect class serves every ability.
+ */
+UCLASS()
+class WORLDBEYOND_API UBeyondGE_Cooldown : public UGameplayEffect
+{
+	GENERATED_BODY()
+
+public:
+	UBeyondGE_Cooldown();
+};
+
+/**
+ * A brand (Sunbrand) on a target: lasts SetByCaller.Duration seconds. What the brand does is tracked by
+ * UBeyondCombatSubsystem; the effect gives it a lifetime and shows up in showdebug abilitysystem.
+ */
+UCLASS()
+class WORLDBEYOND_API UBeyondGE_Brand : public UGameplayEffect
+{
+	GENERATED_BODY()
+
+public:
+	UBeyondGE_Brand();
+};

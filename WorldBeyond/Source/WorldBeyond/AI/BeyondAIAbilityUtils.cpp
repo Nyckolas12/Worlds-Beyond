@@ -9,9 +9,10 @@ namespace BeyondAI
 {
 	namespace
 	{
-		bool IsReady(UAbilitySystemComponent* ASC, const FGameplayAbilitySpec& Spec)
+		bool IsReady(const UAbilitySystemComponent* ASC, const FGameplayAbilitySpec& Spec)
 		{
-			return !Spec.IsActive() && Spec.Ability->CanActivateAbility(Spec.Handle, ASC->AbilityActorInfo.Get());
+			const UGameplayAbility* Source = Spec.GetPrimaryInstance() ? Spec.GetPrimaryInstance() : Spec.Ability.Get();
+			return !Spec.IsActive() && Source->CanActivateAbility(Spec.Handle, ASC->AbilityActorInfo.Get());
 		}
 	}
 
@@ -84,21 +85,32 @@ namespace BeyondAI
 
 	float GetPreferredEngageRange(const UAbilitySystemComponent* ASC)
 	{
-		float Range = 0.0f;
-		if (!ASC)
+		if (!ASC || !ASC->AbilityActorInfo.IsValid())
 		{
-			return Range;
+			return 0.0f;
 		}
 
+		// Stand where the longest-reaching ready ability works; with everything on cooldown, close in
+		// to the shortest reach (e.g. Ji-Woong walks up to sword range while Sunbrand recharges)
+		float ReadyRange = 0.0f;
+		float ShortestRange = TNumericLimits<float>::Max();
 		for (const FGameplayAbilitySpec& Spec : ASC->GetActivatableAbilities())
 		{
 			const UBeyondGameplayAbility* Ability = Cast<UBeyondGameplayAbility>(Spec.Ability);
 			if (Ability && Ability->bAIUsable && !Ability->bActivateOnGranted && Ability->AITargeting == EBeyondAITargeting::Enemy)
 			{
-				Range = FMath::Max(Range, Ability->AIMaxRange);
+				ShortestRange = FMath::Min(ShortestRange, Ability->AIMaxRange);
+				if (IsReady(ASC, Spec))
+				{
+					ReadyRange = FMath::Max(ReadyRange, Ability->AIMaxRange);
+				}
 			}
 		}
-		return Range;
+		if (ReadyRange > 0.0f)
+		{
+			return ReadyRange;
+		}
+		return ShortestRange < TNumericLimits<float>::Max() ? ShortestRange : 0.0f;
 	}
 
 	bool IsUsingAbility(const UAbilitySystemComponent* ASC)

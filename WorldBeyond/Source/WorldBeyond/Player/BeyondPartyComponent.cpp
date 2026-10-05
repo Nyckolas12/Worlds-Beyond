@@ -6,6 +6,9 @@
 #include "AbilitySystem/BeyondCombatLibrary.h"
 #include "Characters/BeyondCharacterBase.h"
 #include "EngineUtils.h"
+#include "AbilitySystemComponent.h"
+#include "BeyondGameplayTags.h"
+#include "Game/BeyondCombatSubsystem.h"
 #include "Game/BeyondGameMode.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
@@ -23,6 +26,126 @@ UBeyondPartyComponent::UBeyondPartyComponent()
 APlayerController* UBeyondPartyComponent::GetPlayerController() const
 {
 	return Cast<APlayerController>(GetOwner());
+}
+
+void UBeyondPartyComponent::BeginPlay()
+{
+	Super::BeginPlay();
+
+	if (UBeyondCombatSubsystem* Combat = UBeyondCombatSubsystem::Get(this))
+	{
+		Combat->OnDamageDealt.AddUniqueDynamic(this, &ThisClass::HandleDamageDealt);
+	}
+}
+
+void UBeyondPartyComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (UBeyondCombatSubsystem* Combat = UBeyondCombatSubsystem::Get(this))
+	{
+		Combat->OnDamageDealt.RemoveDynamic(this, &ThisClass::HandleDamageDealt);
+	}
+	Super::EndPlay(EndPlayReason);
+}
+
+ABeyondCharacterBase* UBeyondPartyComponent::FindMemberFor(const AActor* Actor) const
+{
+	// Projectiles and weapons report themselves as the damage source; walk up to whoever fired them
+	for (int32 Depth = 0; Actor && Depth < 4; ++Depth)
+	{
+		for (ABeyondCharacterBase* Member : Members)
+		{
+			if (Member && Member == Actor)
+			{
+				return Member;
+			}
+		}
+		Actor = Actor->GetInstigator() && Actor->GetInstigator() != Actor ? Actor->GetInstigator() : Actor->GetOwner();
+	}
+	return nullptr;
+}
+
+void UBeyondPartyComponent::HandleDamageDealt(AActor* DamageInstigator, AActor* Target, float Damage)
+{
+	if (Damage <= 0.0f)
+	{
+		return;
+	}
+
+	// The duo move spends the meter; its own hits don't charge it again
+	for (const ABeyondCharacterBase* Member : Members)
+	{
+		const UAbilitySystemComponent* ASC = Member ? Member->GetAbilitySystemComponent() : nullptr;
+		if (ASC && ASC->HasMatchingGameplayTag(BeyondTags::State_Duo))
+		{
+			return;
+		}
+	}
+
+	if (FindMemberFor(Target))
+	{
+		AddBond(Damage * BondPerDamageTaken);
+		return;
+	}
+
+	ABeyondCharacterBase* Attacker = FindMemberFor(DamageInstigator);
+	if (!Attacker || !UBeyondCombatLibrary::AreHostile(Attacker, Target))
+	{
+		return;
+	}
+
+	float Gain = Damage * BondPerDamageDealt;
+
+	// Synergy: the other demigod hit this enemy moments ago
+	const float Now = GetWorld()->GetTimeSeconds();
+	FRecentHit& Recent = RecentHits.FindOrAdd(Target);
+	if (Recent.Member.IsValid() && Recent.Member.Get() != Attacker && Now - Recent.Time <= SynergyWindow && Now - Recent.LastSynergyTime > SynergyWindow)
+	{
+		Gain += SynergyBond;
+		Recent.LastSynergyTime = Now;
+	}
+	Recent.Member = Attacker;
+	Recent.Time = Now;
+
+	if (RecentHits.Num() > 64)
+	{
+		for (auto It = RecentHits.CreateIterator(); It; ++It)
+		{
+			if (!It->Key.IsValid() || Now - It->Value.Time > SynergyWindow)
+			{
+				It.RemoveCurrent();
+			}
+		}
+	}
+
+	AddBond(Gain);
+}
+
+void UBeyondPartyComponent::AddBond(float Amount)
+{
+	if (Amount > 0.0f)
+	{
+		SetBond(Bond + Amount);
+	}
+}
+
+bool UBeyondPartyComponent::ConsumeBond()
+{
+	if (!IsBondFull())
+	{
+		return false;
+	}
+	SetBond(0.0f);
+	return true;
+}
+
+void UBeyondPartyComponent::SetBond(float NewBond)
+{
+	NewBond = FMath::Clamp(NewBond, 0.0f, MaxBond);
+	if (!FMath::IsNearlyEqual(NewBond, Bond))
+	{
+		Bond = NewBond;
+		OnBondChanged.Broadcast(Bond, MaxBond);
+	}
 }
 
 void UBeyondPartyComponent::InitializeParty(APawn* InitialLeader)
@@ -242,6 +365,7 @@ void UBeyondPartyComponent::HandleMemberKilled(ABeyondCharacterBase* Member, AAc
 	if (!bAnyAlive)
 	{
 		GetWorld()->GetTimerManager().ClearTimer(AutoSwapTimer);
+		SetBond(0.0f);
 		OnPartyWiped.Broadcast();
 		if (ABeyondGameMode* GameMode = GetWorld()->GetAuthGameMode<ABeyondGameMode>())
 		{

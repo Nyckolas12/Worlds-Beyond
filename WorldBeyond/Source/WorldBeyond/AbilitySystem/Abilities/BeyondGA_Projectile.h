@@ -59,7 +59,7 @@ protected:
 private:
 	void HandleFireEvent(const FGameplayEventData* Payload);
 	void Fire();
-	void HandleMontageEnded(UAnimMontage* Montage, bool bInterrupted);
+	void HandleMontageEnded(UAnimMontage* Montage, bool bInterrupted, int32 Serial);
 
 	bool bFired = false;
 	bool bMontageDone = false;

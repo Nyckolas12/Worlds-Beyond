@@ -5,8 +5,10 @@
 #include "AbilitySystem/BeyondCombatLibrary.h"
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
+#include "BeyondGameplayTags.h"
 #include "Characters/BeyondCharacterBase.h"
 #include "EngineUtils.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "Navigation/PathFollowingComponent.h"
 #include "TimerManager.h"
 
@@ -33,6 +35,13 @@ void ABeyondCompanionController::OnPossess(APawn* InPawn)
 	if (ABeyondCharacterBase* PossessedCharacter = Cast<ABeyondCharacterBase>(InPawn))
 	{
 		PossessedCharacter->OnCharacterHitTaken.AddUniqueDynamic(this, &ThisClass::HandleSelfHitTaken);
+
+		// Without this, path following sets velocity directly and acceleration stays zero, so the anim
+		// Blueprints (ShouldMove = speed > 3 && acceleration != 0) keep the buddy in its idle pose while it slides
+		if (UCharacterMovementComponent* Movement = PossessedCharacter->GetCharacterMovement())
+		{
+			Movement->GetNavMovementProperties()->bUseAccelerationForPaths = true;
+		}
 	}
 
 	FollowSide = FMath::RandBool() ? 1.0f : -1.0f;
@@ -156,6 +165,13 @@ void ABeyondCompanionController::Think()
 	}
 
 	UAbilitySystemComponent* ASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(Self);
+
+	// The duo super move drives both demigods itself
+	if (ASC && ASC->HasMatchingGameplayTag(BeyondTags::State_Duo))
+	{
+		StopMovement();
+		return;
+	}
 
 	// Let a running ability (montage, combo) finish before deciding again
 	if (BeyondAI::IsUsingAbility(ASC))

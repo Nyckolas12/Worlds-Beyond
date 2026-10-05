@@ -32,3 +32,25 @@ UBeyondGE_Heal::UBeyondGE_Heal()
 	Modifiers.Add(MakeSetByCallerModifier(UCharacterAttributeSet::GetIncomingHealAttribute(), BeyondTags::SetByCaller_Heal));
 	GameplayCues.Add(FGameplayEffectCue(BeyondTags::GameplayCue_Heal_Burst, 0.0f, 1.0f));
 }
+
+namespace
+{
+	FGameplayEffectModifierMagnitude SetByCallerDuration()
+	{
+		FSetByCallerFloat SetByCaller;
+		SetByCaller.DataTag = BeyondTags::SetByCaller_Duration;
+		return FGameplayEffectModifierMagnitude(SetByCaller);
+	}
+}
+
+UBeyondGE_Cooldown::UBeyondGE_Cooldown()
+{
+	DurationPolicy = EGameplayEffectDurationType::HasDuration;
+	DurationMagnitude = SetByCallerDuration();
+}
+
+UBeyondGE_Brand::UBeyondGE_Brand()
+{
+	DurationPolicy = EGameplayEffectDurationType::HasDuration;
+	DurationMagnitude = SetByCallerDuration();
+}
