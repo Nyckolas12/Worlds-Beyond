@@ -4,7 +4,8 @@ Worlds Beyond - pass 4: fixes from the third playtest.
 Run with the editor closed, after building the C++:
     UnrealEditor-Cmd.exe <path>/WorldBeyond.uproject -run=pythonscript -script=<path>/Scripts/Migration/migrate_pass4.py -unattended -nosplash -NullRHI
 
-- Ji-Woong's LMB runs the GAS sword combo (GA_JiWoong_SwordCombo) instead of the old Blueprint one: the combo window
+- Ji-Woong's LMB runs the GAS sword combo (GA_JiWoong_SwordCombo) instead of the old Blueprint one (only his raw LMB
+  event is switched off; "1" still draws / sheathes the sword): the combo window
   is 15 % longer, his attack voice line plays once per combo, and swings go on the upper body while he moves.
 - Angel's staff works like Ji-Woong's sword: it rests on his back, he draws / stows it with the MagicStaff pack's
   animations (upper body), his idle follows it, and he draws it by himself near enemies or when he casts.
@@ -18,8 +19,8 @@ import sys
 import unreal
 
 sys.path.insert(0, os.path.join(os.path.abspath(unreal.Paths.project_dir()), "Scripts", "Migration"))
-from migration_common import (BACKUP_DIR, bp_class, cdo, ensure_blueprint, load, log, map_keys, save, set_props, tag,  # noqa: E402
-                              warn, write_report)
+from migration_common import (BACKUP_DIR, bp_class, cdo, ensure_blueprint, load, log, make_key, map_keys, save,  # noqa: E402
+                              set_props, tag, warn, write_report)
 
 ABILITIES = "/Game/WorldsBeyond/Abilities/"
 ANIMS = "/Game/WorldsBeyond/Characters/MetaHuman/Anims/"
@@ -55,8 +56,9 @@ def step_primary_attack_input():
         binding.set_editor_property("input_tag", tag("Ability.Input.Primary"))
         bindings.append(binding)
         log("%s: LMB presses Ability.Input.Primary (GA_JiWoong_SwordCombo)" % path)
-    # Its only raw key event is the old LMB combo (which replayed the voice line on every press)
-    set_props(bp, path, ability_input_bindings=bindings, disable_legacy_key_input=True)
+    # Only the old LMB combo event goes (it replayed the voice line on every press); "1" (draw / sheathe) and F stay
+    set_props(bp, path, ability_input_bindings=bindings, disable_legacy_key_input=True,
+              legacy_keys_to_disable=[make_key("LeftMouseButton")])
 
 
 def step_sword_combo():

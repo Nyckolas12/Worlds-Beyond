@@ -18,6 +18,7 @@
 #include "BrainComponent.h"
 #include "Characters/BeyondCharacterBase.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/InputComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Editor.h"
 #include "EngineUtils.h"
@@ -390,6 +391,8 @@ bool FBeyondPowersTest::RunTest(const FString& Parameters)
 			}
 		}
 		T.TestTrue(TEXT("Ji-Woong: LMB presses the GAS sword combo"), bLeftMouseMapped && JiWoong->IsLegacyKeyInputDisabled());
+		T.TestTrue(TEXT("Ji-Woong: only his old LMB key event is switched off (\"1\" still draws the sword)"),
+			JiWoong->GetLegacyKeysToDisable().Num() == 1 && JiWoong->GetLegacyKeysToDisable()[0] == EKeys::LeftMouseButton);
 		if (const UBeyondGA_MeleeCombo* Combo = GetSwordCombo(JiWoong))
 		{
 			T.TestTrue(TEXT("Sword combo window is 15 % longer"), FMath::IsNearlyEqual(Combo->ComboWindowExtension, 0.15f, 0.01f));
@@ -795,6 +798,19 @@ bool FBeyondPowersTest::RunTest(const FString& Parameters)
 			PC->PartyComponent->SwapLeader();
 			T.TestTrue(TEXT("Ji-Woong leads after the swap"), PC->PartyComponent->GetLeader() == JiWoong);
 			T.TestTrue(TEXT("Swap refreshed the ability bar (Event.Abilities.Changed)"), State->AbilitiesChangedEvents > 0);
+
+			// His Blueprint "1" (draw / sheathe) is still bound; the old LMB combo event is not
+			bool bOneBound = false;
+			bool bLeftMouseBound = false;
+			if (const UInputComponent* Input = JiWoong->InputComponent)
+			{
+				for (const FInputKeyBinding& Binding : Input->KeyBindings)
+				{
+					bOneBound |= Binding.Chord.Key == EKeys::One;
+					bLeftMouseBound |= Binding.Chord.Key == EKeys::LeftMouseButton;
+				}
+			}
+			T.TestTrue(TEXT("Controlling Ji-Woong, \"1\" is bound and the old LMB event isn't"), bOneBound && !bLeftMouseBound);
 		}
 		return true;
 	}));

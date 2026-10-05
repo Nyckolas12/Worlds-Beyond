@@ -7,6 +7,7 @@
 #include "AbilitySystemInterface.h"
 #include "AbilitySystemComponent.h"
 #include "GenericTeamAgentInterface.h"
+#include "InputCoreTypes.h"
 #include "AbilitySystem/BeyondAbilitySet.h"
 #include "Characters/BeyondLegacyDamageBridge.h"
 #include "WorldBeyond/CharacterAttributeSet.h"
@@ -120,6 +121,8 @@ public:
 
 	bool IsLegacyKeyInputDisabled() const { return bDisableLegacyKeyInput; }
 
+	const TArray<FKey>& GetLegacyKeysToDisable() const { return LegacyKeysToDisable; }
+
 protected:
 	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category = "AbilitySystem")
 	EGameplayEffectReplicationMode ASCReplicationMode = EGameplayEffectReplicationMode::Mixed;
@@ -158,6 +161,13 @@ protected:
 	// Drop the old raw key events (Blueprint "Keyboard F / Left Mouse Button" nodes). Turn on once those attacks are GAS abilities.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	bool bDisableLegacyKeyInput = false;
+
+	/**
+	 * Only these keys' raw events are dropped; empty drops every one. Ji-Woong: Left Mouse Button (his LMB is the GAS
+	 * sword combo now), so his "1" draw / sheathe and other Blueprint keys keep working.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (EditCondition = "bDisableLegacyKeyInput"))
+	TArray<FKey> LegacyKeysToDisable;
 
 	// Releasing an ability's key confirms its targeting (hold to aim, release to cast)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")

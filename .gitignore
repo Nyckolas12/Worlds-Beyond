@@ -84,3 +84,6 @@ WorldBeyond/.vs/
 WorldBeyond/*.sln
 WorldBeyond/*.slnx
 WorldBeyond/*.DotSettings.user
+# Python bytecode (editor migration scripts)
+__pycache__/
+*.pyc

@@ -245,7 +245,17 @@ void ABeyondCharacterBase::PawnClientRestart()
 	// Blueprint key-event nodes are bound during Super; ability inputs replace them
 	if (bDisableLegacyKeyInput && InputComponent)
 	{
-		InputComponent->KeyBindings.Reset();
+		if (LegacyKeysToDisable.IsEmpty())
+		{
+			InputComponent->KeyBindings.Reset();
+		}
+		else
+		{
+			InputComponent->KeyBindings.RemoveAll([this](const FInputKeyBinding& Binding)
+			{
+				return LegacyKeysToDisable.Contains(Binding.Chord.Key);
+			});
+		}
 	}
 }
 
