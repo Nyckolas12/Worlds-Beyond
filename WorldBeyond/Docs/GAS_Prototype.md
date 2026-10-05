@@ -55,7 +55,8 @@ The meter (Higgsfield concept A, built in C++ + UI materials, nothing to set up 
   *Bond | Arc* has the colours (*Color Blue / Purple / Gold*, *Purple Stop*, *Gold Start*), *Flow Speed*, the
   glyphs, sizes / curve (*Arc Radius*, *Band Thickness*…), *Show Duo Icon While Charging* and the animation speeds.
   Its position is *Bond Meter Offset* on `BP_PC` (default 50 px up from the bottom centre so the arc ends flank the
-  ability icons). The look itself (noise, flames, frame) is the Custom node in each `M_UI_*` material.
+  ability icons). If it ever doesn't show, search the Output Log for "Bond meter": it logs the class and size it was
+  given (or that the `M_UI_*` materials are missing). The look itself (noise, flames, frame) is the Custom node in each `M_UI_*` material.
 
 Ji-Woong walks around relaxed with the sword on his left hip. He draws it when an enemy comes within 10 m or the moment
 his sword combo starts, and puts it away after 8 s without enemies within 15 m. Tune it on

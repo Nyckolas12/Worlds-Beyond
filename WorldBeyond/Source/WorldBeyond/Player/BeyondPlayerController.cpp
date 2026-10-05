@@ -1,6 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "Player/BeyondPlayerController.h"
+#include "WorldBeyond.h"
 #include "AbilitySystem/BeyondCombatLibrary.h"
 #include "AbilitySystem/BeyondGameplayAbility.h"
 #include "BeyondGameplayTags.h"
@@ -208,7 +209,19 @@ void ABeyondPlayerController::CreateBondMeter()
 	BondWidget->AddToViewport(1);
 	BondWidget->SetAnchorsInViewport(FAnchors(0.5f, 1.0f));
 	BondWidget->SetAlignmentInViewport(FVector2D(0.5f, 1.0f));
+
+	// With a point anchor the viewport slot needs an explicit size: UE5 reads the widget's desired size once, before
+	// Slate has measured it, so without this the meter gets a 0 x 0 slot and never shows. Measure it now.
+	BondWidget->ForceLayoutPrepass();
+	FVector2D MeterSize = BondWidget->GetDesiredSize();
+	if (MeterSize.X < 1.0 || MeterSize.Y < 1.0)
+	{
+		MeterSize = FVector2D(800.0f, 320.0f);
+	}
+	BondWidget->SetDesiredSizeInViewport(MeterSize);
 	BondWidget->SetPositionInViewport(BondMeterOffset, false);
+	UE_LOG(LogBeyond, Log, TEXT("Bond meter: %s at (%.0f, %.0f) from the bottom centre, %.0f x %.0f"),
+		*GetNameSafe(BondWidget->GetClass()), BondMeterOffset.X, BondMeterOffset.Y, MeterSize.X, MeterSize.Y);
 
 	PartyComponent->OnBondChanged.AddUniqueDynamic(this, &ThisClass::HandleBondChanged);
 	HandleBondChanged(PartyComponent->GetBond(), PartyComponent->MaxBond);
