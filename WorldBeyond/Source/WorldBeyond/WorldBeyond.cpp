@@ -3,4 +3,6 @@
 #include "WorldBeyond.h"
 #include "Modules/ModuleManager.h"
 
+DEFINE_LOG_CATEGORY(LogBeyond);
+
 IMPLEMENT_PRIMARY_GAME_MODULE( FDefaultGameModuleImpl, WorldBeyond, "WorldBeyond" );

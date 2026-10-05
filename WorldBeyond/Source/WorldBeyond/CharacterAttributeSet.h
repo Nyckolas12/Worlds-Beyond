@@ -4,7 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "AttributeSet.h"
-#include  "AbilitySystemComponent.h"
+#include "AbilitySystemComponent.h"
 #include "CharacterAttributeSet.generated.h"
 #define ATTRIBUTE_ACCESSORS(ClassName, PropertyName)\
 	GAMEPLAYATTRIBUTE_PROPERTY_GETTER(ClassName,PropertyName)\
@@ -12,9 +12,13 @@
 	GAMEPLAYATTRIBUTE_VALUE_SETTER(PropertyName)\
 	GAMEPLAYATTRIBUTE_VALUE_INITTER(PropertyName)
 
+// Instigator, Causer, Magnitude, HitResponse (an Event.Hit.* tag, or empty when no reaction should play)
+DECLARE_MULTICAST_DELEGATE_FourParams(FBeyondAttributeEvent, AActor* /*Instigator*/, AActor* /*Causer*/, float /*Magnitude*/, FGameplayTag /*HitResponse*/);
 
 /**
- * 
+ * Health and stamina for every combatant (demigods and enemies).
+ * Damage and healing should go through the IncomingDamage / IncomingHeal meta attributes
+ * (see UBeyondCombatLibrary) so blocking, parrying, invincibility and death are handled in one place.
  */
 UCLASS()
 class WORLDBEYOND_API UCharacterAttributeSet : public UAttributeSet
@@ -27,19 +31,34 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Health", ReplicatedUsing = OnRep_CurrentHealth)
 	FGameplayAttributeData CurrentHealth;
 	ATTRIBUTE_ACCESSORS(UCharacterAttributeSet, CurrentHealth)
-	
+
 	UPROPERTY(BlueprintReadOnly, Category = "Health", ReplicatedUsing = OnRep_MaxHealth)
 	FGameplayAttributeData MaxHealth;
 	ATTRIBUTE_ACCESSORS(UCharacterAttributeSet, MaxHealth)
-	
-	//Stamina Attributes 
-	UPROPERTY(BlueprintReadOnly, Category = "Stamina", ReplicatedUsing = OnRep_CurrentHealth)
+
+	//Stamina Attributes
+	UPROPERTY(BlueprintReadOnly, Category = "Stamina", ReplicatedUsing = OnRep_CurrentStamina)
 	FGameplayAttributeData CurrentStamina;
 	ATTRIBUTE_ACCESSORS(UCharacterAttributeSet, CurrentStamina)
-	
-	UPROPERTY(BlueprintReadOnly, Category = "Stamina", ReplicatedUsing = OnRep_MaxHealth)
+
+	UPROPERTY(BlueprintReadOnly, Category = "Stamina", ReplicatedUsing = OnRep_MaxStamina)
 	FGameplayAttributeData MaxStamina;
 	ATTRIBUTE_ACCESSORS(UCharacterAttributeSet, MaxStamina)
+
+	//Meta Attributes - temporary values turned into health changes in PostGameplayEffectExecute
+	UPROPERTY(BlueprintReadOnly, Category = "Meta")
+	FGameplayAttributeData IncomingDamage;
+	ATTRIBUTE_ACCESSORS(UCharacterAttributeSet, IncomingDamage)
+
+	UPROPERTY(BlueprintReadOnly, Category = "Meta")
+	FGameplayAttributeData IncomingHeal;
+	ATTRIBUTE_ACCESSORS(UCharacterAttributeSet, IncomingHeal)
+
+	// Broadcast after damage (including blocked / parried hits with Magnitude 0)
+	mutable FBeyondAttributeEvent OnHitTaken;
+
+	// Broadcast once when CurrentHealth reaches zero
+	mutable FBeyondAttributeEvent OnOutOfHealth;
 
 protected:
 	UFUNCTION()
@@ -52,7 +71,7 @@ protected:
 	{
 		GAMEPLAYATTRIBUTE_REPNOTIFY(UCharacterAttributeSet, MaxHealth, OldMaxHealth);
 	}
-	
+
 	UFUNCTION()
 	virtual void OnRep_CurrentStamina(const FGameplayAttributeData& OldCurrentStamina) const
 	{
@@ -65,4 +84,17 @@ protected:
 	}
 
 	virtual void PreAttributeChange(const FGameplayAttribute& Attribute, float& NewValue) override;
+	virtual void PreAttributeBaseChange(const FGameplayAttribute& Attribute, float& NewValue) const override;
+	virtual void PostAttributeChange(const FGameplayAttribute& Attribute, float OldValue, float NewValue) override;
+	virtual bool PreGameplayEffectExecute(FGameplayEffectModCallbackData& Data) override;
+	virtual void PostGameplayEffectExecute(const FGameplayEffectModCallbackData& Data) override;
+
+private:
+	void ClampAttribute(const FGameplayAttribute& Attribute, float& NewValue) const;
+	void HandleIncomingDamage(const FGameplayEffectModCallbackData& Data);
+	void HandleIncomingHeal(const FGameplayEffectModCallbackData& Data);
+	void CheckOutOfHealth(const FGameplayEffectModCallbackData& Data);
+
+	// Set once OnOutOfHealth has fired, so death is only broadcast once
+	bool bOutOfHealth = false;
 };
