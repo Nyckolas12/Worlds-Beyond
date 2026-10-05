@@ -12,6 +12,8 @@ Run with the editor closed (needs the GeometryScripting plugin, enabled in World
 - Re-running starts again from the originals: tune the numbers below and run it again.
 - To go back to the original outfits, in PowerShell run `$env:BEYOND_FIT_REVERT = "1"` first, then the script
   (then `Remove-Item Env:BEYOND_FIT_REVERT`).
+- Looser / tighter without editing this file: set $env:BEYOND_FIT_KEEP, BEYOND_FIT_SNUG, BEYOND_FIT_MIN_GAP or
+  BEYOND_FIT_MAX_PULL before running (the values used are at the top of the report).
 - Report in Saved/MigrationBackups/last_run_fit.txt. Blueprints are backed up before they are saved.
 """
 import math
@@ -27,11 +29,21 @@ CHARACTERS = ["/Game/WorldsBeyond/Characters/Ji-Woong/BP_Ji-Woong",
               "/Game/WorldsBeyond/Characters/Angel/BP_Angel"]
 FITTED_SUFFIX = "_Fitted"
 
+
+def _setting(name, default):
+    """A tuning value, overridable from PowerShell: $env:BEYOND_FIT_KEEP = "0.75" (then run the script)."""
+    value = os.environ.get("BEYOND_FIT_" + name)
+    try:
+        return float(value) if value else default
+    except ValueError:
+        return default
+
+
 # All distances in cm, measured from the body's skin
-MIN_GAP = 0.6           # cloth closer than this (or inside the body) is pushed out to it
-SNUG = 1.5              # looseness that is always kept as it is
-KEEP = 0.4              # share of the looseness beyond SNUG that is kept (0 = skin tight, 1 = unchanged)
-MAX_PULL = 5.0          # no vertex moves in further than this
+MIN_GAP = _setting("MIN_GAP", 1.0)    # cloth closer than this (or inside the body) is pushed out to it
+SNUG = _setting("SNUG", 2.0)          # looseness that is always kept as it is
+KEEP = _setting("KEEP", 0.6)          # share of the looseness beyond SNUG that is kept (0 = skin tight, 1 = unchanged)
+MAX_PULL = _setting("MAX_PULL", 3.0)  # no vertex moves in further than this
 MAX_PUSH = 3.0          # ...or out further than this
 FREE_FROM = 10.0        # cloth this far from the body starts being left alone...
 FREE_BEYOND = 15.0      # ...and from here on is not moved at all (hood, drawstrings)
@@ -44,24 +56,43 @@ MISALIGNED_FRACTION = 0.5  # more than this share of the outfit far from the bod
 
 # ---------------------------------------------------------------- Geometry Script access
 
-def _lib(*names):
-    for name in names:
-        lib = getattr(unreal, name, None)
-        if lib is not None:
-            return lib
-    raise RuntimeError("Geometry Script library %s not found - is the GeometryScripting plugin enabled?" % names[0])
+REQUIRED_FUNCTIONS = ("copy_mesh_from_skeletal_mesh", "copy_mesh_to_skeletal_mesh", "build_bvh_for_mesh",
+                      "find_nearest_point_on_mesh", "get_all_vertex_positions", "get_all_triangle_indices",
+                      "get_triangle_face_normal", "get_mesh_bounding_box", "set_all_mesh_vertex_positions",
+                      "convert_vector_list_to_array", "convert_array_to_vector_list", "convert_triangle_list_to_array",
+                      "recompute_normals")
+# Bone weights only sharpen the hood / collar protection; without them it goes by height
+OPTIONAL_FUNCTIONS = ("get_all_bones_info", "get_vertex_bone_weights")
 
 
 def _gs():
-    return {
-        "assets": _lib("GeometryScript_AssetUtils"),
-        "spatial": _lib("GeometryScript_MeshSpatial"),
-        "queries": _lib("GeometryScript_MeshQueries"),
-        "edits": _lib("GeometryScript_MeshEdits", "GeometryScript_MeshBasicEdits", "GeometryScript_MeshBasicEditFunctions"),
-        "lists": _lib("GeometryScript_ListUtils", "GeometryScript_ListUtilityFunctions"),
-        "normals": _lib("GeometryScript_Normals", "GeometryScript_MeshNormals"),
-        "weights": getattr(unreal, "GeometryScript_BoneWeights", None),
-    }
+    """
+    The Geometry Script functions this script uses, looked up by function name across every Geometry Script library
+    (their Python class names differ between engine versions). Nothing is changed if one is missing.
+    """
+    libraries = [getattr(unreal, name) for name in dir(unreal) if name.startswith("GeometryScript")]
+    libraries.sort(key=lambda lib: 0 if isinstance(lib, type) and issubclass(lib, unreal.BlueprintFunctionLibrary) else 1)
+    functions = {}
+    for function in REQUIRED_FUNCTIONS + OPTIONAL_FUNCTIONS:
+        for library in libraries:
+            if hasattr(library, function):
+                functions[function] = getattr(library, function)
+                break
+    missing = [f for f in REQUIRED_FUNCTIONS if f not in functions]
+    if missing:
+        raise RuntimeError("Geometry Script functions not found: %s. Is the GeometryScripting plugin enabled? Libraries found: %s"
+                           % (", ".join(missing), ", ".join(sorted(l.__name__ for l in libraries if isinstance(l, type))) or "none"))
+    return functions
+
+
+def _pick(result, kind):
+    """
+    Geometry Script calls return their target mesh first, then their out parameters, as a tuple:
+    the first value of the wanted type, or the result itself when it isn't a tuple.
+    """
+    if isinstance(result, tuple):
+        return next((r for r in result if isinstance(r, kind)), None)
+    return result if isinstance(result, kind) else None
 
 
 def _read_lod(gs, skeletal_mesh, lod):
@@ -69,8 +100,7 @@ def _read_lod(gs, skeletal_mesh, lod):
     options = unreal.GeometryScriptCopyMeshFromAssetOptions()
     read = unreal.GeometryScriptMeshReadLOD()
     read.set_editor_property("lod_index", lod)
-    result = gs["assets"].copy_mesh_from_skeletal_mesh(skeletal_mesh, mesh, options, read)
-    outcome = result[-1] if isinstance(result, tuple) else None
+    outcome = _pick(gs["copy_mesh_from_skeletal_mesh"](skeletal_mesh, mesh, options, read), unreal.GeometryScriptOutcomePins)
     if outcome is not None and outcome != unreal.GeometryScriptOutcomePins.SUCCESS:
         raise RuntimeError("could not read LOD %d of %s" % (lod, skeletal_mesh.get_path_name()))
     return mesh
@@ -85,22 +115,19 @@ def _write_lod(gs, mesh, skeletal_mesh, lod):
             pass
     write = unreal.GeometryScriptMeshWriteLOD()
     write.set_editor_property("lod_index", lod)
-    result = gs["assets"].copy_mesh_to_skeletal_mesh(mesh, skeletal_mesh, options, write)
-    outcome = result[-1] if isinstance(result, tuple) else None
+    outcome = _pick(gs["copy_mesh_to_skeletal_mesh"](mesh, skeletal_mesh, options, write), unreal.GeometryScriptOutcomePins)
     if outcome is not None and outcome != unreal.GeometryScriptOutcomePins.SUCCESS:
         raise RuntimeError("could not write LOD %d of %s" % (lod, skeletal_mesh.get_path_name()))
 
 
 def _positions(gs, mesh):
-    result = gs["queries"].get_all_vertex_positions(mesh, False)
-    vector_list = result[0] if isinstance(result, tuple) else result
-    return list(gs["lists"].convert_vector_list_to_array(vector_list))
+    vector_list = _pick(gs["get_all_vertex_positions"](mesh, False), unreal.GeometryScriptVectorList)
+    return list(_pick(gs["convert_vector_list_to_array"](vector_list), unreal.Array) or [])
 
 
 def _triangles(gs, mesh):
-    result = gs["queries"].get_all_triangle_indices(mesh, False)
-    triangle_list = result[0] if isinstance(result, tuple) else result
-    return list(gs["lists"].convert_triangle_list_to_array(triangle_list))
+    triangle_list = _pick(gs["get_all_triangle_indices"](mesh, False), unreal.GeometryScriptTriangleList)
+    return list(_pick(gs["convert_triangle_list_to_array"](triangle_list), unreal.Array) or [])
 
 
 def _lod_count(skeletal_mesh):
@@ -143,19 +170,18 @@ def _smoothstep(edge0, edge1, x):
 
 def _protected_vertices(gs, mesh, count):
     """Vertices mostly skinned to the neck / head (hood, collar); None if the mesh has no readable bone weights."""
-    weights = gs["weights"]
-    if weights is None or not hasattr(weights, "get_all_bones_info"):
+    if "get_all_bones_info" not in gs or "get_vertex_bone_weights" not in gs:
         return None
     try:
-        info = weights.get_all_bones_info(mesh)
-        bones = info[-1] if isinstance(info, tuple) else info
+        info = gs["get_all_bones_info"](mesh)
+        bones = _pick(info, unreal.Array) or []
         names = {b.get_editor_property("index"): str(b.get_editor_property("name")).lower() for b in bones}
         protected = {i for i, n in names.items() if n.startswith(PROTECT_BONES)}
         profile = unreal.GeometryScriptBoneWeightProfile()
         result = set()
         for vid in range(count):
-            out = weights.get_vertex_bone_weights(mesh, vid, profile)
-            bone_weights = next((o for o in (out if isinstance(out, tuple) else (out,)) if isinstance(o, (list, unreal.Array))), [])
+            out = gs["get_vertex_bone_weights"](mesh, vid, profile)
+            bone_weights = _pick(out, unreal.Array) or []
             total = sum(w.get_editor_property("weight") for w in bone_weights) or 1.0
             if sum(w.get_editor_property("weight") for w in bone_weights if w.get_editor_property("bone_index") in protected) / total > 0.5:
                 result.add(vid)
@@ -175,14 +201,14 @@ def _fit_lod(gs, cloth, body, body_bvh, body_top, label):
     far = 0
     options = unreal.GeometryScriptSpatialQueryOptions()
     for vid, p in enumerate(positions):
-        result = gs["spatial"].find_nearest_point_on_mesh(body, body_bvh, unreal.Vector(*p), options)
-        nearest = next((r for r in result if isinstance(r, unreal.GeometryScriptTrianglePoint)), None) if isinstance(result, tuple) else result
+        result = gs["find_nearest_point_on_mesh"](body, body_bvh, unreal.Vector(*p), options)
+        nearest = _pick(result, unreal.GeometryScriptTrianglePoint)
         if nearest is None or not nearest.get_editor_property("valid"):
             weight[vid] = 0.0
             continue
         surface = _vec(nearest.get_editor_property("position"))
-        normal_result = gs["queries"].get_triangle_face_normal(body, nearest.get_editor_property("triangle_id"))
-        normal = _vec(normal_result[0] if isinstance(normal_result, tuple) else normal_result)
+        normal_result = gs["get_triangle_face_normal"](body, nearest.get_editor_property("triangle_id"))
+        normal = _vec(_pick(normal_result, unreal.Vector))
 
         offset = _sub(p, surface)
         distance = _len(offset)
@@ -248,8 +274,8 @@ def _fit_lod(gs, cloth, body, body_bvh, body_top, label):
         displacement = smoothed
 
     moved = [unreal.Vector(p[0] + d[0], p[1] + d[1], p[2] + d[2]) for p, d in zip(positions, displacement)]
-    gs["edits"].set_all_mesh_vertex_positions(cloth, gs["lists"].convert_array_to_vector_list(moved))
-    gs["normals"].recompute_normals(cloth, unreal.GeometryScriptCalculateNormalsOptions())
+    gs["set_all_mesh_vertex_positions"](cloth, _pick(gs["convert_array_to_vector_list"](moved), unreal.GeometryScriptVectorList))
+    gs["recompute_normals"](cloth, unreal.GeometryScriptCalculateNormalsOptions())
 
     pulled = [_len(d) for d in displacement]
     log("%s: %d vertices, average move %.2f cm, largest %.2f cm" % (label, count, sum(pulled) / max(count, 1), max(pulled or [0.0])))
@@ -267,9 +293,9 @@ def fit_outfit(gs, original, body):
 
     body_mesh = _read_lod(gs, body, 0)
     # Out parameters come back as return values in Python: (mesh, bvh)
-    bvh_result = gs["spatial"].build_bvh_for_mesh(body_mesh)
-    bvh = next((r for r in bvh_result if isinstance(r, unreal.GeometryScriptDynamicMeshBVH)), None) if isinstance(bvh_result, tuple) else bvh_result
-    box = gs["queries"].get_mesh_bounding_box(body_mesh)
+    bvh_result = gs["build_bvh_for_mesh"](body_mesh)
+    bvh = _pick(bvh_result, unreal.GeometryScriptDynamicMeshBVH)
+    box = _pick(gs["get_mesh_bounding_box"](body_mesh), unreal.Box)
     body_top = box.max.z
 
     for lod in range(_lod_count(original)):
@@ -293,11 +319,14 @@ def _mesh_property(component):
 
 
 def _components(bp):
+    """The Blueprint's skeletal mesh components, each once (the subobject listing can repeat them)."""
     subsystem = unreal.get_engine_subsystem(unreal.SubobjectDataSubsystem)
     lib = unreal.SubobjectDataBlueprintFunctionLibrary
+    seen = set()
     for handle in subsystem.k2_gather_subobject_data_for_blueprint(bp):
         component = lib.get_object(lib.get_data(handle))
-        if isinstance(component, unreal.SkeletalMeshComponent):
+        if isinstance(component, unreal.SkeletalMeshComponent) and component.get_path_name() not in seen:
+            seen.add(component.get_path_name())
             yield component
 
 
@@ -322,6 +351,7 @@ def process_character(gs, bp_path, revert):
             body = mesh
 
     changed = False
+    fitted_by_original = {}  # original path -> fitted mesh, or None when it was skipped / failed
     for component in components:
         prop, mesh = _mesh_property(component)
         if not mesh or "/Clothing/" not in mesh.get_path_name():
@@ -340,16 +370,19 @@ def process_character(gs, bp_path, revert):
                 changed = True
             continue
 
-        if _is_footwear(original):
-            log("%s: %s is footwear, left as it is" % (bp_path, original.get_name()))
-            continue
-        if body is None:
-            warn("%s: no Body mesh found, can't fit %s" % (bp_path, original.get_name()))
-            continue
-        try:
-            fitted = fit_outfit(gs, original, body)
-        except Exception as e:
-            warn("%s: %s not fitted (%s)" % (bp_path, original.get_name(), e))
+        if original_path not in fitted_by_original:
+            fitted_by_original[original_path] = None
+            if _is_footwear(original):
+                log("%s: %s is footwear, left as it is" % (bp_path, original.get_name()))
+            elif body is None:
+                warn("%s: no Body mesh found, can't fit %s" % (bp_path, original.get_name()))
+            else:
+                try:
+                    fitted_by_original[original_path] = fit_outfit(gs, original, body)
+                except Exception as e:
+                    warn("%s: %s not fitted (%s)" % (bp_path, original.get_name(), e))
+        fitted = fitted_by_original[original_path]
+        if fitted is None:
             continue
         component.set_editor_property(prop, fitted)
         log("%s: %s now wears %s" % (bp_path, component.get_name(), fitted.get_name()))
@@ -365,6 +398,8 @@ def process_character(gs, bp_path, revert):
 def main():
     log("backups -> %s" % BACKUP_DIR)
     revert = os.environ.get("BEYOND_FIT_REVERT") == "1"
+    if not revert:
+        log("fit: MIN_GAP %.2f cm, SNUG %.2f cm, KEEP %.2f, MAX_PULL %.2f cm" % (MIN_GAP, SNUG, KEEP, MAX_PULL))
     try:
         gs = _gs()
     except RuntimeError as e:

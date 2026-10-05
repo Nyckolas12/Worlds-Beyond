@@ -52,9 +52,19 @@ public:
 	UPROPERTY(EditDefaultsOnly, Category = "UI|Bond")
 	TSubclassOf<UUserWidget> BondWidgetClass;
 
-	// Offset from the bottom centre of the screen
+	// Offset from the bottom centre of the screen (the arc meter's ends flank the ability bar)
 	UPROPERTY(EditDefaultsOnly, Category = "UI|Bond")
-	FVector2D BondMeterOffset = FVector2D(0.0f, -140.0f);
+	FVector2D BondMeterOffset = FVector2D(0.0f, -50.0f);
+
+	UFUNCTION(BlueprintPure, Category = "UI|Bond")
+	UUserWidget* GetBondWidget() const { return BondWidget; }
+
+	// Crosshair shown while the leader is a combat-ready caster (Angel with Aim Settings); leave empty to hide it
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Crosshair")
+	TSubclassOf<UUserWidget> CrosshairWidgetClass;
+
+	UFUNCTION(BlueprintPure, Category = "UI|Crosshair")
+	UUserWidget* GetCrosshairWidget() const { return CrosshairWidget; }
 
 	// Seconds the boss bar stays up after the boss dies
 	UPROPERTY(EditDefaultsOnly, Category = "UI|Boss", meta = (ClampMin = "0"))
@@ -84,6 +94,10 @@ private:
 	void Input_Swap();
 
 	void CreateBondMeter();
+	// Puts the Bond meter in the HUD (or the viewport when there is no HUD canvas); called again whenever the HUD is rebuilt
+	void AttachBondMeter();
+	void CreateCrosshair();
+	void UpdateCrosshair();
 	void RefreshDuoIcon();
 	void UpdateBossBar();
 	void ShowBossBar(ABeyondCharacterBase* Boss);
@@ -94,11 +108,24 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UUserWidget> HUDWidget;
 
+	// The Bond meter in use: ours, or one placed in the HUD in the designer
 	UPROPERTY(Transient)
 	TObjectPtr<UUserWidget> BondWidget;
 
+	// The meter this controller created (kept across HUD rebuilds so its fill and animation carry on)
+	UPROPERTY(Transient)
+	TObjectPtr<UUserWidget> OwnBondWidget;
+
+	bool bBondMeterCreated = false;
+	bool bBondMeterInViewport = false;
+
 	UPROPERTY(Transient)
 	TObjectPtr<UUserWidget> BossBarWidget;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UUserWidget> CrosshairWidget;
+
+	FTimerHandle CrosshairTimer;
 
 	TWeakObjectPtr<ABeyondCharacterBase> ShownBoss;
 	FDelegateHandle BossHealthHandle;

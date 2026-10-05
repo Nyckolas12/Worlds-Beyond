@@ -50,14 +50,21 @@ keep running; standing still he keeps the full footwork.
 
 | Slot | Power | Notes |
 |---|---|---|
-| LMB | Magic spell (Blueprint) | |
+| LMB | Magic spell (Blueprint) | Goes to the crosshair (shown with the staff out); hold RMB to aim |
 | Q | Blink — his lightning dash | Fixed: no more orange hair once the cue edit in `GAS_Prototype.md` is done |
-| E | **Lightning Strike** (`GA_Angel_LightningStrike`) | Rebuilt: hold to aim the ground decal, release; 100 damage in 2.5 m, stagger. His buddy AI uses it too |
+| E | **Arcane Spikes** (`GA_Angel_LightningStrike`) | Hold to aim the purple circle, release: blue / purple crystal spikes burst out of the ground in a wave; 100 damage in 2.5 m, stagger. His buddy AI uses it too |
 | R | Heal | |
 
 **The staff.** It rests diagonally on Angel's back and he walks relaxed (`MM_Idle`). He draws it when an enemy comes
 within 10 m or the moment he casts, and his idle becomes the staff stance (`UE5_WZ_Idle_Seq`); after 8 s of calm he
 stows it again. Draw and stow use the MagicStaff pack's back unsheathe / sheathe on the upper body, so he can keep walking.
+
+**Aiming.** With the staff out the camera sits over his right shoulder and a crosshair marks where his spells go; the
+enemy under it glows purple. Hold RMB to aim closer and turn with the camera. Every cast turns him to the crosshair.
+
+**Arcane Spikes (E).** No more yellow bolt: the ground answers him. Faceted crystals in Angel's blue-to-purple burst
+out of the floor from the centre outward (tallest in the middle, leaning out at the edge), flash, hold for a moment and
+sink back. The hit lands as the first crystals break the surface.
 
 Ideas that tie into Ji-Woong: Angel's lightning on a **Sunbranded** enemy *overcharges* it — the bolt chains to one more
 enemy and gives extra Bond. (Hook: `UBeyondCombatSubsystem::IsBranded`.)
@@ -66,7 +73,8 @@ enemy and gives extra Bond. (Hook: `UBeyondCombatSubsystem::IsBranded`.)
 
 ## Bond meter
 
-Shared by the party, shown bottom centre (blue → purple → gold; "HEAVEN'S JUDGMENT READY [G]" when full).
+Shared by the party. An animated arc over the ability bar: Angel's medallion on the left end, Ji-Woong's sun on the
+right; it fills left → right, blue and purple swirling together on the left into solid gold on the right.
 
 | Gain | Amount |
 |---|---|
@@ -76,8 +84,8 @@ Shared by the party, shown bottom centre (blue → purple → gold; "HEAVEN'S JU
 | Hits during Heaven's Judgment itself | none |
 
 Full at 100. Empties on use and on a party wipe. Tuned on `BP_PC → Party Component → Party | Bond`.
-The duo move sits in its own slot to the left of the meter: its icon (the **Icon** of `GA_Duo_HeavensJudgment`) is greyed
-out while charging and lights up, with the **G** key, when the meter is full.
+When it is full the duo move's medallion (the **Icon** of `GA_Duo_HeavensJudgment`, or a lightning bolt) appears above
+the middle of the arc with blue, purple and gold flames circling it and "READY [G]".
 
 ## Heaven's Judgment (duo super move)
 
@@ -105,5 +113,7 @@ All timings, damage, radii, montages and effects are properties on `GA_Duo_Heave
   to Ji-Woong's blade during Absorb, a ground-cracking shockwave ring.
 - Camera: pull back and orbit during Heaven, snap in on the slam; 0.1 s hit-stop at impact.
 - Audio: thunder layers per flash, a rising charge during Absorb, a bass drop on impact; both voice actors call it out.
-- UI: pulse / sound when the meter fills; a hint when the partner is too far away.
+- UI: a sound when the meter fills; a hint when the partner is too far away. The meter follows Higgsfield concept A
+  (pass 6); painted medallion art could replace the drawn sun / bolt and the staff glyph.
+- Arcane Spikes: a dust / shard burst and a ground-crack decal when the crystals break through.
 - Icons: the new abilities show placeholder icons in the ability bar (`DT_AbilityMetaData`).

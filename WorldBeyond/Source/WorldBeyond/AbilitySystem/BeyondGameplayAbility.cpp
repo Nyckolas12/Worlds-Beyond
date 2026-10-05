@@ -44,16 +44,10 @@ FRotator UBeyondGameplayAbility::GetAimRotation(FVector Origin) const
 	const APawn* Pawn = Cast<APawn>(GetAvatarActorFromActorInfo());
 	if (const APlayerController* PC = Pawn ? Cast<APlayerController>(Pawn->GetController()) : nullptr)
 	{
-		// Trace from the camera so projectiles land on the crosshair, not parallel to it
-		FVector CameraLocation;
-		FRotator CameraRotation;
-		PC->GetPlayerViewPoint(CameraLocation, CameraRotation);
-
-		const FVector TraceEnd = CameraLocation + CameraRotation.Vector() * 10000.0f;
+		// Trace from the camera so projectiles land on the crosshair, not parallel to it (same trace as the crosshair)
 		FHitResult Hit;
-		FCollisionQueryParams Params(SCENE_QUERY_STAT(BeyondAim), false, Pawn);
-		const bool bHit = GetWorld()->LineTraceSingleByChannel(Hit, CameraLocation, TraceEnd, ECC_Visibility, Params);
-		return ((bHit ? Hit.ImpactPoint : TraceEnd) - Origin).Rotation();
+		UBeyondCombatLibrary::TraceAlongView(Pawn, 10000.0f, Hit);
+		return ((Hit.bBlockingHit ? Hit.ImpactPoint : Hit.TraceEnd) - Origin).Rotation();
 	}
 
 	return Pawn ? Pawn->GetActorRotation() : FRotator::ZeroRotator;

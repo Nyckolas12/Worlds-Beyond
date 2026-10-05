@@ -22,6 +22,7 @@ namespace
 {
 	const FName DefaultSlotName(TEXT("DefaultSlot"));
 	constexpr float AutoTickInterval = 0.5f;
+	constexpr float HandoffTickInterval = 1.0f / 60.0f;
 }
 
 UBeyondGA_EquipWeapon::UBeyondGA_EquipWeapon()
@@ -161,6 +162,7 @@ bool UBeyondGA_EquipWeapon::SpawnWeapon(const FBeyondWeaponLoadout& Loadout)
 
 void UBeyondGA_EquipWeapon::DestroyWeapon()
 {
+	StopHandoff();
 	if (AActor* Weapon = EquippedWeapon.Get())
 	{
 		Weapon->Destroy();
@@ -170,7 +172,71 @@ void UBeyondGA_EquipWeapon::DestroyWeapon()
 	bDrawn = false;
 }
 
-void UBeyondGA_EquipWeapon::PlaceInHand()
+void UBeyondGA_EquipWeapon::AttachWeapon(FName Socket, const FTransform& TargetRelative, bool bBlend)
+{
+	AActor* Weapon = EquippedWeapon.Get();
+	USkeletalMeshComponent* Mesh = GetAnimatedMesh();
+	UWorld* World = GetWorld();
+	if (!Weapon || !Mesh || !World)
+	{
+		return;
+	}
+	StopHandoff();
+
+	if (!bBlend || HandoffBlendTime <= 0.0f)
+	{
+		Weapon->AttachToComponent(Mesh, FAttachmentTransformRules::SnapToTargetNotIncludingScale, Socket);
+		Weapon->SetActorRelativeLocation(TargetRelative.GetLocation());
+		Weapon->SetActorRelativeRotation(TargetRelative.GetRotation());
+		return;
+	}
+
+	// Stay where it is for a moment (the hand has just reached it), then ease onto the socket
+	Weapon->AttachToComponent(Mesh, FAttachmentTransformRules(EAttachmentRule::KeepWorld, EAttachmentRule::KeepWorld, EAttachmentRule::KeepRelative, false), Socket);
+	HandoffStart = Weapon->GetRootComponent()->GetRelativeTransform();
+	HandoffTarget = TargetRelative;
+	HandoffStartTime = World->GetTimeSeconds();
+
+	// Bound to the weapon, not to this ability: GAS clears an ability's timers when it ends, and the sheathe can end mid-glide
+	TWeakObjectPtr<UBeyondGA_EquipWeapon> WeakThis(this);
+	World->GetTimerManager().SetTimer(HandoffTimer, FTimerDelegate::CreateWeakLambda(Weapon, [WeakThis]()
+	{
+		if (UBeyondGA_EquipWeapon* Ability = WeakThis.Get())
+		{
+			Ability->TickHandoff();
+		}
+	}), HandoffTickInterval, true);
+}
+
+void UBeyondGA_EquipWeapon::TickHandoff()
+{
+	AActor* Weapon = EquippedWeapon.Get();
+	const UWorld* World = GetWorld();
+	if (!Weapon || !World || HandoffBlendTime <= 0.0f)
+	{
+		StopHandoff();
+		return;
+	}
+
+	const float Alpha = FMath::Clamp((World->GetTimeSeconds() - HandoffStartTime) / HandoffBlendTime, 0.0f, 1.0f);
+	const float Eased = FMath::SmoothStep(0.0f, 1.0f, Alpha);
+	Weapon->SetActorRelativeLocation(FMath::Lerp(HandoffStart.GetLocation(), HandoffTarget.GetLocation(), Eased));
+	Weapon->SetActorRelativeRotation(FQuat::Slerp(HandoffStart.GetRotation(), HandoffTarget.GetRotation(), Eased));
+	if (Alpha >= 1.0f)
+	{
+		StopHandoff();
+	}
+}
+
+void UBeyondGA_EquipWeapon::StopHandoff()
+{
+	if (const UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(HandoffTimer);
+	}
+}
+
+void UBeyondGA_EquipWeapon::PlaceInHand(bool bBlend)
 {
 	AActor* Weapon = EquippedWeapon.Get();
 	USkeletalMeshComponent* Mesh = GetAnimatedMesh();
@@ -180,8 +246,7 @@ void UBeyondGA_EquipWeapon::PlaceInHand()
 		return;
 	}
 
-	Weapon->AttachToComponent(Mesh, FAttachmentTransformRules::SnapToTargetNotIncludingScale,
-		Mesh->DoesSocketExist(Loadout->AttachSocket) ? Loadout->AttachSocket : NAME_None);
+	AttachWeapon(Mesh->DoesSocketExist(Loadout->AttachSocket) ? Loadout->AttachSocket : NAME_None, FTransform::Identity, bBlend);
 	if (ABeyondWeapon* BeyondWeapon = Cast<ABeyondWeapon>(Weapon))
 	{
 		BeyondWeapon->bHolstered = false;
@@ -189,7 +254,7 @@ void UBeyondGA_EquipWeapon::PlaceInHand()
 	bDrawn = true;
 }
 
-void UBeyondGA_EquipWeapon::PlaceInHolster()
+void UBeyondGA_EquipWeapon::PlaceInHolster(bool bBlend)
 {
 	AActor* Weapon = EquippedWeapon.Get();
 	USkeletalMeshComponent* Mesh = GetAnimatedMesh();
@@ -202,14 +267,12 @@ void UBeyondGA_EquipWeapon::PlaceInHolster()
 	if (!Loadout->HolsterSocket.IsNone() && Mesh->DoesSocketExist(Loadout->HolsterSocket))
 	{
 		// A socket made for it (tuned in the Skeleton editor)
-		Weapon->AttachToComponent(Mesh, FAttachmentTransformRules::SnapToTargetNotIncludingScale, Loadout->HolsterSocket);
+		AttachWeapon(Loadout->HolsterSocket, FTransform::Identity, bBlend);
 	}
 	else
 	{
-		Weapon->AttachToComponent(Mesh, FAttachmentTransformRules::SnapToTargetNotIncludingScale,
-			Mesh->DoesSocketExist(Loadout->HolsterBone) ? Loadout->HolsterBone : NAME_None);
-		Weapon->SetActorRelativeLocation(Loadout->HolsterOffset.GetLocation());
-		Weapon->SetActorRelativeRotation(Loadout->HolsterOffset.GetRotation());
+		AttachWeapon(Mesh->DoesSocketExist(Loadout->HolsterBone) ? Loadout->HolsterBone : NAME_None,
+			FTransform(Loadout->HolsterOffset.GetRotation(), Loadout->HolsterOffset.GetLocation()), bBlend);
 	}
 
 	if (ABeyondWeapon* BeyondWeapon = Cast<ABeyondWeapon>(Weapon))
@@ -260,7 +323,7 @@ void UBeyondGA_EquipWeapon::BeginDraw(bool bInstant)
 
 	GetWorld()->GetTimerManager().SetTimer(MoveTimer, FTimerDelegate::CreateWeakLambda(this, [this]()
 	{
-		PlaceInHand();
+		PlaceInHand(true);
 		bPendingMoveDone = true;
 	}), FMath::Clamp(Loadout->GrabTime / Rate, 0.01f, Duration), false);
 	GetWorld()->GetTimerManager().SetTimer(FinishTimer, this, &ThisClass::Finish, Duration + 0.25f, false);
@@ -282,7 +345,7 @@ void UBeyondGA_EquipWeapon::BeginSheathe(bool bInstant)
 
 	GetWorld()->GetTimerManager().SetTimer(MoveTimer, FTimerDelegate::CreateWeakLambda(this, [this]()
 	{
-		PlaceInHolster();
+		PlaceInHolster(true);
 		bPendingMoveDone = true;
 	}), FMath::Clamp(Loadout->ReleaseTime / Rate, 0.01f, Duration), false);
 	GetWorld()->GetTimerManager().SetTimer(FinishTimer, this, &ThisClass::Finish, Duration + 0.25f, false);

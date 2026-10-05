@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "AbilitySystem/BeyondGameplayAbility.h"
+#include "Animation/AnimInstance.h"
 #include "BeyondGA_MeleeCombo.generated.h"
 
 class UAnimInstance;
@@ -30,9 +31,10 @@ struct FBeyondComboStep
 
 /**
  * Melee combo: each press during the combo window chains the next step.
- * Hit timing comes from the AN_HitScanStart / AN_HitScanEnd notifies (Event.HitScan.*), the combo window from
- * AN_ContinueComboStart / End (Event.ContinueCombo.*). Montages without those notifies fall back to the
- * HitWindow fractions below. Uses the equipped ABeyondWeapon's blade, or a sphere sweep in front of the character.
+ * Hit timing comes from the AN_HitScanStart / AN_HitScanEnd notifies (Event.HitScan.*). The combo window comes from
+ * the montage's own Montage Notify Window (Combo Window Notify Name) when it has one, else from AN_ContinueComboStart /
+ * End (Event.ContinueCombo.*). Montages without either fall back to the fractions below.
+ * Uses the equipped ABeyondWeapon's blade, or a sphere sweep in front of the character.
  *
  * With Legs Follow Movement, each swing plays on the upper body; while the character stands still a muted
  * full-body copy plays in sync on top, so standing swings keep their footwork and moving ones keep the walk / run.
@@ -76,6 +78,18 @@ public:
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combo", meta = (ClampMin = "0", ClampMax = "1"))
 	float ComboWindowExtension = 0.15f;
+
+	/**
+	 * Montage Notify Window marking when a press chains the next swing (Montage_SwordCombo: ResumeComboWindow, the
+	 * window the old Blueprint combo used). If the montage has Montage Notify Windows, only this name opens the combo
+	 * window and the AN_ContinueCombo events are ignored.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combo")
+	FName ComboWindowNotifyName = TEXT("ResumeComboWindow");
+
+	// AI users press during every window so their combos flow; off, they swing once, like a player who doesn't press
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Combo")
+	bool bAIChainsCombo = true;
 
 	// Played once when the combo starts; presses that chain the next swings never repeat it
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combo|Voice")
@@ -126,6 +140,8 @@ private:
 	void HandleMontageBlendingOut(UAnimMontage* Montage, bool bInterrupted, int32 StepIndex, int32 Serial);
 	void HandleMontageEnded(UAnimMontage* Montage, bool bInterrupted, int32 StepIndex, int32 Serial);
 	void CloseComboWindow();
+	// A window's end marker: closes it, a little later with Combo Window Extension
+	void EndComboWindow();
 	UAnimInstance* GetAnimInstance() const;
 
 	void PlayVoiceLine();
@@ -138,6 +154,13 @@ private:
 	UFUNCTION()
 	void HandleAnyMontageStarted(UAnimMontage* Montage);
 
+	// The swing montage's Montage Notify Windows (ResumeComboWindow)
+	UFUNCTION()
+	void HandleMontageNotifyBegin(FName NotifyName, const FBranchingPointNotifyPayload& BranchingPointPayload);
+	UFUNCTION()
+	void HandleMontageNotifyEnd(FName NotifyName, const FBranchingPointNotifyPayload& BranchingPointPayload);
+	bool IsComboWindowNotify(FName NotifyName, const FBranchingPointNotifyPayload& BranchingPointPayload) const;
+
 	int32 CurrentStep = 0;
 	bool bComboWindowOpen = false;
 	bool bNextStepQueued = false;
@@ -146,6 +169,8 @@ private:
 	bool bHitWindowOpen = false;
 	// A missed window stopped the swing; notifies still firing while it blends out are ignored
 	bool bComboStopped = false;
+	// This step's windows come from its Montage Notify Windows, not from the AN_ContinueCombo events
+	bool bWindowsFromMontage = false;
 	float ComboWindowOpenedTime = 0.0f;
 	int32 VoiceLinesPlayed = 0;
 

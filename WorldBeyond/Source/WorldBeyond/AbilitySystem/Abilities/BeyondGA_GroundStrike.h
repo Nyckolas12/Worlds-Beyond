@@ -8,6 +8,7 @@
 #include "AbilitySystem/BeyondGameplayAbility.h"
 #include "BeyondGA_GroundStrike.generated.h"
 
+class ABeyondSpikeBurst;
 class AGameplayAbilityTargetActor;
 class UAnimMontage;
 
@@ -33,6 +34,16 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Strike|Targeting", meta = (ClampMin = "100"))
 	float MaxTargetRange = 1500.0f;
 
+	// Recolour the reticle's decal (Decal Color and the material's Target Decal Color Parameter); e.g. purple instead of yellow
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Strike|Targeting")
+	bool bOverrideTargetDecalColor = false;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Strike|Targeting", meta = (EditCondition = "bOverrideTargetDecalColor"))
+	FLinearColor TargetDecalColor = FLinearColor(0.55f, 0.2f, 1.0f);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Strike|Targeting", meta = (EditCondition = "bOverrideTargetDecalColor"))
+	FName TargetDecalColorParameter = TEXT("Color");
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Strike")
 	TObjectPtr<UAnimMontage> CastMontage;
 
@@ -50,6 +61,10 @@ public:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Strike|FX")
 	FBeyondFX StrikeFX;
+
+	// Spikes that burst out of the ground over the strike area (Angel's arcane crystals), sized to Radius
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Strike|FX")
+	TSubclassOf<ABeyondSpikeBurst> SpikeBurstClass;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Strike", meta = (ClampMin = "0"))
 	float Damage = 100.0f;
@@ -84,6 +99,8 @@ private:
 	bool FindAILocation(FVector& OutLocation) const;
 	bool FindCrosshairLocation(FVector& OutLocation) const;
 	FVector ProjectToGround(const FVector& Location) const;
+	void ApplyTargetDecalColor(AActor* TargetActor) const;
+	void SpawnSpikeBurst();
 
 	void BeginCast(const FVector& Location);
 	void HandleCastEvent(const FGameplayEventData* Payload);
