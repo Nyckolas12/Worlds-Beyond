@@ -772,6 +772,38 @@ bool FBeyondPowersTest::RunTest(const FString& Parameters)
 		return true;
 	}));
 	ADD_LATENT_AUTOMATION_COMMAND(FWaitLatentCommand(0.5f));
+
+	// One click, no further presses (like the player): the combo ends after the first swing, not after all three
+	ADD_LATENT_AUTOMATION_COMMAND(FBeyondPowersStep([State]()
+	{
+		FAutomationTestBase& T = *State->Test;
+		ABeyondCharacterBase* JiWoong = State->JiWoong.Get();
+		UBeyondGA_MeleeCombo* Combo = GetSwordCombo(JiWoong);
+		if (!JiWoong || !Combo)
+		{
+			return true;
+		}
+		Combo->bAIChainsCombo = false;
+		T.TestTrue(TEXT("Sword combo activates for a single swing"), JiWoong->GetAbilitySystemComponent()->TryActivateAbility(FindSpec(JiWoong, TEXT("GA_JiWoong_SwordCombo"))));
+		return true;
+	}));
+	ADD_LATENT_AUTOMATION_COMMAND(FWaitLatentCommand(1.8f));
+	ADD_LATENT_AUTOMATION_COMMAND(FBeyondPowersStep([State]()
+	{
+		FAutomationTestBase& T = *State->Test;
+		ABeyondCharacterBase* JiWoong = State->JiWoong.Get();
+		UBeyondGA_MeleeCombo* Combo = GetSwordCombo(JiWoong);
+		if (!JiWoong || !Combo)
+		{
+			return true;
+		}
+		const UAnimInstance* Anim = JiWoong->GetCombatMesh() ? JiWoong->GetCombatMesh()->GetAnimInstance() : nullptr;
+		T.TestFalse(TEXT("Without another press the combo stops after the first swing (the montage holds three)"),
+			Combo->IsActive() || (Anim && Anim->IsAnyMontagePlaying()));
+		Combo->bAIChainsCombo = true;
+		JiWoong->StopAnimMontage(nullptr);
+		return true;
+	}));
 	ADD_LATENT_AUTOMATION_COMMAND(FBeyondPowersStep([State]()
 	{
 		FAutomationTestBase& T = *State->Test;

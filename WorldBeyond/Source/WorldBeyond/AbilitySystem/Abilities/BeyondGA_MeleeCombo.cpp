@@ -1,10 +1,13 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "AbilitySystem/Abilities/BeyondGA_MeleeCombo.h"
+#include "WorldBeyond.h"
 #include "AbilitySystem/BeyondCombatLibrary.h"
 #include "AbilitySystemComponent.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
+#include "Animation/AnimNotifies/AnimNotify.h"
+#include "Animation/AnimNotifies/AnimNotifyState.h"
 #include "BeyondGameplayTags.h"
 #include "Characters/BeyondCharacterBase.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -41,6 +44,9 @@ namespace
 
 	const FName ComboFallbackSlot(TEXT("DefaultSlot"));
 	constexpr float LegsUpdateInterval = 0.05f;
+	// Montage Notify Window (UAnimNotify_PlayMontageNotifyWindow, the Play Montage node's On Notify Begin / End),
+	// matched by class name to avoid depending on its AnimGraphRuntime header
+	const TCHAR* MontageNotifyWindowClass = TEXT("PlayMontageNotifyWindow");
 }
 
 UBeyondGA_MeleeCombo::UBeyondGA_MeleeCombo()
@@ -69,6 +75,8 @@ void UBeyondGA_MeleeCombo::ActivateAbility(const FGameplayAbilitySpecHandle Hand
 	if (UAnimInstance* AnimInstance = GetAnimInstance())
 	{
 		AnimInstance->OnMontageStarted.AddUniqueDynamic(this, &ThisClass::HandleAnyMontageStarted);
+		AnimInstance->OnPlayMontageNotifyBegin.AddUniqueDynamic(this, &ThisClass::HandleMontageNotifyBegin);
+		AnimInstance->OnPlayMontageNotifyEnd.AddUniqueDynamic(this, &ThisClass::HandleMontageNotifyEnd);
 		BoundAnimInstance = AnimInstance;
 	}
 
@@ -119,6 +127,31 @@ void UBeyondGA_MeleeCombo::HandleAnyMontageStarted(UAnimMontage* Montage)
 	}
 }
 
+bool UBeyondGA_MeleeCombo::IsComboWindowNotify(FName NotifyName, const FBranchingPointNotifyPayload& BranchingPointPayload) const
+{
+	// Only the swing's own windows: the muted footwork copy plays the same ones
+	return IsActive() && bWindowsFromMontage && !bComboStopped && NotifyName == ComboWindowNotifyName
+		&& BranchingPointPayload.SequenceAsset && BranchingPointPayload.SequenceAsset == SwingMontage.Get();
+}
+
+void UBeyondGA_MeleeCombo::HandleMontageNotifyBegin(FName NotifyName, const FBranchingPointNotifyPayload& BranchingPointPayload)
+{
+	if (IsComboWindowNotify(NotifyName, BranchingPointPayload))
+	{
+		bGotComboNotify = true;
+		OpenComboWindow();
+	}
+}
+
+void UBeyondGA_MeleeCombo::HandleMontageNotifyEnd(FName NotifyName, const FBranchingPointNotifyPayload& BranchingPointPayload)
+{
+	if (IsComboWindowNotify(NotifyName, BranchingPointPayload))
+	{
+		bGotComboNotify = true;
+		EndComboWindow();
+	}
+}
+
 void UBeyondGA_MeleeCombo::PlayStep(int32 StepIndex)
 {
 	CurrentStep = StepIndex;
@@ -153,6 +186,12 @@ void UBeyondGA_MeleeCombo::PlayStep(int32 StepIndex)
 	}
 	SwingMontage = Swing;
 	LegsMontage = Legs;
+
+	// The montage's own Montage Notify Windows (ResumeComboWindow) decide the combo window when it has them
+	bWindowsFromMontage = !ComboWindowNotifyName.IsNone() && Step.Montage->Notifies.ContainsByPredicate([](const FAnimNotifyEvent& Notify)
+	{
+		return Notify.NotifyStateClass && Notify.NotifyStateClass->GetClass()->GetName().Contains(MontageNotifyWindowClass);
+	});
 
 	const float Duration = AnimInstance->Montage_Play(Swing, Step.PlayRate);
 	if (Duration <= 0.0f)
@@ -210,6 +249,11 @@ void UBeyondGA_MeleeCombo::HandleGameplayEvent(const FGameplayEventData* Payload
 		bGotHitNotify = true;
 		StopHitWindow();
 	}
+	else if (bWindowsFromMontage)
+	{
+		// The montage's Montage Notify Windows are the combo window; these events would only disagree with them
+		return;
+	}
 	else if (Tag == ComboStartTag())
 	{
 		bGotComboNotify = true;
@@ -218,17 +262,21 @@ void UBeyondGA_MeleeCombo::HandleGameplayEvent(const FGameplayEventData* Payload
 	else if (Tag == ComboEndTag())
 	{
 		bGotComboNotify = true;
+		EndComboWindow();
+	}
+}
 
-		// Keep the window open a little longer than authored, in proportion to its length
-		const float Extra = bComboWindowOpen ? ComboWindowExtension * (GetWorld()->GetTimeSeconds() - ComboWindowOpenedTime) : 0.0f;
-		if (Extra > KINDA_SMALL_NUMBER)
-		{
-			GetWorld()->GetTimerManager().SetTimer(ComboCloseTimer, this, &ThisClass::CloseComboWindow, Extra, false);
-		}
-		else
-		{
-			CloseComboWindow();
-		}
+void UBeyondGA_MeleeCombo::EndComboWindow()
+{
+	// Keep the window open a little longer than authored, in proportion to its length
+	const float Extra = bComboWindowOpen ? ComboWindowExtension * (GetWorld()->GetTimeSeconds() - ComboWindowOpenedTime) : 0.0f;
+	if (Extra > KINDA_SMALL_NUMBER)
+	{
+		GetWorld()->GetTimerManager().SetTimer(ComboCloseTimer, this, &ThisClass::CloseComboWindow, Extra, false);
+	}
+	else
+	{
+		CloseComboWindow();
 	}
 }
 
@@ -255,9 +303,15 @@ void UBeyondGA_MeleeCombo::CloseComboWindow()
 	// One-montage combo: no press during the window ends the combo here
 	if (bWasOpen && bStopIfComboWindowMissed && !bNextStepQueued && ComboSteps.IsValidIndex(CurrentStep))
 	{
+		UE_LOG(LogBeyond, Verbose, TEXT("%s: combo window closed without a press, combo ends"), *GetNameSafe(GetAvatarActorFromActorInfo()));
 		StopHitWindow();
 		bComboStopped = true;
 		StopStepMontages(MissedWindowBlendOutTime);
+	}
+	else if (bWasOpen)
+	{
+		UE_LOG(LogBeyond, Verbose, TEXT("%s: combo window closed, next swing %s"), *GetNameSafe(GetAvatarActorFromActorInfo()),
+			bNextStepQueued ? TEXT("queued") : TEXT("not queued"));
 	}
 	else if (bStopIfComboWindowMissed)
 	{
@@ -268,9 +322,10 @@ void UBeyondGA_MeleeCombo::CloseComboWindow()
 
 void UBeyondGA_MeleeCombo::OpenComboWindow()
 {
-	// The previous window's extra time hasn't run out yet: settle it first
+	// The previous window is still open: its extra time hasn't run out, or its end marker never came. Settle it
+	// first, so a missing end can't chain the next swing by itself
 	FTimerManager& Timers = GetWorld()->GetTimerManager();
-	if (Timers.IsTimerActive(ComboCloseTimer))
+	if (Timers.IsTimerActive(ComboCloseTimer) || bComboWindowOpen)
 	{
 		Timers.ClearTimer(ComboCloseTimer);
 		CloseComboWindow();
@@ -282,10 +337,11 @@ void UBeyondGA_MeleeCombo::OpenComboWindow()
 
 	bComboWindowOpen = true;
 	ComboWindowOpenedTime = GetWorld()->GetTimeSeconds();
+	UE_LOG(LogBeyond, Verbose, TEXT("%s: combo window open"), *GetNameSafe(GetAvatarActorFromActorInfo()));
 
 	// The AI "presses" by queueing immediately so its combos flow
 	const APawn* Pawn = Cast<APawn>(GetAvatarActorFromActorInfo());
-	if (Pawn && !Pawn->IsPlayerControlled())
+	if (bAIChainsCombo && Pawn && !Pawn->IsPlayerControlled())
 	{
 		bNextStepQueued = true;
 	}
@@ -340,6 +396,7 @@ void UBeyondGA_MeleeCombo::InputPressed(const FGameplayAbilitySpecHandle Handle,
 	if (bComboWindowOpen)
 	{
 		bNextStepQueued = true;
+		UE_LOG(LogBeyond, Verbose, TEXT("%s: press inside the combo window, next swing queued"), *GetNameSafe(GetAvatarActorFromActorInfo()));
 	}
 }
 
@@ -448,6 +505,8 @@ void UBeyondGA_MeleeCombo::EndAbility(const FGameplayAbilitySpecHandle Handle, c
 	if (UAnimInstance* AnimInstance = BoundAnimInstance.Get())
 	{
 		AnimInstance->OnMontageStarted.RemoveDynamic(this, &ThisClass::HandleAnyMontageStarted);
+		AnimInstance->OnPlayMontageNotifyBegin.RemoveDynamic(this, &ThisClass::HandleMontageNotifyBegin);
+		AnimInstance->OnPlayMontageNotifyEnd.RemoveDynamic(this, &ThisClass::HandleMontageNotifyEnd);
 	}
 	BoundAnimInstance.Reset();
 
