@@ -7,9 +7,16 @@
 #include "AbilitySystemBlueprintLibrary.h"
 #include "Characters/BeyondCharacterBase.h"
 #include "AbilitySystemComponent.h"
+#include "AnimNodes/AnimNode_Slot.h"
+#include "Animation/AnimClassInterface.h"
+#include "Animation/AnimInstance.h"
 #include "BeyondGameplayTags.h"
 #include "CharacterAttributeSet.h"
+#include "EngineUtils.h"
+#include "GameFramework/PlayerController.h"
 #include "GenericTeamAgentInterface.h"
+#include "LevelSequenceActor.h"
+#include "LevelSequencePlayer.h"
 
 UAbilitySystemComponent* UBeyondCombatLibrary::GetASC(const AActor* Actor)
 {
@@ -339,4 +346,50 @@ FGameplayTag UBeyondCombatLibrary::HitResponseFromLegacy(uint8 DamageResponse)
 	case 4: return BeyondTags::Event_Hit_KnockBack;
 	default: return FGameplayTag();
 	}
+}
+
+bool UBeyondCombatLibrary::IsInCutscene(const AActor* Actor)
+{
+	UWorld* World = Actor ? Actor->GetWorld() : nullptr;
+	if (!World)
+	{
+		return false;
+	}
+
+	if (const APawn* Pawn = Cast<APawn>(Actor))
+	{
+		if (const APlayerController* PC = Cast<APlayerController>(Pawn->GetController()); PC && PC->bCinematicMode)
+		{
+			return true;
+		}
+	}
+
+	for (TActorIterator<ALevelSequenceActor> It(World); It; ++It)
+	{
+		ULevelSequencePlayer* Player = It->GetSequencePlayer();
+		if (Player && Player->IsPlaying() && !Player->GetObjectBindings(const_cast<AActor*>(Actor)).IsEmpty())
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+bool UBeyondCombatLibrary::HasAnimSlot(const UAnimInstance* AnimInstance, FName SlotName)
+{
+	const IAnimClassInterface* AnimClass = AnimInstance ? IAnimClassInterface::GetFromClass(AnimInstance->GetClass()) : nullptr;
+	if (!AnimClass || SlotName.IsNone())
+	{
+		return false;
+	}
+
+	for (const FStructProperty* Prop : AnimClass->GetAnimNodeProperties())
+	{
+		if (Prop && Prop->Struct && Prop->Struct->IsChildOf(FAnimNode_Slot::StaticStruct())
+			&& Prop->ContainerPtrToValuePtr<FAnimNode_Slot>(AnimInstance)->SlotName == SlotName)
+		{
+			return true;
+		}
+	}
+	return false;
 }

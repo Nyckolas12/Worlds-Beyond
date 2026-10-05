@@ -56,6 +56,7 @@ void ABeyondCompanionController::OnUnPossess()
 	}
 
 	GetWorldTimerManager().ClearTimer(ThinkTimer);
+	bHoldingForCutscene = false;
 	StopMovement();
 	ClearFocus(EAIFocusPriority::Gameplay);
 	CombatTarget.Reset();
@@ -153,6 +154,25 @@ void ABeyondCompanionController::Think()
 		StopMovement();
 		return;
 	}
+
+	// A cutscene drives the demigods (the intro walks the leader): don't follow or fight until it's over
+	if (UBeyondCombatLibrary::IsInCutscene(Self) || UBeyondCombatLibrary::IsInCutscene(LeaderCharacter))
+	{
+		if (!bHoldingForCutscene)
+		{
+			bHoldingForCutscene = true;
+			StopMovement();
+			ClearFocus(EAIFocusPriority::Gameplay);
+			CombatTarget.Reset();
+			// Zero velocity too, so the anim Blueprint drops the walk cycle
+			if (const ACharacter* SelfCharacter = Cast<ACharacter>(Self))
+			{
+				SelfCharacter->GetCharacterMovement()->StopMovementImmediately();
+			}
+		}
+		return;
+	}
+	bHoldingForCutscene = false;
 
 	// Fell far behind or got stuck: pop back next to the leader
 	if (FVector::Dist(Self->GetActorLocation(), LeaderCharacter->GetActorLocation()) > RegroupDistance)

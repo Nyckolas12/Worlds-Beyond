@@ -30,6 +30,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Companion")
 	AActor* GetCombatTarget() const { return CombatTarget.Get(); }
 
+	// Standing still because a cutscene (level sequence) has it or its leader
+	UFUNCTION(BlueprintPure, Category = "Companion")
+	bool IsHoldingForCutscene() const { return bHoldingForCutscene; }
+
 	// Seconds between decisions
 	UPROPERTY(EditDefaultsOnly, Category = "Companion", meta = (ClampMin = "0.05"))
 	float ThinkInterval = 0.2f;
@@ -87,4 +91,5 @@ private:
 	float FollowSide = 1.0f;
 
 	bool bIssuingOwnMove = false;
+	bool bHoldingForCutscene = false;
 };

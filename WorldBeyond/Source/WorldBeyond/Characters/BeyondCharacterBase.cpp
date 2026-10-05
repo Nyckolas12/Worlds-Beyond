@@ -114,11 +114,16 @@ void ABeyondCharacterBase::StopAnimMontage(UAnimMontage* AnimMontage)
 		return;
 	}
 
-	// None means "whatever is playing" (the sword combo's ResumeComboWindow end uses that)
-	UAnimMontage* Montage = AnimMontage ? AnimMontage : AnimInstance->GetCurrentActiveMontage();
-	if (Montage && !AnimInstance->Montage_GetIsStopped(Montage))
+	// None means "whatever is playing" (Blueprint combos end a missed window that way)
+	if (!AnimMontage)
 	{
-		AnimInstance->Montage_Stop(Montage->BlendOut.GetBlendTime(), Montage);
+		const UAnimMontage* Current = AnimInstance->GetCurrentActiveMontage();
+		AnimInstance->Montage_Stop(Current ? Current->BlendOut.GetBlendTime() : 0.25f, nullptr);
+		return;
+	}
+	if (!AnimInstance->Montage_GetIsStopped(AnimMontage))
+	{
+		AnimInstance->Montage_Stop(AnimMontage->BlendOut.GetBlendTime(), AnimMontage);
 	}
 }
 

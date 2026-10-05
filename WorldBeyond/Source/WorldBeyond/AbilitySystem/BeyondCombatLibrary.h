@@ -9,6 +9,7 @@
 #include "BeyondCombatLibrary.generated.h"
 
 class UAbilitySystemComponent;
+class UAnimInstance;
 
 /**
  * The single combat API for Worlds Beyond. Players, the companion, enemies, projectiles,
@@ -113,6 +114,16 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Beyond|Combat|Legacy")
 	static FGameplayTag HitResponseFromLegacy(uint8 DamageResponse);
+
+	/**
+	 * True while a cutscene holds Actor: a playing level sequence binds it (the intro), or its player controller
+	 * is in cinematic mode (sequences that disable movement input, e.g. the boss fight cutscene).
+	 */
+	UFUNCTION(BlueprintPure, Category = "Beyond|Combat", meta = (DefaultToSelf = "Actor"))
+	static bool IsInCutscene(const AActor* Actor);
+
+	// The anim Blueprint has a Slot node with this name (a montage on a slot it doesn't have shows nothing)
+	static bool HasAnimSlot(const UAnimInstance* AnimInstance, FName SlotName);
 
 private:
 	static UAbilitySystemComponent* GetASC(const AActor* Actor);

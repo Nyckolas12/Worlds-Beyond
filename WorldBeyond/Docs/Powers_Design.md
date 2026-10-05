@@ -42,6 +42,10 @@ comes within 10 m, or instantly when his sword combo starts, and his idle become
 of calm he sheathes it again. Draw and sheathe use the AwesomeSword Unsheath / Sheath animations on the upper body, so he
 can keep walking.
 
+**The sword combo.** LMB swings; pressing again inside each swing's window chains the next (the window is 15 % longer
+than the animation's notifies). He calls out once per combo. On the move the swings play on his upper body so his legs
+keep running; standing still he keeps the full footwork.
+
 ## Angel — the storm (current kit)
 
 | Slot | Power | Notes |
@@ -50,6 +54,10 @@ can keep walking.
 | Q | Blink — his lightning dash | Fixed: no more orange hair once the cue edit in `GAS_Prototype.md` is done |
 | E | **Lightning Strike** (`GA_Angel_LightningStrike`) | Rebuilt: hold to aim the ground decal, release; 100 damage in 2.5 m, stagger. His buddy AI uses it too |
 | R | Heal | |
+
+**The staff.** It rests diagonally on Angel's back and he walks relaxed (`MM_Idle`). He draws it when an enemy comes
+within 10 m or the moment he casts, and his idle becomes the staff stance (`UE5_WZ_Idle_Seq`); after 8 s of calm he
+stows it again. Draw and stow use the MagicStaff pack's back unsheathe / sheathe on the upper body, so he can keep walking.
 
 Ideas that tie into Ji-Woong: Angel's lightning on a **Sunbranded** enemy *overcharges* it — the bolt chains to one more
 enemy and gives extra Bond. (Hook: `UBeyondCombatSubsystem::IsBranded`.)

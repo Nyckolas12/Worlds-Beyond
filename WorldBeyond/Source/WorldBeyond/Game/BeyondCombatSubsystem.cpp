@@ -5,6 +5,7 @@
 #include "AbilitySystem/BeyondGameplayEffects.h"
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
+#include "Animation/AnimMontage.h"
 #include "BeyondGameplayTags.h"
 #include "Engine/OverlapResult.h"
 #include "Engine/World.h"
@@ -191,4 +192,59 @@ void UBeyondCombatSubsystem::CleanUp(UAbilitySystemComponent* TargetASC, FBrandS
 			TargetASC->RemoveActiveGameplayEffect(State.Effect);
 		}
 	}
+}
+
+UAnimMontage* UBeyondCombatSubsystem::GetMontageVariant(UAnimMontage* Source, FName SlotName, bool bMuteNotifies)
+{
+	if (!Source || SlotName.IsNone())
+	{
+		return Source;
+	}
+
+	const FName Key(*FString::Printf(TEXT("%s|%s|%d"), *Source->GetPathName(), *SlotName.ToString(), bMuteNotifies ? 1 : 0));
+	if (const TObjectPtr<UAnimMontage>* Existing = MontageVariants.Find(Key))
+	{
+		return *Existing;
+	}
+
+	const FName VariantName = MakeUniqueObjectName(this, UAnimMontage::StaticClass(), FName(*FString::Printf(TEXT("%s_%s"), *Source->GetName(), *SlotName.ToString())));
+	UAnimMontage* Variant = DuplicateObject<UAnimMontage>(Source, this, VariantName);
+	if (!Variant)
+	{
+		return Source;
+	}
+	// A runtime object, not an asset: never saved, collected with the world
+	Variant->ClearFlags(RF_Public | RF_Standalone);
+	Variant->SetFlags(RF_Transient);
+
+	for (FSlotAnimationTrack& Track : Variant->SlotAnimTracks)
+	{
+		Track.SlotName = SlotName;
+	}
+
+	if (bMuteNotifies)
+	{
+		// Left in place (montage branching points index into this array), they just never pass the trigger checks
+		for (FAnimNotifyEvent& Notify : Variant->Notifies)
+		{
+			Notify.NotifyTriggerChance = 0.0f;
+			Notify.TriggerWeightThreshold = 2.0f;
+		}
+	}
+
+	MontageVariants.Add(Key, Variant);
+	VariantSources.Add(Variant, Source);
+	return Variant;
+}
+
+UAnimMontage* UBeyondCombatSubsystem::GetMontageSource(UAnimMontage* Montage)
+{
+	if (const UBeyondCombatSubsystem* Owner = Montage ? Cast<UBeyondCombatSubsystem>(Montage->GetOuter()) : nullptr)
+	{
+		if (const TObjectPtr<UAnimMontage>* Source = Owner->VariantSources.Find(Montage))
+		{
+			return *Source;
+		}
+	}
+	return Montage;
 }

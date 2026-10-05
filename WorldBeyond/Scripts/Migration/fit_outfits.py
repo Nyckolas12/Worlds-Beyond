@@ -1,0 +1,382 @@
+"""
+Worlds Beyond - snug-fit the demigods' outfits to their MetaHuman bodies.
+
+The Streetwear hoodie / sweatshirt / pants were made for a bigger body, so they float off Angel and Ji-Woong. This pulls
+loose cloth in towards the body (keeping a small gap and part of the original looseness so folds survive), pushes
+cloth that clips into the body back out, and leaves alone what is meant to hang free (the hood, anything far away).
+
+Run with the editor closed (needs the GeometryScripting plugin, enabled in WorldBeyond.uproject):
+    UnrealEditor-Cmd.exe <path>/WorldBeyond.uproject -run=pythonscript -script=<path>/Scripts/Migration/fit_outfits.py -unattended -nosplash -NullRHI
+
+- Writes <Outfit>_Fitted next to each outfit (the original is never touched) and puts it on the character Blueprint.
+- Re-running starts again from the originals: tune the numbers below and run it again.
+- To go back to the original outfits, in PowerShell run `$env:BEYOND_FIT_REVERT = "1"` first, then the script
+  (then `Remove-Item Env:BEYOND_FIT_REVERT`).
+- Report in Saved/MigrationBackups/last_run_fit.txt. Blueprints are backed up before they are saved.
+"""
+import math
+import os
+import sys
+
+import unreal
+
+sys.path.insert(0, os.path.join(os.path.abspath(unreal.Paths.project_dir()), "Scripts", "Migration"))
+from migration_common import BACKUP_DIR, backup, load, log, warn, write_report  # noqa: E402
+
+CHARACTERS = ["/Game/WorldsBeyond/Characters/Ji-Woong/BP_Ji-Woong",
+              "/Game/WorldsBeyond/Characters/Angel/BP_Angel"]
+FITTED_SUFFIX = "_Fitted"
+
+# All distances in cm, measured from the body's skin
+MIN_GAP = 0.6           # cloth closer than this (or inside the body) is pushed out to it
+SNUG = 1.5              # looseness that is always kept as it is
+KEEP = 0.4              # share of the looseness beyond SNUG that is kept (0 = skin tight, 1 = unchanged)
+MAX_PULL = 5.0          # no vertex moves in further than this
+MAX_PUSH = 3.0          # ...or out further than this
+FREE_FROM = 10.0        # cloth this far from the body starts being left alone...
+FREE_BEYOND = 15.0      # ...and from here on is not moved at all (hood, drawstrings)
+SMOOTH_ITERATIONS = 6   # the displacement is smoothed over the mesh so seams and folds keep their shape
+PROTECT_BONES = ("neck", "head")  # vertices mostly skinned to these keep their shape (hood, collar)
+PROTECT_TOP = 12.0      # without bone weights: the top of the body this deep (neck) is protected instead
+SKIP_MATERIALS = ("sneaker", "shoe", "boot")  # footwear keeps its shape
+MISALIGNED_FRACTION = 0.5  # more than this share of the outfit far from the body: it isn't fitted to it, skip
+
+
+# ---------------------------------------------------------------- Geometry Script access
+
+def _lib(*names):
+    for name in names:
+        lib = getattr(unreal, name, None)
+        if lib is not None:
+            return lib
+    raise RuntimeError("Geometry Script library %s not found - is the GeometryScripting plugin enabled?" % names[0])
+
+
+def _gs():
+    return {
+        "assets": _lib("GeometryScript_AssetUtils"),
+        "spatial": _lib("GeometryScript_MeshSpatial"),
+        "queries": _lib("GeometryScript_MeshQueries"),
+        "edits": _lib("GeometryScript_MeshEdits", "GeometryScript_MeshBasicEdits", "GeometryScript_MeshBasicEditFunctions"),
+        "lists": _lib("GeometryScript_ListUtils", "GeometryScript_ListUtilityFunctions"),
+        "normals": _lib("GeometryScript_Normals", "GeometryScript_MeshNormals"),
+        "weights": getattr(unreal, "GeometryScript_BoneWeights", None),
+    }
+
+
+def _read_lod(gs, skeletal_mesh, lod):
+    mesh = unreal.new_object(unreal.DynamicMesh)
+    options = unreal.GeometryScriptCopyMeshFromAssetOptions()
+    read = unreal.GeometryScriptMeshReadLOD()
+    read.set_editor_property("lod_index", lod)
+    result = gs["assets"].copy_mesh_from_skeletal_mesh(skeletal_mesh, mesh, options, read)
+    outcome = result[-1] if isinstance(result, tuple) else None
+    if outcome is not None and outcome != unreal.GeometryScriptOutcomePins.SUCCESS:
+        raise RuntimeError("could not read LOD %d of %s" % (lod, skeletal_mesh.get_path_name()))
+    return mesh
+
+
+def _write_lod(gs, mesh, skeletal_mesh, lod):
+    options = unreal.GeometryScriptCopyMeshToAssetOptions()
+    for name, value in (("enable_recompute_normals", False), ("enable_recompute_tangents", True), ("replace_materials", False)):
+        try:
+            options.set_editor_property(name, value)
+        except Exception:
+            pass
+    write = unreal.GeometryScriptMeshWriteLOD()
+    write.set_editor_property("lod_index", lod)
+    result = gs["assets"].copy_mesh_to_skeletal_mesh(mesh, skeletal_mesh, options, write)
+    outcome = result[-1] if isinstance(result, tuple) else None
+    if outcome is not None and outcome != unreal.GeometryScriptOutcomePins.SUCCESS:
+        raise RuntimeError("could not write LOD %d of %s" % (lod, skeletal_mesh.get_path_name()))
+
+
+def _positions(gs, mesh):
+    result = gs["queries"].get_all_vertex_positions(mesh, False)
+    vector_list = result[0] if isinstance(result, tuple) else result
+    return list(gs["lists"].convert_vector_list_to_array(vector_list))
+
+
+def _triangles(gs, mesh):
+    result = gs["queries"].get_all_triangle_indices(mesh, False)
+    triangle_list = result[0] if isinstance(result, tuple) else result
+    return list(gs["lists"].convert_triangle_list_to_array(triangle_list))
+
+
+def _lod_count(skeletal_mesh):
+    try:
+        return unreal.get_editor_subsystem(unreal.SkeletalMeshEditorSubsystem).get_lod_count(skeletal_mesh)
+    except Exception:
+        pass
+    try:
+        return skeletal_mesh.get_lod_num()
+    except Exception:
+        return 1
+
+
+# ---------------------------------------------------------------- the fit
+
+def _vec(v):
+    return (v.x, v.y, v.z)
+
+
+def _sub(a, b):
+    return (a[0] - b[0], a[1] - b[1], a[2] - b[2])
+
+
+def _scale(a, s):
+    return (a[0] * s, a[1] * s, a[2] * s)
+
+
+def _dot(a, b):
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+
+
+def _len(a):
+    return math.sqrt(_dot(a, a))
+
+
+def _smoothstep(edge0, edge1, x):
+    t = min(max((x - edge0) / (edge1 - edge0), 0.0), 1.0)
+    return t * t * (3.0 - 2.0 * t)
+
+
+def _protected_vertices(gs, mesh, count):
+    """Vertices mostly skinned to the neck / head (hood, collar); None if the mesh has no readable bone weights."""
+    weights = gs["weights"]
+    if weights is None or not hasattr(weights, "get_all_bones_info"):
+        return None
+    try:
+        info = weights.get_all_bones_info(mesh)
+        bones = info[-1] if isinstance(info, tuple) else info
+        names = {b.get_editor_property("index"): str(b.get_editor_property("name")).lower() for b in bones}
+        protected = {i for i, n in names.items() if n.startswith(PROTECT_BONES)}
+        profile = unreal.GeometryScriptBoneWeightProfile()
+        result = set()
+        for vid in range(count):
+            out = weights.get_vertex_bone_weights(mesh, vid, profile)
+            bone_weights = next((o for o in (out if isinstance(out, tuple) else (out,)) if isinstance(o, (list, unreal.Array))), [])
+            total = sum(w.get_editor_property("weight") for w in bone_weights) or 1.0
+            if sum(w.get_editor_property("weight") for w in bone_weights if w.get_editor_property("bone_index") in protected) / total > 0.5:
+                result.add(vid)
+        return result
+    except Exception as e:
+        warn("bone weights unreadable (%s); protecting the top of the body by height instead" % e)
+        return None
+
+
+def _fit_lod(gs, cloth, body, body_bvh, body_top, label):
+    positions = [_vec(p) for p in _positions(gs, cloth)]
+    count = len(positions)
+    protected = _protected_vertices(gs, cloth, count)
+
+    displacement = [(0.0, 0.0, 0.0)] * count
+    weight = [1.0] * count
+    far = 0
+    options = unreal.GeometryScriptSpatialQueryOptions()
+    for vid, p in enumerate(positions):
+        result = gs["spatial"].find_nearest_point_on_mesh(body, body_bvh, unreal.Vector(*p), options)
+        nearest = next((r for r in result if isinstance(r, unreal.GeometryScriptTrianglePoint)), None) if isinstance(result, tuple) else result
+        if nearest is None or not nearest.get_editor_property("valid"):
+            weight[vid] = 0.0
+            continue
+        surface = _vec(nearest.get_editor_property("position"))
+        normal_result = gs["queries"].get_triangle_face_normal(body, nearest.get_editor_property("triangle_id"))
+        normal = _vec(normal_result[0] if isinstance(normal_result, tuple) else normal_result)
+
+        offset = _sub(p, surface)
+        distance = _len(offset)
+        signed = distance if _dot(offset, normal) >= 0.0 else -distance
+        if signed > FREE_BEYOND:
+            far += 1
+
+        if signed < MIN_GAP:
+            # Clipping into the body: out along the skin normal
+            target = surface[0] + normal[0] * MIN_GAP, surface[1] + normal[1] * MIN_GAP, surface[2] + normal[2] * MIN_GAP
+            move = _sub(target, p)
+            limit = MAX_PUSH
+        elif signed > SNUG:
+            wanted = SNUG + (signed - SNUG) * KEEP
+            move = _scale(offset, (wanted - signed) / distance)
+            limit = MAX_PULL
+        else:
+            move = (0.0, 0.0, 0.0)
+            limit = 0.0
+        length = _len(move)
+        if length > limit > 0.0:
+            move = _scale(move, limit / length)
+        displacement[vid] = move
+
+        w = 1.0 - _smoothstep(FREE_FROM, FREE_BEYOND, signed)
+        if protected is not None:
+            if vid in protected:
+                w = 0.0
+        else:
+            w *= _smoothstep(body_top - PROTECT_TOP, body_top - PROTECT_TOP * 2.0, p[2]) if PROTECT_TOP > 0 else 1.0
+        weight[vid] = w
+
+    if count and far > count * MISALIGNED_FRACTION:
+        raise RuntimeError("%s: %d of %d vertices are more than %.0f cm off the body - not fitted to this body, skipped"
+                           % (label, far, count, FREE_BEYOND))
+
+    displacement = [_scale(d, w) for d, w in zip(displacement, weight)]
+
+    # Smooth the field over the mesh so neighbouring vertices move together (no creases, seams stay closed)
+    neighbours = [set() for _ in range(count)]
+    for tri in _triangles(gs, cloth):
+        a, b, c = tri.x, tri.y, tri.z
+        if max(a, b, c) < count:
+            neighbours[a].update((b, c))
+            neighbours[b].update((a, c))
+            neighbours[c].update((a, b))
+    for _ in range(SMOOTH_ITERATIONS):
+        smoothed = []
+        for vid in range(count):
+            near = neighbours[vid]
+            if not near or weight[vid] <= 0.0:
+                smoothed.append(displacement[vid])
+                continue
+            avg = [0.0, 0.0, 0.0]
+            for n in near:
+                d = displacement[n]
+                avg[0] += d[0]
+                avg[1] += d[1]
+                avg[2] += d[2]
+            k = 1.0 / len(near)
+            own = displacement[vid]
+            smoothed.append(((own[0] + avg[0] * k) * 0.5, (own[1] + avg[1] * k) * 0.5, (own[2] + avg[2] * k) * 0.5))
+        displacement = smoothed
+
+    moved = [unreal.Vector(p[0] + d[0], p[1] + d[1], p[2] + d[2]) for p, d in zip(positions, displacement)]
+    gs["edits"].set_all_mesh_vertex_positions(cloth, gs["lists"].convert_array_to_vector_list(moved))
+    gs["normals"].recompute_normals(cloth, unreal.GeometryScriptCalculateNormalsOptions())
+
+    pulled = [_len(d) for d in displacement]
+    log("%s: %d vertices, average move %.2f cm, largest %.2f cm" % (label, count, sum(pulled) / max(count, 1), max(pulled or [0.0])))
+
+
+def fit_outfit(gs, original, body):
+    """<original>_Fitted, rebuilt from the original against body."""
+    original_path = original.get_path_name().split(".")[0]
+    fitted_path = original_path + FITTED_SUFFIX
+    eal = unreal.EditorAssetLibrary
+    # An earlier run's copy is reused (the Blueprint points at it); every LOD is rewritten from the original below
+    fitted = eal.load_asset(fitted_path) if eal.does_asset_exist(fitted_path) else eal.duplicate_asset(original_path, fitted_path)
+    if fitted is None:
+        raise RuntimeError("could not create %s" % fitted_path)
+
+    body_mesh = _read_lod(gs, body, 0)
+    # Out parameters come back as return values in Python: (mesh, bvh)
+    bvh_result = gs["spatial"].build_bvh_for_mesh(body_mesh)
+    bvh = next((r for r in bvh_result if isinstance(r, unreal.GeometryScriptDynamicMeshBVH)), None) if isinstance(bvh_result, tuple) else bvh_result
+    box = gs["queries"].get_mesh_bounding_box(body_mesh)
+    body_top = box.max.z
+
+    for lod in range(_lod_count(original)):
+        cloth = _read_lod(gs, original, lod)
+        _fit_lod(gs, cloth, body_mesh, bvh, body_top, "%s LOD%d" % (original.get_name(), lod))
+        _write_lod(gs, cloth, fitted, lod)
+
+    eal.save_loaded_asset(fitted, False)
+    return fitted
+
+
+# ---------------------------------------------------------------- character Blueprints
+
+def _mesh_property(component):
+    for name in ("skeletal_mesh_asset", "skeletal_mesh"):
+        try:
+            return name, component.get_editor_property(name)
+        except Exception:
+            continue
+    return None, None
+
+
+def _components(bp):
+    subsystem = unreal.get_engine_subsystem(unreal.SubobjectDataSubsystem)
+    lib = unreal.SubobjectDataBlueprintFunctionLibrary
+    for handle in subsystem.k2_gather_subobject_data_for_blueprint(bp):
+        component = lib.get_object(lib.get_data(handle))
+        if isinstance(component, unreal.SkeletalMeshComponent):
+            yield component
+
+
+def _is_footwear(mesh):
+    for material in mesh.get_editor_property("materials"):
+        interface = material.get_editor_property("material_interface")
+        names = (str(material.get_editor_property("material_slot_name")), interface.get_name() if interface else "")
+        if any(word in name.lower() for name in names for word in SKIP_MATERIALS):
+            return True
+    return False
+
+
+def process_character(gs, bp_path, revert):
+    bp = load(bp_path)
+    if bp is None:
+        return
+    components = list(_components(bp))
+    body = None
+    for component in components:
+        _, mesh = _mesh_property(component)
+        if component.get_name().startswith("Body") and mesh:
+            body = mesh
+
+    changed = False
+    for component in components:
+        prop, mesh = _mesh_property(component)
+        if not mesh or "/Clothing/" not in mesh.get_path_name():
+            continue
+        original_path = mesh.get_path_name().split(".")[0]
+        if original_path.endswith(FITTED_SUFFIX):
+            original_path = original_path[:-len(FITTED_SUFFIX)]
+        original = load(original_path)
+        if original is None:
+            continue
+
+        if revert:
+            if original != mesh:
+                component.set_editor_property(prop, original)
+                log("%s: %s back to %s" % (bp_path, component.get_name(), original.get_name()))
+                changed = True
+            continue
+
+        if _is_footwear(original):
+            log("%s: %s is footwear, left as it is" % (bp_path, original.get_name()))
+            continue
+        if body is None:
+            warn("%s: no Body mesh found, can't fit %s" % (bp_path, original.get_name()))
+            continue
+        try:
+            fitted = fit_outfit(gs, original, body)
+        except Exception as e:
+            warn("%s: %s not fitted (%s)" % (bp_path, original.get_name(), e))
+            continue
+        component.set_editor_property(prop, fitted)
+        log("%s: %s now wears %s" % (bp_path, component.get_name(), fitted.get_name()))
+        changed = True
+
+    if changed:
+        backup(bp_path)
+        unreal.BlueprintEditorLibrary.compile_blueprint(bp)
+        if not unreal.EditorAssetLibrary.save_loaded_asset(bp, False):
+            warn("failed to save %s" % bp_path)
+
+
+def main():
+    log("backups -> %s" % BACKUP_DIR)
+    revert = os.environ.get("BEYOND_FIT_REVERT") == "1"
+    try:
+        gs = _gs()
+    except RuntimeError as e:
+        warn(str(e))
+        write_report("last_run_fit.txt")
+        return
+    for path in CHARACTERS:
+        try:
+            process_character(gs, path, revert)
+        except Exception as e:  # keep going with the other character; report at the end
+            warn("%s: %s" % (path, e))
+    write_report("last_run_fit.txt")
+
+
+main()

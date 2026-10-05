@@ -5,14 +5,13 @@
 #include "AbilitySystem/BeyondCombatLibrary.h"
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
-#include "AnimNodes/AnimNode_Slot.h"
-#include "Animation/AnimClassInterface.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Animation/AnimSequenceBase.h"
 #include "BeyondGameplayTags.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/World.h"
+#include "Game/BeyondCombatSubsystem.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "TimerManager.h"
@@ -297,16 +296,9 @@ FName UBeyondGA_EquipWeapon::ResolveSlot(UAnimInstance* AnimInstance) const
 	}
 
 	// Only use the slot if the anim Blueprint actually has a Slot node for it; otherwise nothing would play
-	if (const IAnimClassInterface* AnimClass = IAnimClassInterface::GetFromClass(AnimInstance->GetClass()))
+	if (UBeyondCombatLibrary::HasAnimSlot(AnimInstance, AnimationSlot))
 	{
-		for (const FStructProperty* Prop : AnimClass->GetAnimNodeProperties())
-		{
-			if (Prop && Prop->Struct && Prop->Struct->IsChildOf(FAnimNode_Slot::StaticStruct())
-				&& Prop->ContainerPtrToValuePtr<FAnimNode_Slot>(AnimInstance)->SlotName == AnimationSlot)
-			{
-				return AnimationSlot;
-			}
-		}
+		return AnimationSlot;
 	}
 
 	static bool bWarned = false;
@@ -480,20 +472,23 @@ void UBeyondGA_EquipWeapon::AutoTick()
 
 	const UAnimInstance* AnimInstance = BindAnimInstance();
 
-	if (!EquippedWeapon.IsValid() || IsActive() || UBeyondCombatLibrary::IsActorDead(Character) || ASC->HasMatchingGameplayTag(BeyondTags::State_Duo))
+	if (!EquippedWeapon.IsValid() || IsActive() || UBeyondCombatLibrary::IsActorDead(Character) || ASC->HasMatchingGameplayTag(BeyondTags::State_Duo)
+		|| UBeyondCombatLibrary::IsInCutscene(Character))
 	{
 		return;
 	}
 
 	const float Now = GetWorld()->GetTimeSeconds();
-	if (ASC->HasMatchingGameplayTag(BeyondTags::Ability_Active))
+	const bool bBusy = ASC->HasMatchingGameplayTag(BeyondTags::Ability_Active);
+	if (bBusy)
 	{
 		LastCombatTime = Now;
 	}
 
 	if (!bDrawn)
 	{
-		if (AutoDrawRadius > 0.0f && !FindHostilesInRadius(Character->GetActorLocation(), AutoDrawRadius).IsEmpty())
+		// Not in the middle of an attack or cast: a slow draw would cut its montage short (one that needs the weapon quick-draws it)
+		if (!bBusy && AutoDrawRadius > 0.0f && !FindHostilesInRadius(Character->GetActorLocation(), AutoDrawRadius).IsEmpty())
 		{
 			UE_LOG(LogBeyond, Verbose, TEXT("%s: enemies close, drawing"), *Character->GetName());
 			RequestWeaponAction(BeyondTags::Weapon_Action_Draw, false);
@@ -520,7 +515,8 @@ void UBeyondGA_EquipWeapon::AutoTick()
 
 void UBeyondGA_EquipWeapon::HandleMontageStarted(UAnimMontage* Montage)
 {
-	if (!Montage || !DrawOnMontages.Contains(Montage))
+	// Combos play slot copies of their montage (upper body while moving); those count as the original
+	if (!Montage || !DrawOnMontages.Contains(UBeyondCombatSubsystem::GetMontageSource(Montage)))
 	{
 		return;
 	}

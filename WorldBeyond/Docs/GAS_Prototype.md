@@ -19,7 +19,7 @@ Ji-Woong's new powers and the duo super move are designed in [Powers_Design.md](
 | `ABeyondWeapon` | `Weapons/BeyondWeapon.*` | Parent of both `BP_Weapon_Base`s; melee hit-scan (`HitScanStart` / `HitScanEnd`) |
 | Party | `Player/BeyondPlayerController.*`, `Player/BeyondPartyComponent.*` | Tab swaps demigods, the other one is the AI buddy, auto-swap on death, stand next to a downed buddy for 3 s to revive, HUD follows the controlled demigod, **Bond meter**, **boss health bar** |
 | `UBeyondBondMeterWidget` | `UI/BeyondBondMeterWidget.*` | Bond meter HUD built in C++ (blue → purple → gold); swap `Bond Widget Class` on `BP_PC` for a designed one |
-| `ABeyondCompanionController` | `AI/BeyondCompanionController.*` | Buddy AI: follow (with walk animation), defend the leader, use abilities by their AI hints, regroup |
+| `ABeyondCompanionController` | `AI/BeyondCompanionController.*` | Buddy AI: follow (with walk animation), defend the leader, use abilities by their AI hints, regroup; stands still while a cutscene (level sequence) has it or its leader |
 | `ABeyondGameMode`, `ABeyondCheckpoint` | `Game/` | Party wipe → respawn at the last checkpoint (or player start) |
 | `BTTask_BeyondActivateAbility` | `AI/` | Behavior tree task to run any GAS ability on an enemy |
 
@@ -27,8 +27,8 @@ Ji-Woong's new powers and the duo super move are designed in [Powers_Design.md](
 
 | Key | Angel | Ji-Woong |
 |---|---|---|
-| LMB | Magic spell (Blueprint) | Sword combo (Blueprint) |
-| 1 | Equip staff (Blueprint) | Draw / sheathe the sword (it rests on his left hip) |
+| LMB | Magic spell (Blueprint) | **Sword combo** (`GA_JiWoong_SwordCombo`) — press during each swing to chain the next |
+| 1 | Draw / stow the staff (it rests on his back) | Draw / sheathe the sword (it rests on his left hip) |
 | 2 | Heal (same as R) | Heal (same as R) |
 | **Q** | Blink (lightning dash) | **Gilded Step** — golden dash through enemies, they're hit a moment later |
 | **E** | **Lightning Strike** — hold to aim, release to cast (RMB cancels) | **Sunbrand** — brand an enemy; your next sword hit detonates it |
@@ -45,8 +45,20 @@ Ji-Woong walks around relaxed with the sword on his left hip. He draws it when a
 his sword combo starts, and puts it away after 8 s without enemies within 15 m. Tune it on
 `/Game/WorldsBeyond/Abilities/JiWoong/GA_JiWoong_EquipWeapon` (*Auto* section; 0 turns a behaviour off).
 
+Angel does the same with his staff: it rests diagonally on his back, he draws it near enemies or the moment he casts
+(LMB spell, Lightning Strike, Arcane Bolt, Heaven's Judgment) and stows it after a quiet spell; "1" still toggles it.
+His idle switches between the relaxed `MM_Idle` and the staff stance `UE5_WZ_Idle_Seq`. Tune it on
+`/Game/WorldsBeyond/Abilities/Angel/GA_Angel_EquipStaff`.
+
+Ji-Woong's sword combo (`GA_JiWoong_SwordCombo`):
+- **Window:** each combo window stays open 15 % longer than the montage's notifies say (*Combo Window Extension*).
+- **Voice:** his attack line plays once when the combo starts, never again while you chain (*Combo Voice Line*).
+- **Moving:** while he walks or runs the swings play on the upper body and his legs keep moving; standing still he
+  keeps the full-body footwork, and starting / stopping mid-combo blends between the two (*Combo → Movement*).
+
 Ability slots are set per character in **Input → Ability Input Bindings**, abilities in **AbilitySystem → Ability Set**
-(`/Game/WorldsBeyond/Abilities/DA_AbilitySet_*`). Once LMB attacks are GAS abilities, tick **Disable Legacy Key Input**.
+(`/Game/WorldsBeyond/Abilities/DA_AbilitySet_*`). Once LMB attacks are GAS abilities, tick **Disable Legacy Key Input**
+(done for Ji-Woong: LMB → `IA_PrimaryAttack` → `Ability.Input.Primary`; Angel's LMB spell is still Blueprint).
 The ability bar shows only the controlled demigod's Q / E / R abilities (after edit 1 below). Icons come from
 `/Game/WorldsBeyond/Blueprints/Widgets/Data/DT_AbilityMetaData` (row name = ability class, e.g. `GA_JiWoong_Sunbrand_C`);
 the new abilities use placeholder icons for now.
@@ -91,9 +103,15 @@ C++ and scripts did everything else; these need node changes, which can't be scr
 7. *(Optional)* Delete the *Character Follow* section (Event Unpossessed → Spawn Default Controller → Follow Player) in both
    demigods, and the *Create Widget W_PlayerHud / Add to Viewport* chain in their BeginPlay. The buddy controller ignores the
    first, the player controller owns the HUD; they only cause a stray AI controller per swap and an "already added" warning.
+8. **Staff draw / stow on the upper body** — `/Game/WorldsBeyond/Characters/MetaHuman/Anims/ABP_Angel`: the same graph edit
+   as step 2 (steps 2–8 there; skip step 1, the **UpperBody** slot already exists on the shared skeleton). Until this is
+   done Angel stops walking while he draws or stows (the log says so once). `ABP_Angel_Staff` is no longer used.
+9. *(Optional, fine tuning)* **Staff on the back** — pass 4 works out where the staff rests from the draw animation and
+   writes it to the report. To move it, add a socket named `staff_back_socket` on `spine_05` in `metahuman_base_skel`,
+   preview the staff on it and place it; when the socket exists it's used instead.
 
 Done earlier: TakeDamage routed into GAS, attack tokens, enemy heal, death handler, test logic removed, `GC_Blink` hair fix
-(`GC_Dash` is no longer used), sword grip socket.
+(`GC_Dash` is no longer used), sword grip socket, Ji-Woong's upper-body slot (step 2).
 
 ## Level checklist (`MAP_Demo_Main`)
 
@@ -106,7 +124,8 @@ Done earlier: TakeDamage routed into GAS, attack tokens, enemy heal, death handl
 Run with the editor closed (build the C++ first):
 
 ```
-UnrealEditor-Cmd.exe WorldBeyond.uproject -run=pythonscript -script=<repo>/WorldBeyond/Scripts/Migration/migrate_pass3.py -unattended -nosplash -NullRHI
+UnrealEditor-Cmd.exe WorldBeyond.uproject -run=pythonscript -script=<repo>/WorldBeyond/Scripts/Migration/migrate_pass4.py -unattended -nosplash -NullRHI
+UnrealEditor-Cmd.exe WorldBeyond.uproject -run=pythonscript -script=<repo>/WorldBeyond/Scripts/Migration/fit_outfits.py -unattended -nosplash -NullRHI
 UnrealEditor-Cmd.exe WorldBeyond.uproject -run=pythonscript -script=<repo>/WorldBeyond/Scripts/Migration/cleanup_legacy.py -unattended -nosplash -NullRHI
 UnrealEditor-Cmd.exe WorldBeyond.uproject -ExecCmds="Automation RunTests WorldsBeyond.Prototype;Quit" -unattended -nullrhi -nosplash -TestExit="Automation Test Queue Empty"
 ```
@@ -117,6 +136,12 @@ UnrealEditor-Cmd.exe WorldBeyond.uproject -ExecCmds="Automation RunTests WorldsB
   ability bar rows.
 - `migrate_pass3.py` — pass 3, already applied: key 2 → heal slot, Angel's heal montage, Ji-Woong's hip holster /
   upper-body draw / relaxed idle / auto draw & sheathe, 3-slot ability bar, effect lifetimes.
+- `migrate_pass4.py` — pass 4: Ji-Woong's LMB on the GAS sword combo (`IA_PrimaryAttack` on LMB, his Blueprint LMB event
+  off), combo window +15 %, voice line once per combo, upper-body swings while moving; Angel's staff (`GA_Angel_EquipStaff`:
+  back holster, MagicStaff draw / stow, idle switch, auto draw / stow, old Blueprint equip suppressed). The staff's grab /
+  release times and resting place come from the pack's animations; check them in `last_run_pass4.txt`.
+- `fit_outfits.py` — snug-fits the outfits (see *Clothing fit* below). Needs the **GeometryScripting** plugin, which
+  `WorldBeyond.uproject` now enables (editor only).
 - All passes are idempotent and back up every asset they save to `Saved/MigrationBackups/<timestamp>/`; shared helpers live in
   `migration_common.py`. Pass 1 no longer overwrites ability sets that already exist.
 - `cleanup_legacy.py` — dry run by default. To delete, in PowerShell run `$env:BEYOND_CLEANUP_APPLY = "1"` first
@@ -125,7 +150,9 @@ UnrealEditor-Cmd.exe WorldBeyond.uproject -ExecCmds="Automation RunTests WorldsB
   `GA_AOEAttack` and `GA_Dash` are unused now and can go in a later cleanup.
 - `WorldsBeyond.Prototype.Smoke` — party + buddy, swaps without duplicate abilities, GAS damage mirrored into the old
   component, no friendly fire, attack tokens, death, revive.
-- `WorldsBeyond.Prototype.Powers` — MetaHuman combat mesh, buddy walk fix, enemy perception, Ji-Woong's sword,
+- `WorldsBeyond.Prototype.Powers` — the buddy standing still during the intro, MetaHuman combat mesh, buddy walk fix,
+  enemy perception, Ji-Woong's sword, LMB on the GAS combo, the combo's voice line once / full-body footwork when standing /
+  upper body while walking, Angel's staff (back, idle, drawn when casting),
   Gilded Step, Sunbrand, the buddy's sword combo, ability bar refresh on swap, Lightning Strike, Bond meter + Heaven's
   Judgment, boss bar; plus the hip holster and idle switch, quick-draw when the combo starts, animated sheathe, auto draw /
   sheathe, Stop Anim Montage reaching Body (the combo window), the ability bar list, key 2 and Angel's heal montage, no
@@ -136,9 +163,33 @@ UnrealEditor-Cmd.exe WorldBeyond.uproject -ExecCmds="Automation RunTests WorldsB
 In play: `showdebug abilitysystem` (PageUp/PageDown cycles actors), the Gameplay Debugger (`'`) for enemy
 BT/perception/EQS, and `log LogBeyond Verbose` for dash / strike / draw / sheathe traces.
 
+## Clothing fit
+
+The Streetwear outfits were modelled for a bigger body, so they float off the MetaHumans. `fit_outfits.py` fixes that
+geometrically, for every outfit under a character's `Clothing` folder (footwear is skipped):
+
+- cloth further than 1.5 cm from the skin is pulled in, keeping 40 % of the extra looseness (max 5 cm per vertex), so the
+  garment still drapes and its folds survive; cloth that clips into the body is pushed out to 0.6 cm;
+- anything more than 10–15 cm away (the hood, drawstrings) and vertices skinned to the neck / head are left alone;
+- the movement is smoothed across the mesh, every LOD is fitted, normals are recomputed.
+
+It writes `<Outfit>_Fitted` next to each original (never touched) and puts it on `BP_Angel` / `BP_Ji-Woong`.
+Look at both demigods up close in a T-pose and in motion. Too tight → raise `KEEP` or `SNUG`; still loose → lower `KEEP`;
+a part that shouldn't move → raise `FREE_FROM` / `FREE_BEYOND` or add its bone to `PROTECT_BONES`. Re-running always
+starts from the originals. To go back: `$env:BEYOND_FIT_REVERT = "1"`, run it again, `Remove-Item Env:BEYOND_FIT_REVERT`.
+
+If a garment needs real re-tailoring (a different cut, sleeves that are too long), refit it in the MetaHuman tools
+instead: make an **Outfit Asset** (*Physics → Outfit Asset*, *Resizable Outfit* template) from the garment's Cloth Asset,
+use a **Sized Outfit Source** with *Sized Outfit* ticked so it resizes to the body, add it to the character's *Outfit
+Clothing* in the MetaHuman editor and assemble again. The fitted copies can then be deleted.
+
 ## Known limits
 
 - Montage root motion doesn't move MetaHumans: character movement reads root motion from `CharacterMesh0`, which is
   empty; montages play on `Body`. Leaps and lunges animate in place (the dash moves the character itself).
 - Only Angel has a heal animation and voice; add a montage for Ji-Woong under *Ability Montages* on `BP_Ji-Woong`.
 - Spawned effects stop after 5 s unless their ability manages them (*Max Lifetime* on each effect; 0 = no limit).
+- Ji-Woong's LMB no longer runs his Blueprint combo, so that Blueprint's *Attacking* flag (what `BPI_Damagable → Is
+  Attacking` returns to enemies) stays false; `UBeyondCombatLibrary::IsActorAttacking` reports GAS attacks correctly.
+- Angel's LMB spell is still Blueprint and plays its voice line on every cast.
+- The outfit fit is geometric: the cloth follows the body's skinning, it isn't simulated.

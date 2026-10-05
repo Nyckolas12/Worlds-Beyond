@@ -10,6 +10,7 @@
 #include "BeyondCombatSubsystem.generated.h"
 
 class UAbilitySystemComponent;
+class UAnimMontage;
 class UFXSystemComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FBeyondDamageDealtSignature, AActor*, DamageInstigator, AActor*, Target, float, Damage);
@@ -53,7 +54,8 @@ struct WORLDBEYOND_API FBeyondBrandSettings
  * World-wide combat services:
  * - a damage feed (every Beyond character reports the damage it takes), so systems like the party's Bond meter
  *   don't have to bind to every enemy;
- * - brands: marks that amplify damage taken and detonate on the brander's next melee hit.
+ * - brands: marks that amplify damage taken and detonate on the brander's next melee hit;
+ * - montage variants: runtime copies of an attack montage on another slot (the sword combo on the upper body).
  */
 UCLASS()
 class WORLDBEYOND_API UBeyondCombatSubsystem : public UWorldSubsystem
@@ -77,6 +79,16 @@ public:
 	// Called by UCharacterAttributeSet before damage lands: amplifies it and triggers detonations
 	float ModifyIncomingDamage(UAbilitySystemComponent& TargetASC, AActor* DamageInstigator, const FGameplayTagContainer& DamageTags, float Damage);
 
+	/**
+	 * A copy of Source playing on SlotName instead of its own slot, made once per world (the asset is untouched).
+	 * A muted copy keeps its notifies but never fires them, for a second copy that plays in sync with the first:
+	 * hits, sounds and combo windows must only happen once.
+	 */
+	UAnimMontage* GetMontageVariant(UAnimMontage* Source, FName SlotName, bool bMuteNotifies);
+
+	// The asset a variant was copied from; Montage itself when it isn't a variant
+	static UAnimMontage* GetMontageSource(UAnimMontage* Montage);
+
 private:
 	struct FBrandState
 	{
@@ -94,4 +106,12 @@ private:
 	static void CleanUp(UAbilitySystemComponent* TargetASC, FBrandState& State, bool bRemoveEffect);
 
 	TMap<TWeakObjectPtr<UAbilitySystemComponent>, FBrandState> Brands;
+
+	// "<source path>|<slot>|<muted>" -> variant
+	UPROPERTY(Transient)
+	TMap<FName, TObjectPtr<UAnimMontage>> MontageVariants;
+
+	// Variant -> the asset it was copied from
+	UPROPERTY(Transient)
+	TMap<TObjectPtr<UAnimMontage>, TObjectPtr<UAnimMontage>> VariantSources;
 };

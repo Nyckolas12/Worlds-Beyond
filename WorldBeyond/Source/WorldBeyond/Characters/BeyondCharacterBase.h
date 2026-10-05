@@ -89,7 +89,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Character")
 	USkeletalMeshComponent* GetCombatMesh() const;
 
-	// The engine version stops montages on CharacterMesh0, which is empty on MetaHumans; this stops them on the combat mesh
+	/**
+	 * The engine version stops montages on CharacterMesh0, which is empty on MetaHumans; this stops them on the combat mesh.
+	 * None stops everything playing there (an attack can be two montages at once: swing + footwork).
+	 */
 	virtual void StopAnimMontage(UAnimMontage* AnimMontage = nullptr) override;
 
 	/**
@@ -112,6 +115,10 @@ public:
 
 	// Weapon to equip on spawn, sent to the equip ability as the event's target tag (e.g. Weapon.Melee.Sword)
 	const FGameplayTag& GetDefaultWeaponTag() const { return DefaultWeaponTag; }
+
+	const TArray<FBeyondInputBinding>& GetAbilityInputBindings() const { return AbilityInputBindings; }
+
+	bool IsLegacyKeyInputDisabled() const { return bDisableLegacyKeyInput; }
 
 protected:
 	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category = "AbilitySystem")
