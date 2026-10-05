@@ -52,9 +52,12 @@ public:
 	UPROPERTY(EditDefaultsOnly, Category = "UI|Bond")
 	TSubclassOf<UUserWidget> BondWidgetClass;
 
-	// Offset from the bottom centre of the screen
+	// Offset from the bottom centre of the screen (the arc meter's ends flank the ability bar)
 	UPROPERTY(EditDefaultsOnly, Category = "UI|Bond")
-	FVector2D BondMeterOffset = FVector2D(0.0f, -140.0f);
+	FVector2D BondMeterOffset = FVector2D(0.0f, -50.0f);
+
+	UFUNCTION(BlueprintPure, Category = "UI|Bond")
+	UUserWidget* GetBondWidget() const { return BondWidget; }
 
 	// Crosshair shown while the leader is a combat-ready caster (Angel with Aim Settings); leave empty to hide it
 	UPROPERTY(EditDefaultsOnly, Category = "UI|Crosshair")

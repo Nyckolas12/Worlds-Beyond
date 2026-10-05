@@ -18,7 +18,7 @@ public class WorldBeyond : ModuleRules
 		// Automation tests (Source/WorldBeyond/Tests) drive Play In Editor
 		if (Target.bBuildEditor)
 		{
-			PrivateDependencyModuleNames.AddRange(new string[] { "UnrealEd" });
+			PrivateDependencyModuleNames.AddRange(new string[] { "UnrealEd", "RHI" });
 		}
 
 		// Uncomment if you are using Slate UI
