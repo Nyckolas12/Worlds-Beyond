@@ -5,13 +5,16 @@
 #include "Abilities/GameplayAbilityTargetActor.h"
 #include "Abilities/GameplayAbilityTargetActor_Trace.h"
 #include "Abilities/Tasks/AbilityTask_WaitTargetData.h"
+#include "AbilitySystem/BeyondSpikeBurst.h"
 #include "AbilitySystemComponent.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "BeyondGameplayTags.h"
+#include "Components/DecalComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "TimerManager.h"
 
 UBeyondGA_GroundStrike::UBeyondGA_GroundStrike()
@@ -54,6 +57,8 @@ void UBeyondGA_GroundStrike::ActivateAbility(const FGameplayAbilitySpecHandle Ha
 				TraceActor->MaxRange = MaxTargetRange;
 			}
 			Task->FinishSpawningActor(this, TargetActor);
+			// After its BeginPlay, which sets the reticle's own colour
+			ApplyTargetDecalColor(TargetActor);
 		}
 		Task->ReadyForActivation();
 		return;
@@ -218,6 +223,7 @@ void UBeyondGA_GroundStrike::Strike()
 		ASC->ExecuteGameplayCue(StrikeCueTag, Params);
 	}
 	BeyondFX::SpawnAtLocation(this, StrikeFX, StrikeLocation);
+	SpawnSpikeBurst();
 
 	if (ImpactDelay > 0.0f)
 	{
@@ -226,6 +232,43 @@ void UBeyondGA_GroundStrike::Strike()
 	else
 	{
 		ApplyImpact();
+	}
+}
+
+void UBeyondGA_GroundStrike::SpawnSpikeBurst()
+{
+	AActor* Avatar = GetAvatarActorFromActorInfo();
+	UWorld* World = GetWorld();
+	if (!SpikeBurstClass || !Avatar || !World)
+	{
+		return;
+	}
+
+	const FTransform SpawnTransform(FRotator(0.0f, Avatar->GetActorRotation().Yaw, 0.0f), StrikeLocation);
+	ABeyondSpikeBurst* Burst = World->SpawnActorDeferred<ABeyondSpikeBurst>(SpikeBurstClass, SpawnTransform, Avatar, Cast<APawn>(Avatar),
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+	if (Burst)
+	{
+		Burst->Radius = Radius;
+		Burst->FinishSpawning(SpawnTransform);
+	}
+}
+
+void UBeyondGA_GroundStrike::ApplyTargetDecalColor(AActor* TargetActor) const
+{
+	if (!bOverrideTargetDecalColor || !TargetActor)
+	{
+		return;
+	}
+
+	TInlineComponentArray<UDecalComponent*> Decals(TargetActor);
+	for (UDecalComponent* Decal : Decals)
+	{
+		Decal->SetDecalColor(TargetDecalColor);
+		if (UMaterialInstanceDynamic* Material = Decal->CreateDynamicMaterialInstance())
+		{
+			Material->SetVectorParameterValue(TargetDecalColorParameter, TargetDecalColor);
+		}
 	}
 }
 
