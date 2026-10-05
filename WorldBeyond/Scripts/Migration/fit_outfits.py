@@ -59,6 +59,7 @@ def _gs():
     (their Python class names differ between engine versions). Nothing is changed if one is missing.
     """
     libraries = [getattr(unreal, name) for name in dir(unreal) if name.startswith("GeometryScript")]
+    libraries.sort(key=lambda lib: 0 if isinstance(lib, type) and issubclass(lib, unreal.BlueprintFunctionLibrary) else 1)
     functions = {}
     for function in REQUIRED_FUNCTIONS + OPTIONAL_FUNCTIONS:
         for library in libraries:
@@ -72,13 +73,22 @@ def _gs():
     return functions
 
 
+def _pick(result, kind):
+    """
+    Geometry Script calls return their target mesh first, then their out parameters, as a tuple:
+    the first value of the wanted type, or the result itself when it isn't a tuple.
+    """
+    if isinstance(result, tuple):
+        return next((r for r in result if isinstance(r, kind)), None)
+    return result if isinstance(result, kind) else None
+
+
 def _read_lod(gs, skeletal_mesh, lod):
     mesh = unreal.new_object(unreal.DynamicMesh)
     options = unreal.GeometryScriptCopyMeshFromAssetOptions()
     read = unreal.GeometryScriptMeshReadLOD()
     read.set_editor_property("lod_index", lod)
-    result = gs["copy_mesh_from_skeletal_mesh"](skeletal_mesh, mesh, options, read)
-    outcome = result[-1] if isinstance(result, tuple) else None
+    outcome = _pick(gs["copy_mesh_from_skeletal_mesh"](skeletal_mesh, mesh, options, read), unreal.GeometryScriptOutcomePins)
     if outcome is not None and outcome != unreal.GeometryScriptOutcomePins.SUCCESS:
         raise RuntimeError("could not read LOD %d of %s" % (lod, skeletal_mesh.get_path_name()))
     return mesh
@@ -93,22 +103,19 @@ def _write_lod(gs, mesh, skeletal_mesh, lod):
             pass
     write = unreal.GeometryScriptMeshWriteLOD()
     write.set_editor_property("lod_index", lod)
-    result = gs["copy_mesh_to_skeletal_mesh"](mesh, skeletal_mesh, options, write)
-    outcome = result[-1] if isinstance(result, tuple) else None
+    outcome = _pick(gs["copy_mesh_to_skeletal_mesh"](mesh, skeletal_mesh, options, write), unreal.GeometryScriptOutcomePins)
     if outcome is not None and outcome != unreal.GeometryScriptOutcomePins.SUCCESS:
         raise RuntimeError("could not write LOD %d of %s" % (lod, skeletal_mesh.get_path_name()))
 
 
 def _positions(gs, mesh):
-    result = gs["get_all_vertex_positions"](mesh, False)
-    vector_list = result[0] if isinstance(result, tuple) else result
-    return list(gs["convert_vector_list_to_array"](vector_list))
+    vector_list = _pick(gs["get_all_vertex_positions"](mesh, False), unreal.GeometryScriptVectorList)
+    return list(_pick(gs["convert_vector_list_to_array"](vector_list), unreal.Array) or [])
 
 
 def _triangles(gs, mesh):
-    result = gs["get_all_triangle_indices"](mesh, False)
-    triangle_list = result[0] if isinstance(result, tuple) else result
-    return list(gs["convert_triangle_list_to_array"](triangle_list))
+    triangle_list = _pick(gs["get_all_triangle_indices"](mesh, False), unreal.GeometryScriptTriangleList)
+    return list(_pick(gs["convert_triangle_list_to_array"](triangle_list), unreal.Array) or [])
 
 
 def _lod_count(skeletal_mesh):
@@ -155,14 +162,14 @@ def _protected_vertices(gs, mesh, count):
         return None
     try:
         info = gs["get_all_bones_info"](mesh)
-        bones = info[-1] if isinstance(info, tuple) else info
+        bones = _pick(info, unreal.Array) or []
         names = {b.get_editor_property("index"): str(b.get_editor_property("name")).lower() for b in bones}
         protected = {i for i, n in names.items() if n.startswith(PROTECT_BONES)}
         profile = unreal.GeometryScriptBoneWeightProfile()
         result = set()
         for vid in range(count):
             out = gs["get_vertex_bone_weights"](mesh, vid, profile)
-            bone_weights = next((o for o in (out if isinstance(out, tuple) else (out,)) if isinstance(o, (list, unreal.Array))), [])
+            bone_weights = _pick(out, unreal.Array) or []
             total = sum(w.get_editor_property("weight") for w in bone_weights) or 1.0
             if sum(w.get_editor_property("weight") for w in bone_weights if w.get_editor_property("bone_index") in protected) / total > 0.5:
                 result.add(vid)
@@ -183,13 +190,13 @@ def _fit_lod(gs, cloth, body, body_bvh, body_top, label):
     options = unreal.GeometryScriptSpatialQueryOptions()
     for vid, p in enumerate(positions):
         result = gs["find_nearest_point_on_mesh"](body, body_bvh, unreal.Vector(*p), options)
-        nearest = next((r for r in result if isinstance(r, unreal.GeometryScriptTrianglePoint)), None) if isinstance(result, tuple) else result
+        nearest = _pick(result, unreal.GeometryScriptTrianglePoint)
         if nearest is None or not nearest.get_editor_property("valid"):
             weight[vid] = 0.0
             continue
         surface = _vec(nearest.get_editor_property("position"))
         normal_result = gs["get_triangle_face_normal"](body, nearest.get_editor_property("triangle_id"))
-        normal = _vec(normal_result[0] if isinstance(normal_result, tuple) else normal_result)
+        normal = _vec(_pick(normal_result, unreal.Vector))
 
         offset = _sub(p, surface)
         distance = _len(offset)
@@ -255,7 +262,7 @@ def _fit_lod(gs, cloth, body, body_bvh, body_top, label):
         displacement = smoothed
 
     moved = [unreal.Vector(p[0] + d[0], p[1] + d[1], p[2] + d[2]) for p, d in zip(positions, displacement)]
-    gs["set_all_mesh_vertex_positions"](cloth, gs["convert_array_to_vector_list"](moved))
+    gs["set_all_mesh_vertex_positions"](cloth, _pick(gs["convert_array_to_vector_list"](moved), unreal.GeometryScriptVectorList))
     gs["recompute_normals"](cloth, unreal.GeometryScriptCalculateNormalsOptions())
 
     pulled = [_len(d) for d in displacement]
@@ -275,8 +282,8 @@ def fit_outfit(gs, original, body):
     body_mesh = _read_lod(gs, body, 0)
     # Out parameters come back as return values in Python: (mesh, bvh)
     bvh_result = gs["build_bvh_for_mesh"](body_mesh)
-    bvh = next((r for r in bvh_result if isinstance(r, unreal.GeometryScriptDynamicMeshBVH)), None) if isinstance(bvh_result, tuple) else bvh_result
-    box = gs["get_mesh_bounding_box"](body_mesh)
+    bvh = _pick(bvh_result, unreal.GeometryScriptDynamicMeshBVH)
+    box = _pick(gs["get_mesh_bounding_box"](body_mesh), unreal.Box)
     body_top = box.max.z
 
     for lod in range(_lod_count(original)):
@@ -300,11 +307,14 @@ def _mesh_property(component):
 
 
 def _components(bp):
+    """The Blueprint's skeletal mesh components, each once (the subobject listing can repeat them)."""
     subsystem = unreal.get_engine_subsystem(unreal.SubobjectDataSubsystem)
     lib = unreal.SubobjectDataBlueprintFunctionLibrary
+    seen = set()
     for handle in subsystem.k2_gather_subobject_data_for_blueprint(bp):
         component = lib.get_object(lib.get_data(handle))
-        if isinstance(component, unreal.SkeletalMeshComponent):
+        if isinstance(component, unreal.SkeletalMeshComponent) and component.get_path_name() not in seen:
+            seen.add(component.get_path_name())
             yield component
 
 
@@ -329,6 +339,7 @@ def process_character(gs, bp_path, revert):
             body = mesh
 
     changed = False
+    fitted_by_original = {}  # original path -> fitted mesh, or None when it was skipped / failed
     for component in components:
         prop, mesh = _mesh_property(component)
         if not mesh or "/Clothing/" not in mesh.get_path_name():
@@ -347,16 +358,19 @@ def process_character(gs, bp_path, revert):
                 changed = True
             continue
 
-        if _is_footwear(original):
-            log("%s: %s is footwear, left as it is" % (bp_path, original.get_name()))
-            continue
-        if body is None:
-            warn("%s: no Body mesh found, can't fit %s" % (bp_path, original.get_name()))
-            continue
-        try:
-            fitted = fit_outfit(gs, original, body)
-        except Exception as e:
-            warn("%s: %s not fitted (%s)" % (bp_path, original.get_name(), e))
+        if original_path not in fitted_by_original:
+            fitted_by_original[original_path] = None
+            if _is_footwear(original):
+                log("%s: %s is footwear, left as it is" % (bp_path, original.get_name()))
+            elif body is None:
+                warn("%s: no Body mesh found, can't fit %s" % (bp_path, original.get_name()))
+            else:
+                try:
+                    fitted_by_original[original_path] = fit_outfit(gs, original, body)
+                except Exception as e:
+                    warn("%s: %s not fitted (%s)" % (bp_path, original.get_name(), e))
+        fitted = fitted_by_original[original_path]
+        if fitted is None:
             continue
         component.set_editor_property(prop, fitted)
         log("%s: %s now wears %s" % (bp_path, component.get_name(), fitted.get_name()))
