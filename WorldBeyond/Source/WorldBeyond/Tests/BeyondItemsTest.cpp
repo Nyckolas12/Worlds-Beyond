@@ -159,9 +159,15 @@ namespace BeyondItemsTest
 		return bAll;
 	}
 
+	UAbilitySystemComponent* GetItemsTestASC(const AActor* Target)
+	{
+		const ABeyondCharacterBase* Character = Cast<ABeyondCharacterBase>(Target);
+		return Character ? Character->GetAbilitySystemComponent() : nullptr;
+	}
+
 	int32 CountDamageOverTime(const AActor* Target)
 	{
-		const UAbilitySystemComponent* ASC = UBeyondCombatLibrary::GetASC(Target);
+		const UAbilitySystemComponent* ASC = GetItemsTestASC(Target);
 		if (!ASC)
 		{
 			return 0;
@@ -174,7 +180,7 @@ namespace BeyondItemsTest
 	// Ends any poison / burn so a measurement starts clean
 	void ClearItemsDamageOverTime(const AActor* Target)
 	{
-		if (UAbilitySystemComponent* ASC = UBeyondCombatLibrary::GetASC(Target))
+		if (UAbilitySystemComponent* ASC = GetItemsTestASC(Target))
 		{
 			FGameplayEffectQuery Query;
 			Query.EffectDefinition = UBeyondGE_DamageOverTime::StaticClass();
