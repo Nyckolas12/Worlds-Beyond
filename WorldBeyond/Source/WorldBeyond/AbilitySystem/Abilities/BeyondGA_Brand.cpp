@@ -154,7 +154,10 @@ void UBeyondGA_Brand::ApplyBrand()
 	if (Target && Combat && !UBeyondCombatLibrary::IsActorDead(Target))
 	{
 		BeyondFX::SpawnAtLocation(this, ApplyFX, Target->GetActorLocation());
-		Combat->ApplyBrand(Avatar, Target, Brand);
+		// Skill tree ranks make the detonation hit harder
+		FBeyondBrandSettings Ranked = Brand;
+		Ranked.DetonateDamage *= GetLevelDamageScale();
+		Combat->ApplyBrand(Avatar, Target, Ranked);
 	}
 
 	if (bMontageDone)

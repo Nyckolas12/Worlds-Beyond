@@ -3,21 +3,27 @@
 GAS (Gameplay Ability System) now owns health, damage and death for both demigods and every enemy.
 The old Blueprint combat (`BPC_DamageSystem`, `BPC_Attacks`, `BPI_Damagable`) still works on top of it.
 Ji-Woong's new powers and the duo super move are designed in [Powers_Design.md](Powers_Design.md).
+What comes next (leveling and skill tree, armor and loot, bosses, dialogue, the open world) is in [Roadmap.md](Roadmap.md),
+one plan per system under [Plans/](Plans/).
 
 ## How it fits together
 
 | Piece | Where | What it does |
 |---|---|---|
-| `UCharacterAttributeSet` | `Source/WorldBeyond/CharacterAttributeSet.*` | Health/Stamina, `IncomingDamage`/`IncomingHeal`; blocking, parrying, invincibility, brands, death, no friendly fire |
+| `UCharacterAttributeSet` | `Source/WorldBeyond/CharacterAttributeSet.*` | Health/Stamina, **Strength / Arcana / Defense / Level**, `IncomingDamage`/`IncomingHeal`; blocking, parrying, invincibility, Defense, brands, death, no friendly fire |
+| Progression | `Progression/` | `UBeyondProgressionAttributeSet` (EXP, skill points; only on the demigods), `UBeyondProgressionSettings` (*Project Settings → Game → Worlds Beyond Progression*: EXP curve, max level, EXP per enemy rank), `FBeyondStatGrowth`. See *Leveling* below |
+| `UBeyondProgressWidget` | `UI/BeyondProgressWidget.*` | Level badge + EXP bar (bottom left), "+25 EXP" pop-ups and the LEVEL UP banner (top centre); drawn in C++, put into `W_PlayerHud` by the player controller |
+| `UBeyondSaveGame` | `Game/BeyondSaveGame.*` | Slot `BeyondProgress`: each demigod's level, EXP, skill points and skill ranks; the party's Bond Points, duo ranks and duo loadout |
+| Skill trees | `Progression/BeyondSkillTree*`, `UI/BeyondSkillTreeWidget.*` | Tree data assets, `UBeyondSkillTreeComponent` (per demigod, skill points) and `UBeyondDuoSkillTreeComponent` (on the player controller, Bond Points, duo loadout); the K screen. See *Skill trees* below |
 | `ABeyondCharacterBase` | `Characters/BeyondCharacterBase.*` | Parent of `BP_Angel`, `BP_Ji-Woong`, `BP_Enemy_Base`. Grants abilities once, team, ability input slots, death/revive, attack tokens. `GetCombatMesh()` is the mesh that animates (`Body` on MetaHumans); `Suppressed Abilities`; `Duo Role`; `Boss Bar Widget Class`; enemy AI perception detects hostile teams |
 | Legacy bridge | `Characters/BeyondLegacyDamageBridge.*` | Mirrors GAS health into `BPC_DamageSystem` and fires its `OnDamageResponse` / `OnBlocked` / `OnDeath`, so existing hit-react, death and health-bar Blueprints keep working |
 | `UBeyondCombatLibrary` | `AbilitySystem/BeyondCombatLibrary.*` | The one damage API: `ApplyDamage`, `ApplyDamageInfo` (takes `S_DamageInfo`), `HealActor`, `IsActorDead`, attack tokens… |
-| `UBeyondCombatSubsystem` | `Game/BeyondCombatSubsystem.*` | World-wide damage feed (`OnDamageDealt`, used by the Bond meter) and brands (Sunbrand) |
+| `UBeyondCombatSubsystem` | `Game/BeyondCombatSubsystem.*` | World-wide damage feed (`OnDamageDealt`, used by the Bond meter), kill feed (`OnCharacterKilled`, used for EXP) and brands (Sunbrand) |
 | `UBeyondGameplayAbility` | `AbilitySystem/BeyondGameplayAbility.*` | Base for all abilities: `InputTag`, AI hints (range, weight, heal threshold), `GetAimRotation` for player **and** AI, `Cooldown Duration` + `Cooldown Tags` (no effect asset needed), `FindHostilesInRadius`, `PlayMontageOnAvatar` |
 | Ability classes | `AbilitySystem/Abilities/` | `MeleeCombo`, `Projectile`, `GroundStrike` (aimed AoE), `Dash`, `Brand`, `EquipWeapon`, `DuoStrike` — configured as the `GA_*` assets in `/Game/WorldsBeyond/Abilities/` |
 | `FBeyondFX` | `AbilitySystem/BeyondFX.*` | One visual beat on an ability: Niagara/Cascade system, sound, camera shake, optional colour |
 | `ABeyondWeapon` | `Weapons/BeyondWeapon.*` | Parent of both `BP_Weapon_Base`s; melee hit-scan (`HitScanStart` / `HitScanEnd`) |
-| Party | `Player/BeyondPlayerController.*`, `Player/BeyondPartyComponent.*` | Tab swaps demigods, the other one is the AI buddy, auto-swap on death, stand next to a downed buddy for 3 s to revive, HUD follows the controlled demigod, **Bond meter**, **boss health bar** |
+| Party | `Player/BeyondPlayerController.*`, `Player/BeyondPartyComponent.*` | Tab swaps demigods, the other one is the AI buddy, auto-swap on death, stand next to a downed buddy for 3 s to revive, HUD follows the controlled demigod, **Bond meter**, **shared EXP from kills**, **saving progress**, **boss health bar**. `AttachToHUD` puts the Bond meter and the level display into `W_PlayerHud`'s canvas (a copy placed in the HUD in the designer wins) |
 | `UBeyondBondMeterWidget` | `UI/BeyondBondMeterWidget.*` | The duo meter, built in C++ on three UI materials (`/Game/WorldsBeyond/UI/DuoMeter/`): an animated arc over the ability bar with Angel's and Ji-Woong's medallions on its ends; when full the Heaven's Judgment medallion appears with circling flames. Falls back to a plain bar without the materials; swap `Bond Widget Class` on `BP_PC` for a designed one |
 | Aiming | `Characters/BeyondAimComponent.*`, `UI/BeyondCrosshairWidget.*` | Created on characters whose **Aim Settings** are on (Angel): shoulder camera with the weapon out, crosshair (shown by the player controller), the enemy under it glows, hold RMB to aim, casts face the crosshair |
 | `ABeyondSpikeBurst` | `AbilitySystem/BeyondSpikeBurst.*` | Crystal spikes bursting out of the ground in a wave (Angel's E, `BP_Beyond_ArcaneSpikes`); `GroundStrike` spawns it via *Spike Burst Class* |
@@ -36,8 +42,9 @@ Ji-Woong's new powers and the duo super move are designed in [Powers_Design.md](
 | **Q** | Blink (lightning dash) | **Gilded Step** — golden dash through enemies, they're hit a moment later |
 | **E** | **Arcane Spikes** (`GA_Angel_LightningStrike`) — hold to aim the purple circle, release: blue / purple crystal spikes burst out of the ground (RMB cancels) | **Sunbrand** — brand an enemy; your next sword hit detonates it |
 | **R** | Heal | Heal |
-| **G** | **Heaven's Judgment** (duo) when the Bond meter is full — its own slot left of the meter | same |
+| **G** | The duo power in the **duo loadout** (Heaven's Judgment until you pick another in the duo tree) when the Bond meter is full | same |
 | Tab | Swap | Swap |
+| **K** | **Skill trees** (pauses the game) | same |
 
 The Bond meter fills as the demigods deal and take damage, faster when both hit the same enemy.
 Heaven's Judgment needs a full meter and both demigods alive within 15 m of each other; you can't Tab-swap while it plays.
@@ -162,6 +169,40 @@ C++ and scripts did everything else; these need node changes, which can't be scr
 Done earlier: TakeDamage routed into GAS, attack tokens, enemy heal, death handler, test logic removed, `GC_Blink` hair fix
 (`GC_Dash` is no longer used), sword grip socket, Ji-Woong's upper-body slot (step 2).
 
+## Leveling
+
+- **EXP** comes from kills by either demigod and goes to **both** (a downed buddy too). An enemy is worth its rank's
+  EXP (Regular 25, Elite 60, Mini-boss 300, Boss 1500) +10 % per enemy level above 1; *Experience Reward* on an enemy
+  overrides it. Ranks: `BP_Enemy_Base` / `Melee` / `Ranged` Regular, `BP_Enemy_Mage` Elite, `BP_Enemy_Boss` Boss.
+- **Levels:** level L → L+1 needs 100 × L^1.5 EXP (100, 283, 520, 800 …), max level 50. Each level gives a skill
+  point (spent in the skill tree, Plan 1B) and the demigod's *Stat Growth*; a level-up refills health and stamina,
+  plays *Level Up FX* and sends `Event.Progression.LevelUp` (an ability can trigger on it).
+- **Stats:** melee damage × (1 + Strength / 100); projectile / explosion (spell) damage × (1 + Arcana / 100); damage
+  taken × 100 / (100 + Defense). Angel starts with Arcana 10, Defense 4 (+3 Arcana, +10 health per level); Ji-Woong
+  with Strength 10, Defense 8 (+3 Strength, +14 health, +2 Defense per level). Enemies with a *Starting Level* above 1
+  get their *Stat Growth* too.
+- **Saving:** on every level-up, at each checkpoint and when play ends; loaded when the party forms. Console:
+  `Beyond.GiveExperience 500`, `Beyond.ResetProgress` (deletes the save, back to level 1), `Beyond.SaveProgress 0`
+  (start fresh and write nothing; the automation tests do this so they never touch your save).
+- Tuning lives in *Project Settings → Game → Worlds Beyond Progression* (saved to `Config/DefaultGame.ini`) and on each
+  character under *Progression* / *AbilitySystem → Attributes*.
+
+## Skill trees
+
+- **K** opens them (the game pauses): a tab for Angel, one for Ji-Woong and the shared **Duo** tree; Q / E switch.
+  Hover a node for what it does and what it needs; **hold the left mouse button** on it to unlock the next rank;
+  **R** twice resets the tree you're on (every point back); K / Esc closes.
+- Personal trees cost the demigod's **skill points** (one per level). The duo tree costs **Bond Points**: one every 3
+  party levels and one for each main boss (Boss rank).
+- Nodes raise stats (health, stamina, Strength, Arcana, Defense) or **rank up an ability**: each rank is +15 % damage
+  and −8 % cooldown on that ability. Duo nodes rank up the duo moves, change the Bond meter, or unlock **duo powers**.
+- **Duo loadout:** right-click an unlocked duo power (or *Heaven's Wrath* for Heaven's Judgment) to put it on G. The
+  Bond meter's medallion shows its icon.
+- Trees are data: `/Game/WorldsBeyond/SkillTrees/DA_SkillTree_Angel`, `_JiWoong`, `_Duo`. Add or tune nodes there
+  (keep node ids: saves use them). Which tree a demigod uses: *Progression → Skill Tree* on `BP_Angel` / `BP_Ji-Woong`;
+  the duo tree: *Party → Skill Tree → Duo Skill Tree Asset* on `BP_PC`.
+- Node lists: [Plans/01_Leveling_SkillTree.md](Plans/01_Leveling_SkillTree.md#the-trees-as-built-tune-them-in-the-editor).
+
 ## Level checklist (`MAP_Demo_Main`)
 
 - Place a **BeyondCheckpoint** before each encounter (the arrow is the respawn point).
@@ -173,7 +214,7 @@ Done earlier: TakeDamage routed into GAS, attack tokens, enemy heal, death handl
 Run with the editor closed (build the C++ first):
 
 ```
-UnrealEditor-Cmd.exe WorldBeyond.uproject -run=pythonscript -script=<repo>/WorldBeyond/Scripts/Migration/migrate_pass6.py -unattended -nosplash -NullRHI
+UnrealEditor-Cmd.exe WorldBeyond.uproject -run=pythonscript -script=<repo>/WorldBeyond/Scripts/Migration/migrate_pass8.py -unattended -nosplash -NullRHI
 UnrealEditor-Cmd.exe WorldBeyond.uproject -run=pythonscript -script=<repo>/WorldBeyond/Scripts/Migration/fit_outfits.py -unattended -nosplash -NullRHI
 UnrealEditor-Cmd.exe WorldBeyond.uproject -run=pythonscript -script=<repo>/WorldBeyond/Scripts/Migration/cleanup_legacy.py -unattended -nosplash -NullRHI
 UnrealEditor-Cmd.exe WorldBeyond.uproject -ExecCmds="Automation RunTests WorldsBeyond.Prototype;Quit" -unattended -nullrhi -nosplash -TestExit="Automation Test Queue Empty"
@@ -197,6 +238,12 @@ UnrealEditor-Cmd.exe WorldBeyond.uproject -ExecCmds="Automation RunTests WorldsB
   `/Game/WorldsBeyond/UI/DuoMeter/` (procedural HLSL in Custom nodes; uses the existing `crescent-staff` glyph and the
   FX pack's `T_ky_magicCircle020`). Rebuilt on every run, so hand edits to these three are overwritten. Report:
   `last_run_pass6.txt`.
+- `migrate_pass7.py` — pass 7 (Plan 1A, leveling): enemy ranks, the demigods' names, starting Strength / Arcana /
+  Defense, *Stat Growth* and *Level Up FX*. The level display needs no asset. Report: `last_run_pass7.txt`.
+- `migrate_pass8.py` — pass 8 (Plan 1B, skill trees): the three tree data assets, `GA_Duo_EclipseBrand` and
+  `GA_Duo_TempestAegis` (copies of Heaven's Judgment with their variant on), the trees on `BP_Angel` / `BP_Ji-Woong` /
+  `BP_PC`, `IA_SkillTree` on K. Trees and duo powers are only created when missing; `BEYOND_REBUILD_TREES=1` rebuilds
+  the trees (in PowerShell `$env:BEYOND_REBUILD_TREES = "1"` first). Report: `last_run_pass8.txt`.
 - `fit_outfits.py` — snug-fits the outfits (see *Clothing fit* below). Needs the **GeometryScripting** plugin, which
   `WorldBeyond.uproject` now enables (editor only).
 - All passes are idempotent and back up every asset they save to `Saved/MigrationBackups/<timestamp>/`; shared helpers live in
@@ -218,6 +265,19 @@ UnrealEditor-Cmd.exe WorldBeyond.uproject -ExecCmds="Automation RunTests WorldsB
   sheathe, Stop Anim Montage reaching Body (the combo window), the ability bar list, key 2 and Angel's heal montage, no
   swapping during the duo and no effects left on Angel after it. (It skips the intro cutscene, which pins the demigods in
   place while it plays.)
+- `WorldsBeyond.Prototype.Progression` — both demigods earn EXP (enemies don't), rank rewards climb, killing a regular
+  enemy gives both demigods its EXP, crossing the threshold gives a level, a skill point, Stat Growth and a refill and
+  shows the banner naming both, Strength scales melee damage, environment damage ignores stats, 100 Defense halves
+  damage, the save game round-trips, restoring a save sets level / EXP / points / stats, the level display is in the
+  HUD.
+- `WorldsBeyond.Prototype.SkillTree` — the three trees exist and are valid, level / prerequisite / point gates with
+  their reasons, unlocking stats, an ability rank (spec level 2) and max health (current health follows), max rank,
+  reset refunds and removes everything, Bond Points at levels 3 / 6 / 9 and from a Boss-ranked kill, Bond gain from the
+  duo tree, Eclipse Brand granted to both demigods off the slot then put on G (Heaven's Judgment off it), a locked power
+  refused, duo ranks on both demigods, the duo reset, the K screen (opens paused on the leader's tree, three tabs, hold
+  to unlock, explains a locked node, closes unpaused), saved ranks restored without spending, Tempest Aegis halving a
+  hit and reflecting it.
+- Every PIE test sets `Beyond.SaveProgress 0` while it runs, so your saved levels are never loaded or overwritten.
 - Also in the editor: *Tools → Test Automation*, filter WorldsBeyond.
 
 In play: `showdebug abilitysystem` (PageUp/PageDown cycles actors), the Gameplay Debugger (`'`) for enemy

@@ -14,11 +14,17 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FBeyondLeaderChangedSignature, ABey
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FBeyondReviveProgressSignature, ABeyondCharacterBase*, DownedMember, float, Progress);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FBeyondPartyWipedSignature);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FBeyondBondChangedSignature, float, Bond, float, MaxBond);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FBeyondMemberLevelUpSignature, ABeyondCharacterBase*, Member, int32, NewLevel);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FBeyondExperienceAwardedSignature, ABeyondCharacterBase*, Victim, float, Experience);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FBeyondBondPointsChangedSignature, int32, BondPoints);
+
+class UBeyondSkillTreeComponent;
 
 /**
  * The two demigods: the player controls the leader, the other is driven by a companion controller.
- * Handles swapping, auto-swap when the leader falls, proximity revives, party wipes, and the shared
- * Bond meter that charges the duo super move. Lives on ABeyondPlayerController.
+ * Handles swapping, auto-swap when the leader falls, proximity revives, party wipes, the shared
+ * Bond meter that charges the duo super move, shared EXP from kills and saving the party's progress.
+ * Lives on ABeyondPlayerController.
  */
 UCLASS(ClassGroup = (Beyond), meta = (BlueprintSpawnableComponent))
 class WORLDBEYOND_API UBeyondPartyComponent : public UActorComponent
@@ -89,6 +95,66 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Party|Bond")
 	FBeyondBondChangedSignature OnBondChanged;
 
+	// Any member levelled up from EXP (the HUD shows the banner)
+	UPROPERTY(BlueprintAssignable, Category = "Party|Progression")
+	FBeyondMemberLevelUpSignature OnMemberLevelUp;
+
+	// The party was given EXP for a kill (each member got Experience)
+	UPROPERTY(BlueprintAssignable, Category = "Party|Progression")
+	FBeyondExperienceAwardedSignature OnExperienceAwarded;
+
+	// Save levels / EXP to the "BeyondProgress" slot and load them on start (also needs the Beyond.SaveProgress console variable)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Party|Progression")
+	bool bSaveProgress = true;
+
+	// Gives every member the same EXP (a downed member gets it too)
+	UFUNCTION(BlueprintCallable, Category = "Party|Progression")
+	void AwardExperience(float Amount);
+
+	UFUNCTION(BlueprintCallable, Category = "Party|Progression")
+	bool SaveProgress();
+
+	UFUNCTION(BlueprintCallable, Category = "Party|Progression")
+	bool LoadProgress();
+
+	// Deletes the save and puts every member back to level 1
+	UFUNCTION(BlueprintCallable, Category = "Party|Progression")
+	void ResetProgress();
+
+	// bSaveProgress and the Beyond.SaveProgress console variable
+	UFUNCTION(BlueprintPure, Category = "Party|Progression")
+	bool IsSavingEnabled() const;
+
+	// The highest level in the party (the duo tree's level gates use it)
+	UFUNCTION(BlueprintPure, Category = "Party|Progression")
+	int32 GetPartyLevel() const;
+
+	// Bond Points: the duo tree's currency, shared by the party
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Party|Bond Points", meta = (ClampMin = "1"))
+	int32 LevelsPerBondPoint = 3;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Party|Bond Points", meta = (ClampMin = "0"))
+	int32 BondPointsPerBoss = 1;
+
+	UPROPERTY(BlueprintAssignable, Category = "Party|Bond Points")
+	FBeyondBondPointsChangedSignature OnBondPointsChanged;
+
+	UFUNCTION(BlueprintPure, Category = "Party|Bond Points")
+	int32 GetBondPoints() const { return BondPoints; }
+
+	UFUNCTION(BlueprintCallable, Category = "Party|Bond Points")
+	void AddBondPoints(int32 Amount);
+
+	// False (and nothing taken) if there aren't enough
+	UFUNCTION(BlueprintCallable, Category = "Party|Bond Points")
+	bool SpendBondPoints(int32 Amount);
+
+	// Set by the duo skill tree: Bond gain multiplier and the fraction the meter keeps after a duo move
+	void SetBondModifiers(float GainMultiplier, float EchoFraction);
+
+	UFUNCTION(BlueprintPure, Category = "Party|Bond")
+	float GetBondGainMultiplier() const { return BondGainMultiplier; }
+
 	UFUNCTION(BlueprintPure, Category = "Party|Bond")
 	float GetBond() const { return Bond; }
 
@@ -138,6 +204,15 @@ protected:
 	UFUNCTION()
 	void HandleDamageDealt(AActor* DamageInstigator, AActor* Target, float Damage);
 
+	UFUNCTION()
+	void HandleCharacterKilled(ABeyondCharacterBase* Victim, AActor* Killer);
+
+	UFUNCTION()
+	void HandleMemberLevelUp(ABeyondCharacterBase* Member, int32 NewLevel);
+
+	UFUNCTION()
+	void HandleSkillTreeChanged(UBeyondSkillTreeComponent* Tree);
+
 private:
 	APlayerController* GetPlayerController() const;
 	void AddMember(ABeyondCharacterBase* Member);
@@ -165,5 +240,17 @@ private:
 	float ReviveProgress = 0.0f;
 	float LastSwapTime = -1000.0f;
 	bool bInitialized = false;
+	// Nothing is written before the save was read, so a fresh party can't overwrite it
+	bool bProgressLoaded = false;
+	// Restoring a save changes trees and levels one at a time; nothing is written until it is done
+	bool bRestoringProgress = false;
+
+	UBeyondSkillTreeComponent* GetDuoTree() const;
+	void AwardBondPointsForLevel(int32 Level);
+
+	int32 BondPoints = 0;
+	int32 BondPointsLevel = 0;
+	float BondGainMultiplier = 1.0f;
+	float BondEchoFraction = 0.0f;
 	FTimerHandle AutoSwapTimer;
 };

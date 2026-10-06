@@ -42,6 +42,9 @@ bool UBeyondCombatLibrary::ApplyDamage(AActor* Source, AActor* Target, float Amo
 	UAbilitySystemComponent* SourceASC = GetASC(Source);
 	UAbilitySystemComponent* SpecOwner = SourceASC ? SourceASC : TargetASC;
 
+	// The attacker's stats: Strength for melee, Arcana for projectiles / explosions (spells, abilities)
+	Amount *= GetDamageScale(SourceASC, DamageType);
+
 	FGameplayEffectContextHandle Context = SpecOwner->MakeEffectContext();
 	Context.AddInstigator(Source, Causer ? Causer : Source);
 
@@ -69,6 +72,28 @@ bool UBeyondCombatLibrary::ApplyDamage(AActor* Source, AActor* Target, float Amo
 		TargetASC->ApplyGameplayEffectSpecToSelf(*Spec);
 	}
 	return true;
+}
+
+float UBeyondCombatLibrary::GetDamageScale(const UAbilitySystemComponent* SourceASC, FGameplayTag DamageType)
+{
+	if (!SourceASC)
+	{
+		return 1.0f;
+	}
+	FGameplayAttribute Stat;
+	if (DamageType.MatchesTag(BeyondTags::DamageType_Melee))
+	{
+		Stat = UCharacterAttributeSet::GetStrengthAttribute();
+	}
+	else if (DamageType.MatchesTag(BeyondTags::DamageType_Projectile) || DamageType.MatchesTag(BeyondTags::DamageType_Explosion))
+	{
+		Stat = UCharacterAttributeSet::GetArcanaAttribute();
+	}
+	if (!Stat.IsValid() || !SourceASC->HasAttributeSetForAttribute(Stat))
+	{
+		return 1.0f;
+	}
+	return 1.0f + FMath::Max(SourceASC->GetNumericAttribute(Stat), 0.0f) / 100.0f;
 }
 
 void UBeyondCombatLibrary::GetAbilityBarAbilities(UAbilitySystemComponent* AbilitySystem, TArray<FGameplayAbilitySpecHandle>& OutAbilityHandles)

@@ -16,7 +16,7 @@
 DECLARE_MULTICAST_DELEGATE_FourParams(FBeyondAttributeEvent, AActor* /*Instigator*/, AActor* /*Causer*/, float /*Magnitude*/, FGameplayTag /*HitResponse*/);
 
 /**
- * Health and stamina for every combatant (demigods and enemies).
+ * Health, stamina and combat stats for every combatant (demigods and enemies).
  * Damage and healing should go through the IncomingDamage / IncomingHeal meta attributes
  * (see UBeyondCombatLibrary) so blocking, parrying, invincibility and death are handled in one place.
  */
@@ -44,6 +44,25 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Stamina", ReplicatedUsing = OnRep_MaxStamina)
 	FGameplayAttributeData MaxStamina;
 	ATTRIBUTE_ACCESSORS(UCharacterAttributeSet, MaxStamina)
+
+	// Combat stats: Strength scales melee damage, Arcana ability / magic damage (UBeyondCombatLibrary::ApplyDamage),
+	// Defense reduces damage taken (x 100 / (100 + Defense))
+	UPROPERTY(BlueprintReadOnly, Category = "Stats", ReplicatedUsing = OnRep_Strength)
+	FGameplayAttributeData Strength;
+	ATTRIBUTE_ACCESSORS(UCharacterAttributeSet, Strength)
+
+	UPROPERTY(BlueprintReadOnly, Category = "Stats", ReplicatedUsing = OnRep_Arcana)
+	FGameplayAttributeData Arcana;
+	ATTRIBUTE_ACCESSORS(UCharacterAttributeSet, Arcana)
+
+	UPROPERTY(BlueprintReadOnly, Category = "Stats", ReplicatedUsing = OnRep_Defense)
+	FGameplayAttributeData Defense;
+	ATTRIBUTE_ACCESSORS(UCharacterAttributeSet, Defense)
+
+	// Character level (demigods level up through UBeyondProgressionAttributeSet; enemies keep their Starting Level)
+	UPROPERTY(BlueprintReadOnly, Category = "Stats", ReplicatedUsing = OnRep_Level)
+	FGameplayAttributeData Level;
+	ATTRIBUTE_ACCESSORS(UCharacterAttributeSet, Level)
 
 	//Meta Attributes - temporary values turned into health changes in PostGameplayEffectExecute
 	UPROPERTY(BlueprintReadOnly, Category = "Meta")
@@ -81,6 +100,26 @@ protected:
 	virtual void OnRep_MaxStamina(const FGameplayAttributeData& OldMaxStamina) const
 	{
 		GAMEPLAYATTRIBUTE_REPNOTIFY(UCharacterAttributeSet, MaxStamina, OldMaxStamina);
+	}
+	UFUNCTION()
+	virtual void OnRep_Strength(const FGameplayAttributeData& OldStrength) const
+	{
+		GAMEPLAYATTRIBUTE_REPNOTIFY(UCharacterAttributeSet, Strength, OldStrength);
+	}
+	UFUNCTION()
+	virtual void OnRep_Arcana(const FGameplayAttributeData& OldArcana) const
+	{
+		GAMEPLAYATTRIBUTE_REPNOTIFY(UCharacterAttributeSet, Arcana, OldArcana);
+	}
+	UFUNCTION()
+	virtual void OnRep_Defense(const FGameplayAttributeData& OldDefense) const
+	{
+		GAMEPLAYATTRIBUTE_REPNOTIFY(UCharacterAttributeSet, Defense, OldDefense);
+	}
+	UFUNCTION()
+	virtual void OnRep_Level(const FGameplayAttributeData& OldLevel) const
+	{
+		GAMEPLAYATTRIBUTE_REPNOTIFY(UCharacterAttributeSet, Level, OldLevel);
 	}
 
 	virtual void PreAttributeChange(const FGameplayAttribute& Attribute, float& NewValue) override;

@@ -18,6 +18,7 @@ namespace BeyondTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Duo);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Branded);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Dashing);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Aegis);
 
 	// Owned while an attack / cast ability runs (blocks other attacks)
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Active);
@@ -35,6 +36,7 @@ namespace BeyondTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Montage_Trigger);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_ShootProjectile);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Weapon_Equipped);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Progression_LevelUp);
 
 	// Instigator tags on Event.Weapon.Equipped (no action tag = toggle)
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Weapon_Action_Draw);
@@ -57,6 +59,12 @@ namespace BeyondTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(SetByCaller_Damage);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(SetByCaller_Heal);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(SetByCaller_Duration);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(SetByCaller_Experience);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(SetByCaller_MaxHealth);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(SetByCaller_MaxStamina);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(SetByCaller_Strength);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(SetByCaller_Arcana);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(SetByCaller_Defense);
 
 	// Gameplay cues fired by the shared damage / heal effects
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayCue_Damage_Burst);
@@ -78,4 +86,6 @@ namespace BeyondTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Input_R);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Input_Dodge);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Input_Duo);
+	// A granted ability no key activates (duo powers not on the duo slot)
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Input_Unbound);
 }

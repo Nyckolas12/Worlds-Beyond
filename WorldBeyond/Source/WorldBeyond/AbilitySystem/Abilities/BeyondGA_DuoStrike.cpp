@@ -8,6 +8,7 @@
 #include "Blueprint/UserWidget.h"
 #include "Characters/BeyondCharacterBase.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Engine/OverlapResult.h"
 #include "Engine/World.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/GameplayStatics.h"
@@ -196,7 +197,18 @@ void UBeyondGA_DuoStrike::Flash()
 
 	if (Target)
 	{
-		UBeyondCombatLibrary::ApplyDamage(ConduitCharacter, Target, FlashDamage, BeyondTags::DamageType_Projectile, BeyondTags::Event_Hit_Stun, true);
+		UBeyondCombatLibrary::ApplyDamage(ConduitCharacter, Target, FlashDamage * GetLevelDamageScale(), BeyondTags::DamageType_Projectile, BeyondTags::Event_Hit_Stun, true);
+
+		// Eclipse Brand: the struck enemy is marked for the Striker's blade and the shockwave
+		if (bBrandStruckEnemies && !UBeyondCombatLibrary::IsActorDead(Target))
+		{
+			if (UBeyondCombatSubsystem* Combat = UBeyondCombatSubsystem::Get(Target))
+			{
+				FBeyondBrandSettings Ranked = StruckBrand;
+				Ranked.DetonateDamage *= GetLevelDamageScale();
+				Combat->ApplyBrand(StrikerCharacter, Target, Ranked);
+			}
+		}
 		if (ACharacter* TargetCharacter = Cast<ACharacter>(Target); TargetCharacter && FlashLaunchSpeed > 0.0f && !IsBoss(Target))
 		{
 			TargetCharacter->LaunchCharacter(FVector(0.0f, 0.0f, FlashLaunchSpeed), false, true);
@@ -308,7 +320,7 @@ void UBeyondGA_DuoStrike::Shockwave()
 	{
 		const float Distance = FVector::Dist2D(Center, Target->GetActorLocation());
 		const float Alpha = FMath::Clamp(Distance / ShockwaveRadius, 0.0f, 1.0f);
-		const float Damage = FMath::Lerp(ShockwaveDamageCenter, ShockwaveDamageEdge, Alpha);
+		const float Damage = FMath::Lerp(ShockwaveDamageCenter, ShockwaveDamageEdge, Alpha) * GetLevelDamageScale();
 		UBeyondCombatLibrary::ApplyDamage(StrikerCharacter, Target, Damage, BeyondTags::DamageType_Explosion, ShockwaveHitResponse, true, StrikerCharacter, true);
 
 		if (ACharacter* TargetCharacter = Cast<ACharacter>(Target); TargetCharacter && KnockbackSpeed > 0.0f && !IsBoss(Target))
@@ -318,7 +330,70 @@ void UBeyondGA_DuoStrike::Shockwave()
 		}
 	}
 
+	if (bShockwaveDetonatesBrands)
+	{
+		DetonateBrandsAround(Center);
+	}
+
+	// Tempest Aegis: the storm settles on both of them as a shield
+	if (Aegis.Duration > 0.0f)
+	{
+		if (UBeyondCombatSubsystem* Combat = UBeyondCombatSubsystem::Get(StrikerCharacter))
+		{
+			for (ABeyondCharacterBase* Member : { StrikerCharacter, Conduit.Get() })
+			{
+				if (Member && !UBeyondCombatLibrary::IsActorDead(Member))
+				{
+					Combat->ApplyAegis(Member, Aegis);
+				}
+			}
+		}
+	}
+
 	GetWorld()->GetTimerManager().SetTimer(PhaseTimer, this, &ThisClass::Finish, FMath::Max(RecoveryTime, 0.01f), false);
+}
+
+void UBeyondGA_DuoStrike::DetonateBrandsAround(const FVector& Center)
+{
+	ABeyondCharacterBase* StrikerCharacter = Striker.Get();
+	UBeyondCombatSubsystem* Combat = UBeyondCombatSubsystem::Get(StrikerCharacter);
+	if (!StrikerCharacter || !Combat)
+	{
+		return;
+	}
+
+	// Branded enemies in range, dead ones too (the shockwave may just have killed them; their brand still goes off)
+	TArray<FOverlapResult> Overlaps;
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(BeyondDuoDetonate), false, StrikerCharacter);
+	GetWorld()->OverlapMultiByObjectType(Overlaps, Center, FQuat::Identity, FCollisionObjectQueryParams(ECC_Pawn),
+		FCollisionShape::MakeSphere(ShockwaveRadius * 1.5f), Params);
+
+	TArray<AActor*> Branded;
+	for (const FOverlapResult& Overlap : Overlaps)
+	{
+		AActor* Actor = Overlap.GetActor();
+		if (Actor && !Branded.Contains(Actor) && Combat->IsBranded(Actor) && UBeyondCombatLibrary::AreHostile(StrikerCharacter, Actor))
+		{
+			Branded.Add(Actor);
+		}
+	}
+	// Nearest first, so the chain runs outward from the Striker
+	Branded.Sort([&Center](const AActor& A, const AActor& B)
+	{
+		return FVector::DistSquared(Center, A.GetActorLocation()) < FVector::DistSquared(Center, B.GetActorLocation());
+	});
+
+	ABeyondCharacterBase* Caster = Conduit.IsValid() ? Conduit.Get() : StrikerCharacter;
+	for (AActor* Target : Branded)
+	{
+		BeyondFX::SpawnAtLocation(this, ChainFX, Target->GetActorLocation());
+		Combat->DetonateBrand(Target);
+		if (ChainDamage > 0.0f && !UBeyondCombatLibrary::IsActorDead(Target))
+		{
+			UBeyondCombatLibrary::ApplyDamage(Caster, Target, ChainDamage * GetLevelDamageScale(), BeyondTags::DamageType_Projectile,
+				BeyondTags::Event_Hit_Stun, true);
+		}
+	}
 }
 
 void UBeyondGA_DuoStrike::Finish()

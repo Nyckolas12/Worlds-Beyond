@@ -30,6 +30,36 @@ public:
 	UBeyondGE_Heal();
 };
 
+/** Instant EXP for a demigod: SetByCaller.Experience lands in UBeyondProgressionAttributeSet::IncomingExperience. */
+UCLASS()
+class WORLDBEYOND_API UBeyondGE_GrantExperience : public UGameplayEffect
+{
+	GENERATED_BODY()
+
+public:
+	UBeyondGE_GrantExperience();
+};
+
+/**
+ * Stats from levels: an infinite effect adding SetByCaller.MaxHealth / MaxStamina / Strength / Arcana / Defense.
+ * ABeyondCharacterBase re-applies it with new values on every level-up (Stat Growth x (Level - 1)).
+ */
+UCLASS()
+class WORLDBEYOND_API UBeyondGE_LevelStats : public UGameplayEffect
+{
+	GENERATED_BODY()
+
+public:
+	UBeyondGE_LevelStats();
+};
+
+/** Stats from the skill tree: same SetByCaller stats as UBeyondGE_LevelStats, its own effect so both show in the debugger. */
+UCLASS()
+class WORLDBEYOND_API UBeyondGE_SkillStats : public UBeyondGE_LevelStats
+{
+	GENERATED_BODY()
+};
+
 /**
  * Cooldown used by UBeyondGameplayAbility's Cooldown Duration: lasts SetByCaller.Duration seconds and grants
  * the ability's Cooldown Tags through the spec, so one effect class serves every ability.

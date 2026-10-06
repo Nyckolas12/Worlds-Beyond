@@ -9,12 +9,17 @@
 #include "GenericTeamAgentInterface.h"
 #include "InputCoreTypes.h"
 #include "AbilitySystem/BeyondAbilitySet.h"
+#include "AbilitySystem/BeyondFX.h"
 #include "Characters/BeyondAimComponent.h"
 #include "Characters/BeyondLegacyDamageBridge.h"
+#include "Progression/BeyondProgressionAttributeSet.h"
+#include "Progression/BeyondProgressionSettings.h"
 #include "WorldBeyond/CharacterAttributeSet.h"
 #include "BeyondCharacterBase.generated.h"
 
 class UBeyondAbilitySet;
+class UBeyondSkillTreeAsset;
+class UBeyondSkillTreeComponent;
 class UInputAction;
 class UAnimMontage;
 class USkeletalMeshComponent;
@@ -54,6 +59,7 @@ struct FBeyondInputBinding
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(FBeyondHitTakenSignature, ABeyondCharacterBase*, Character, AActor*, DamageInstigator, float, Damage, FGameplayTag, HitResponse);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FBeyondKilledSignature, ABeyondCharacterBase*, Character, AActor*, Killer);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FBeyondLevelUpSignature, ABeyondCharacterBase*, Character, int32, NewLevel);
 
 UCLASS()
 class WORLDBEYOND_API ABeyondCharacterBase : public ACharacter, public IAbilitySystemInterface, public IGenericTeamAgentInterface
@@ -82,7 +88,82 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Combat")
 	FBeyondKilledSignature OnCharacterKilled;
 
+	// Fired when EXP raised this character's level (not when a save is restored)
+	UPROPERTY(BlueprintAssignable, Category = "Progression")
+	FBeyondLevelUpSignature OnCharacterLevelUp;
+
 	void InitializeAttributeSet();
+
+	// Name shown on the HUD (level-up banner); empty uses the class name without "BP_"
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Character")
+	FText DisplayName;
+
+	UFUNCTION(BlueprintPure, Category = "Character")
+	FText GetCharacterDisplayName() const;
+
+	//~ Progression (EXP and skill points only exist on Player-team characters)
+
+	// How strong this character is as an enemy: decides its EXP (Project Settings -> Game -> Worlds Beyond Progression)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Progression")
+	EBeyondEnemyRank Rank = EBeyondEnemyRank::Regular;
+
+	// EXP the party gets for killing this character; below 0 uses the rank's amount scaled by level
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Progression")
+	float ExperienceReward = -1.0f;
+
+	// Level on spawn (enemies get Stat Growth for every level above 1; the demigods' saved level replaces it)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Progression", meta = (ClampMin = "1"))
+	int32 StartingLevel = 1;
+
+	UFUNCTION(BlueprintPure, Category = "Progression")
+	int32 GetCharacterLevel() const;
+
+	// EXP into the current level
+	UFUNCTION(BlueprintPure, Category = "Progression")
+	float GetExperience() const;
+
+	// EXP the current level needs in total (0 at the max level)
+	UFUNCTION(BlueprintPure, Category = "Progression")
+	float GetExperienceToNextLevel() const;
+
+	UFUNCTION(BlueprintPure, Category = "Progression")
+	int32 GetSkillPoints() const;
+
+	// What killing this character is worth
+	UFUNCTION(BlueprintPure, Category = "Progression")
+	float GetExperienceRewardValue() const;
+
+	// Whether this character earns EXP (Player team)
+	UFUNCTION(BlueprintPure, Category = "Progression")
+	bool CanGainExperience() const { return ProgressionSet != nullptr; }
+
+	// Adds EXP through UBeyondGE_GrantExperience; levels up as thresholds are crossed
+	UFUNCTION(BlueprintCallable, Category = "Progression")
+	void GrantExperience(float Amount);
+
+	// Puts back a saved level / EXP / skill points (no banner or level-up event); refills health and stamina
+	UFUNCTION(BlueprintCallable, Category = "Progression")
+	void RestoreProgress(int32 NewLevel, float NewExperience, int32 NewSkillPoints);
+
+	UBeyondProgressionAttributeSet* GetProgressionSet() const { return ProgressionSet; }
+
+	// Takes Amount skill points; false (and nothing taken) if there aren't enough
+	UFUNCTION(BlueprintCallable, Category = "Progression")
+	bool SpendSkillPoints(int32 Amount);
+
+	UFUNCTION(BlueprintCallable, Category = "Progression")
+	void AddSkillPoints(int32 Amount);
+
+	// This demigod's skill tree (Player team only; created from Skill Tree)
+	UFUNCTION(BlueprintPure, Category = "Progression")
+	UBeyondSkillTreeComponent* GetSkillTreeComponent() const { return SkillTreeComponent; }
+
+	// The ability a key slot fires (same rule as player input); null if none
+	const UGameplayAbility* FindAbilityOnInput(const FGameplayTag& InputTag) const;
+
+	// What this character gains per level above 1
+	UFUNCTION(BlueprintPure, Category = "Progression")
+	FBeyondStatGrowth GetStatGrowth() const { return StatGrowth; }
 
 	/**
 	 * The skeletal mesh that actually animates. MetaHumans keep CharacterMesh0 empty and animate a "Body"
@@ -205,6 +286,33 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AbilitySystem|Attributes")
 	bool bUseLegacyMaxHealth = true;
 
+	// Melee damage +1 % per point
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AbilitySystem|Attributes", meta = (ClampMin = "0"))
+	float BaseStrength = 0.0f;
+
+	// Ability / projectile damage +1 % per point
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AbilitySystem|Attributes", meta = (ClampMin = "0"))
+	float BaseArcana = 0.0f;
+
+	// Damage taken x 100 / (100 + Defense)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AbilitySystem|Attributes", meta = (ClampMin = "0"))
+	float BaseDefense = 0.0f;
+
+	// Added for every level above 1
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Progression")
+	FBeyondStatGrowth StatGrowth;
+
+	// Burst on the character when it levels up (attached to its root)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Progression")
+	FBeyondFX LevelUpFX;
+
+	// The demigod's skill tree (spent with skill points); see UBeyondSkillTreeComponent
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Progression")
+	TObjectPtr<UBeyondSkillTreeAsset> SkillTree;
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Progression")
+	void OnLevelUp(int32 NewLevel);
+
 	// Seconds before a dead character is destroyed (0 keeps the body, e.g. for revivable demigods)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat", meta = (ClampMin = "0"))
 	float DestroyDelayAfterDeath = 0.0f;
@@ -298,6 +406,12 @@ private:
 	void HandleHealthAttributeChanged(const FOnAttributeChangeData& ChangeData);
 	void SyncLegacyHealth();
 
+	void CreateProgressionSet();
+	// (Re)applies Stat Growth x (Level - 1)
+	void ApplyLevelStats();
+	void RefillVitals();
+	void HandleLevelUp(int32 OldLevel, int32 NewLevel);
+
 	void EquipDefaultWeapon();
 	void BindAbilityInput(class UEnhancedInputComponent* EnhancedInput, const UInputAction* Action, const FGameplayTag& InputTag);
 	void Input_ConfirmTarget();
@@ -312,6 +426,14 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UBeyondAimComponent> AimComponent;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UBeyondProgressionAttributeSet> ProgressionSet;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UBeyondSkillTreeComponent> SkillTreeComponent;
+
+	FActiveGameplayEffectHandle LevelStatsHandle;
 
 	bool bAbilitySystemBound = false;
 	bool bStartupGiven = false;

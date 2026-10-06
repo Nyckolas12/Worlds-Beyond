@@ -35,6 +35,7 @@
 #include "LevelSequencePlayer.h"
 #include "Materials/MaterialInterface.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "HAL/IConsoleManager.h"
 #include "Misc/AutomationTest.h"
 #include "Perception/AIPerceptionComponent.h"
 #include "Perception/AISenseConfig_Sight.h"
@@ -302,6 +303,13 @@ bool FBeyondPowersTest::RunTest(const FString& Parameters)
 	State->Test = this;
 
 	ADD_LATENT_AUTOMATION_COMMAND(FEditorLoadMap(TEXT("/Game/SICKA_PERSEPOLIS/MAPS/MAP_Demo_Main")));
+	// Never load or write the player's saved progress (levels / EXP) during a test
+	IConsoleVariable* SaveProgressVar = IConsoleManager::Get().FindConsoleVariable(TEXT("Beyond.SaveProgress"));
+	const FString SaveProgressBefore = SaveProgressVar ? SaveProgressVar->GetString() : FString();
+	if (SaveProgressVar)
+	{
+		SaveProgressVar->Set(TEXT("0"), ECVF_SetByCode);
+	}
 	ADD_LATENT_AUTOMATION_COMMAND(FStartPIECommand(false));
 	ADD_LATENT_AUTOMATION_COMMAND(FWaitLatentCommand(4.0f));
 
@@ -1284,6 +1292,14 @@ bool FBeyondPowersTest::RunTest(const FString& Parameters)
 	}));
 
 	ADD_LATENT_AUTOMATION_COMMAND(FEndPlayMapCommand());
+	ADD_LATENT_AUTOMATION_COMMAND(FBeyondPowersStep([SaveProgressBefore]()
+	{
+		if (IConsoleVariable* Var = IConsoleManager::Get().FindConsoleVariable(TEXT("Beyond.SaveProgress")))
+		{
+			Var->Set(SaveProgressBefore.IsEmpty() ? TEXT("1") : *SaveProgressBefore, ECVF_SetByCode);
+		}
+		return true;
+	}));
 	return true;
 }
 

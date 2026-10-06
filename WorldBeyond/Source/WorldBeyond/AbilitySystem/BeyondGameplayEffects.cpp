@@ -3,6 +3,7 @@
 #include "AbilitySystem/BeyondGameplayEffects.h"
 #include "BeyondGameplayTags.h"
 #include "CharacterAttributeSet.h"
+#include "Progression/BeyondProgressionAttributeSet.h"
 
 namespace
 {
@@ -31,6 +32,22 @@ UBeyondGE_Heal::UBeyondGE_Heal()
 	DurationPolicy = EGameplayEffectDurationType::Instant;
 	Modifiers.Add(MakeSetByCallerModifier(UCharacterAttributeSet::GetIncomingHealAttribute(), BeyondTags::SetByCaller_Heal));
 	GameplayCues.Add(FGameplayEffectCue(BeyondTags::GameplayCue_Heal_Burst, 0.0f, 1.0f));
+}
+
+UBeyondGE_GrantExperience::UBeyondGE_GrantExperience()
+{
+	DurationPolicy = EGameplayEffectDurationType::Instant;
+	Modifiers.Add(MakeSetByCallerModifier(UBeyondProgressionAttributeSet::GetIncomingExperienceAttribute(), BeyondTags::SetByCaller_Experience));
+}
+
+UBeyondGE_LevelStats::UBeyondGE_LevelStats()
+{
+	DurationPolicy = EGameplayEffectDurationType::Infinite;
+	Modifiers.Add(MakeSetByCallerModifier(UCharacterAttributeSet::GetMaxHealthAttribute(), BeyondTags::SetByCaller_MaxHealth));
+	Modifiers.Add(MakeSetByCallerModifier(UCharacterAttributeSet::GetMaxStaminaAttribute(), BeyondTags::SetByCaller_MaxStamina));
+	Modifiers.Add(MakeSetByCallerModifier(UCharacterAttributeSet::GetStrengthAttribute(), BeyondTags::SetByCaller_Strength));
+	Modifiers.Add(MakeSetByCallerModifier(UCharacterAttributeSet::GetArcanaAttribute(), BeyondTags::SetByCaller_Arcana));
+	Modifiers.Add(MakeSetByCallerModifier(UCharacterAttributeSet::GetDefenseAttribute(), BeyondTags::SetByCaller_Defense));
 }
 
 namespace
