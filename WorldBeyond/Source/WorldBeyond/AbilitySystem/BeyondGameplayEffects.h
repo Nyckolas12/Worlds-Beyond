@@ -53,6 +53,13 @@ public:
 	UBeyondGE_LevelStats();
 };
 
+/** Stats from the skill tree: same SetByCaller stats as UBeyondGE_LevelStats, its own effect so both show in the debugger. */
+UCLASS()
+class WORLDBEYOND_API UBeyondGE_SkillStats : public UBeyondGE_LevelStats
+{
+	GENERATED_BODY()
+};
+
 /**
  * Cooldown used by UBeyondGameplayAbility's Cooldown Duration: lasts SetByCaller.Duration seconds and grants
  * the ability's Cooldown Tags through the spec, so one effect class serves every ability.

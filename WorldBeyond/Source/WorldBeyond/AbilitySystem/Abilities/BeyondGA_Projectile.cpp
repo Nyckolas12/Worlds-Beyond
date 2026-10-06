@@ -1,6 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "AbilitySystem/Abilities/BeyondGA_Projectile.h"
+#include "AbilitySystem/BeyondCombatLibrary.h"
 #include "AbilitySystem/BeyondGameplayEffects.h"
 #include "AbilitySystemComponent.h"
 #include "Animation/AnimInstance.h"
@@ -127,7 +128,10 @@ void UBeyondGA_Projectile::Fire()
 	FGameplayEffectSpecHandle Spec = MakeOutgoingGameplayEffectSpec(UBeyondGE_Damage::StaticClass(), GetAbilityLevel());
 	if (Spec.IsValid())
 	{
-		Spec.Data->SetSetByCallerMagnitude(BeyondTags::SetByCaller_Damage, Damage);
+		// The projectile applies this spec itself, outside ApplyDamage: scale by Arcana and the ability's level here
+		const float Scaled = Damage * GetLevelDamageScale()
+			* UBeyondCombatLibrary::GetDamageScale(GetAbilitySystemComponentFromActorInfo(), BeyondTags::DamageType_Projectile);
+		Spec.Data->SetSetByCallerMagnitude(BeyondTags::SetByCaller_Damage, Scaled);
 		Spec.Data->AddDynamicAssetTag(BeyondTags::DamageType_Projectile);
 		Spec.Data->AddDynamicAssetTag(HitResponse.IsValid() ? HitResponse : BeyondTags::Event_Hit_Light);
 	}

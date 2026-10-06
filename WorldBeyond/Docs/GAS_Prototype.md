@@ -13,7 +13,8 @@ one plan per system under [Plans/](Plans/).
 | `UCharacterAttributeSet` | `Source/WorldBeyond/CharacterAttributeSet.*` | Health/Stamina, **Strength / Arcana / Defense / Level**, `IncomingDamage`/`IncomingHeal`; blocking, parrying, invincibility, Defense, brands, death, no friendly fire |
 | Progression | `Progression/` | `UBeyondProgressionAttributeSet` (EXP, skill points; only on the demigods), `UBeyondProgressionSettings` (*Project Settings → Game → Worlds Beyond Progression*: EXP curve, max level, EXP per enemy rank), `FBeyondStatGrowth`. See *Leveling* below |
 | `UBeyondProgressWidget` | `UI/BeyondProgressWidget.*` | Level badge + EXP bar (bottom left), "+25 EXP" pop-ups and the LEVEL UP banner (top centre); drawn in C++, put into `W_PlayerHud` by the player controller |
-| `UBeyondSaveGame` | `Game/BeyondSaveGame.*` | Slot `BeyondProgress`: each demigod's level, EXP and skill points |
+| `UBeyondSaveGame` | `Game/BeyondSaveGame.*` | Slot `BeyondProgress`: each demigod's level, EXP, skill points and skill ranks; the party's Bond Points, duo ranks and duo loadout |
+| Skill trees | `Progression/BeyondSkillTree*`, `UI/BeyondSkillTreeWidget.*` | Tree data assets, `UBeyondSkillTreeComponent` (per demigod, skill points) and `UBeyondDuoSkillTreeComponent` (on the player controller, Bond Points, duo loadout); the K screen. See *Skill trees* below |
 | `ABeyondCharacterBase` | `Characters/BeyondCharacterBase.*` | Parent of `BP_Angel`, `BP_Ji-Woong`, `BP_Enemy_Base`. Grants abilities once, team, ability input slots, death/revive, attack tokens. `GetCombatMesh()` is the mesh that animates (`Body` on MetaHumans); `Suppressed Abilities`; `Duo Role`; `Boss Bar Widget Class`; enemy AI perception detects hostile teams |
 | Legacy bridge | `Characters/BeyondLegacyDamageBridge.*` | Mirrors GAS health into `BPC_DamageSystem` and fires its `OnDamageResponse` / `OnBlocked` / `OnDeath`, so existing hit-react, death and health-bar Blueprints keep working |
 | `UBeyondCombatLibrary` | `AbilitySystem/BeyondCombatLibrary.*` | The one damage API: `ApplyDamage`, `ApplyDamageInfo` (takes `S_DamageInfo`), `HealActor`, `IsActorDead`, attack tokens… |
@@ -41,8 +42,9 @@ one plan per system under [Plans/](Plans/).
 | **Q** | Blink (lightning dash) | **Gilded Step** — golden dash through enemies, they're hit a moment later |
 | **E** | **Arcane Spikes** (`GA_Angel_LightningStrike`) — hold to aim the purple circle, release: blue / purple crystal spikes burst out of the ground (RMB cancels) | **Sunbrand** — brand an enemy; your next sword hit detonates it |
 | **R** | Heal | Heal |
-| **G** | **Heaven's Judgment** (duo) when the Bond meter is full — its own slot left of the meter | same |
+| **G** | The duo power in the **duo loadout** (Heaven's Judgment until you pick another in the duo tree) when the Bond meter is full | same |
 | Tab | Swap | Swap |
+| **K** | **Skill trees** (pauses the game) | same |
 
 The Bond meter fills as the demigods deal and take damage, faster when both hit the same enemy.
 Heaven's Judgment needs a full meter and both demigods alive within 15 m of each other; you can't Tab-swap while it plays.
@@ -185,6 +187,22 @@ Done earlier: TakeDamage routed into GAS, attack tokens, enemy heal, death handl
 - Tuning lives in *Project Settings → Game → Worlds Beyond Progression* (saved to `Config/DefaultGame.ini`) and on each
   character under *Progression* / *AbilitySystem → Attributes*.
 
+## Skill trees
+
+- **K** opens them (the game pauses): a tab for Angel, one for Ji-Woong and the shared **Duo** tree; Q / E switch.
+  Hover a node for what it does and what it needs; **hold the left mouse button** on it to unlock the next rank;
+  **R** twice resets the tree you're on (every point back); K / Esc closes.
+- Personal trees cost the demigod's **skill points** (one per level). The duo tree costs **Bond Points**: one every 3
+  party levels and one for each main boss (Boss rank).
+- Nodes raise stats (health, stamina, Strength, Arcana, Defense) or **rank up an ability**: each rank is +15 % damage
+  and −8 % cooldown on that ability. Duo nodes rank up the duo moves, change the Bond meter, or unlock **duo powers**.
+- **Duo loadout:** right-click an unlocked duo power (or *Heaven's Wrath* for Heaven's Judgment) to put it on G. The
+  Bond meter's medallion shows its icon.
+- Trees are data: `/Game/WorldsBeyond/SkillTrees/DA_SkillTree_Angel`, `_JiWoong`, `_Duo`. Add or tune nodes there
+  (keep node ids: saves use them). Which tree a demigod uses: *Progression → Skill Tree* on `BP_Angel` / `BP_Ji-Woong`;
+  the duo tree: *Party → Skill Tree → Duo Skill Tree Asset* on `BP_PC`.
+- Node lists: [Plans/01_Leveling_SkillTree.md](Plans/01_Leveling_SkillTree.md#the-trees-as-built-tune-them-in-the-editor).
+
 ## Level checklist (`MAP_Demo_Main`)
 
 - Place a **BeyondCheckpoint** before each encounter (the arrow is the respawn point).
@@ -196,7 +214,7 @@ Done earlier: TakeDamage routed into GAS, attack tokens, enemy heal, death handl
 Run with the editor closed (build the C++ first):
 
 ```
-UnrealEditor-Cmd.exe WorldBeyond.uproject -run=pythonscript -script=<repo>/WorldBeyond/Scripts/Migration/migrate_pass7.py -unattended -nosplash -NullRHI
+UnrealEditor-Cmd.exe WorldBeyond.uproject -run=pythonscript -script=<repo>/WorldBeyond/Scripts/Migration/migrate_pass8.py -unattended -nosplash -NullRHI
 UnrealEditor-Cmd.exe WorldBeyond.uproject -run=pythonscript -script=<repo>/WorldBeyond/Scripts/Migration/fit_outfits.py -unattended -nosplash -NullRHI
 UnrealEditor-Cmd.exe WorldBeyond.uproject -run=pythonscript -script=<repo>/WorldBeyond/Scripts/Migration/cleanup_legacy.py -unattended -nosplash -NullRHI
 UnrealEditor-Cmd.exe WorldBeyond.uproject -ExecCmds="Automation RunTests WorldsBeyond.Prototype;Quit" -unattended -nullrhi -nosplash -TestExit="Automation Test Queue Empty"
@@ -222,6 +240,10 @@ UnrealEditor-Cmd.exe WorldBeyond.uproject -ExecCmds="Automation RunTests WorldsB
   `last_run_pass6.txt`.
 - `migrate_pass7.py` — pass 7 (Plan 1A, leveling): enemy ranks, the demigods' names, starting Strength / Arcana /
   Defense, *Stat Growth* and *Level Up FX*. The level display needs no asset. Report: `last_run_pass7.txt`.
+- `migrate_pass8.py` — pass 8 (Plan 1B, skill trees): the three tree data assets, `GA_Duo_EclipseBrand` and
+  `GA_Duo_TempestAegis` (copies of Heaven's Judgment with their variant on), the trees on `BP_Angel` / `BP_Ji-Woong` /
+  `BP_PC`, `IA_SkillTree` on K. Trees and duo powers are only created when missing; `BEYOND_REBUILD_TREES=1` rebuilds
+  the trees (in PowerShell `$env:BEYOND_REBUILD_TREES = "1"` first). Report: `last_run_pass8.txt`.
 - `fit_outfits.py` — snug-fits the outfits (see *Clothing fit* below). Needs the **GeometryScripting** plugin, which
   `WorldBeyond.uproject` now enables (editor only).
 - All passes are idempotent and back up every asset they save to `Saved/MigrationBackups/<timestamp>/`; shared helpers live in
@@ -248,6 +270,13 @@ UnrealEditor-Cmd.exe WorldBeyond.uproject -ExecCmds="Automation RunTests WorldsB
   shows the banner naming both, Strength scales melee damage, environment damage ignores stats, 100 Defense halves
   damage, the save game round-trips, restoring a save sets level / EXP / points / stats, the level display is in the
   HUD.
+- `WorldsBeyond.Prototype.SkillTree` — the three trees exist and are valid, level / prerequisite / point gates with
+  their reasons, unlocking stats, an ability rank (spec level 2) and max health (current health follows), max rank,
+  reset refunds and removes everything, Bond Points at levels 3 / 6 / 9 and from a Boss-ranked kill, Bond gain from the
+  duo tree, Eclipse Brand granted to both demigods off the slot then put on G (Heaven's Judgment off it), a locked power
+  refused, duo ranks on both demigods, the duo reset, the K screen (opens paused on the leader's tree, three tabs, hold
+  to unlock, explains a locked node, closes unpaused), saved ranks restored without spending, Tempest Aegis halving a
+  hit and reflecting it.
 - Every PIE test sets `Beyond.SaveProgress 0` while it runs, so your saved levels are never loaded or overwritten.
 - Also in the editor: *Tools → Test Automation*, filter WorldsBeyond.
 

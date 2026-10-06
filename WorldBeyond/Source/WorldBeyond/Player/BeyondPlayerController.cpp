@@ -22,10 +22,12 @@
 #include "Engine/LocalPlayer.h"
 #include "Engine/World.h"
 #include "Player/BeyondPartyComponent.h"
+#include "Progression/BeyondSkillTreeComponent.h"
 #include "TimerManager.h"
 #include "UI/BeyondBondMeterWidget.h"
 #include "UI/BeyondCrosshairWidget.h"
 #include "UI/BeyondProgressWidget.h"
+#include "UI/BeyondSkillTreeWidget.h"
 #include "UObject/UnrealType.h"
 
 namespace
@@ -79,6 +81,8 @@ namespace
 ABeyondPlayerController::ABeyondPlayerController()
 {
 	PartyComponent = CreateDefaultSubobject<UBeyondPartyComponent>(TEXT("PartyComponent"));
+	DuoSkillTree = CreateDefaultSubobject<UBeyondDuoSkillTreeComponent>(TEXT("DuoSkillTree"));
+	SkillTreeWidgetClass = UBeyondSkillTreeWidget::StaticClass();
 	BondWidgetClass = UBeyondBondMeterWidget::StaticClass();
 	ProgressWidgetClass = UBeyondProgressWidget::StaticClass();
 	CrosshairWidgetClass = UBeyondCrosshairWidget::StaticClass();
@@ -90,6 +94,13 @@ void ABeyondPlayerController::BeginPlay()
 
 	PartyComponent->OnLeaderChanged.AddUniqueDynamic(this, &ThisClass::HandleLeaderChanged);
 	AddMappingContexts();
+
+	// Before the party forms: loading the save restores the duo tree's ranks against this asset
+	if (DuoSkillTreeAsset)
+	{
+		DuoSkillTree->SetTree(DuoSkillTreeAsset);
+	}
+	DuoSkillTree->OnSkillTreeChanged.AddUniqueDynamic(this, &ThisClass::HandleDuoTreeChanged);
 
 	// Possession can happen before BeginPlay; initialize the party with whatever we already control
 	if (GetPawn())
@@ -132,9 +143,16 @@ void ABeyondPlayerController::SetupInputComponent()
 {
 	Super::SetupInputComponent();
 
-	if (UEnhancedInputComponent* EnhancedInput = Cast<UEnhancedInputComponent>(InputComponent); EnhancedInput && SwapAction)
+	if (UEnhancedInputComponent* EnhancedInput = Cast<UEnhancedInputComponent>(InputComponent))
 	{
-		EnhancedInput->BindAction(SwapAction.Get(), ETriggerEvent::Started, this, &ThisClass::Input_Swap);
+		if (SwapAction)
+		{
+			EnhancedInput->BindAction(SwapAction.Get(), ETriggerEvent::Started, this, &ThisClass::Input_Swap);
+		}
+		if (SkillTreeAction)
+		{
+			EnhancedInput->BindAction(SkillTreeAction.Get(), ETriggerEvent::Started, this, &ThisClass::ToggleSkillTree);
+		}
 	}
 }
 
@@ -317,6 +335,80 @@ void ABeyondPlayerController::AttachProgressWidget()
 	}
 }
 
+void ABeyondPlayerController::OpenSkillTree(int32 Tab)
+{
+	if (!IsLocalController() || !SkillTreeWidgetClass)
+	{
+		return;
+	}
+	if (!SkillTreeWidget)
+	{
+		SkillTreeWidget = CreateWidget<UUserWidget>(this, SkillTreeWidgetClass);
+	}
+	if (!SkillTreeWidget)
+	{
+		return;
+	}
+
+	if (!SkillTreeWidget->IsInViewport())
+	{
+		SkillTreeWidget->AddToViewport(50);
+	}
+	if (UBeyondSkillTreeWidget* Tree = Cast<UBeyondSkillTreeWidget>(SkillTreeWidget))
+	{
+		Tree->RefreshTabs();
+		Tree->SelectTab(Tab >= 0 ? Tab : Tree->FindTabFor(GetPawn()));
+	}
+
+	FInputModeUIOnly InputMode;
+	InputMode.SetWidgetToFocus(SkillTreeWidget->TakeWidget());
+	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+	SetInputMode(InputMode);
+	SetShowMouseCursor(true);
+
+	if (bPauseWhileSkillTreeOpen && !IsPaused())
+	{
+		bPausedBySkillTree = SetPause(true);
+	}
+}
+
+void ABeyondPlayerController::CloseSkillTree()
+{
+	if (SkillTreeWidget)
+	{
+		SkillTreeWidget->RemoveFromParent();
+	}
+	SetInputMode(FInputModeGameOnly());
+	SetShowMouseCursor(false);
+	if (bPausedBySkillTree)
+	{
+		SetPause(false);
+		bPausedBySkillTree = false;
+	}
+}
+
+void ABeyondPlayerController::ToggleSkillTree()
+{
+	if (IsSkillTreeOpen())
+	{
+		CloseSkillTree();
+	}
+	else
+	{
+		OpenSkillTree();
+	}
+}
+
+bool ABeyondPlayerController::IsSkillTreeOpen() const
+{
+	return SkillTreeWidget && SkillTreeWidget->IsInViewport();
+}
+
+void ABeyondPlayerController::HandleDuoTreeChanged(UBeyondSkillTreeComponent* Tree)
+{
+	RefreshDuoIcon();
+}
+
 void ABeyondPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	HideBossBar();
@@ -427,18 +519,9 @@ void ABeyondPlayerController::RefreshDuoIcon()
 		return;
 	}
 
-	// The icon of whatever sits on the duo slot (Ability.Input.Duo)
-	UTexture2D* Icon = nullptr;
-	for (const FGameplayAbilitySpec& Spec : ASC->GetActivatableAbilities())
-	{
-		const UBeyondGameplayAbility* Ability = Cast<UBeyondGameplayAbility>(Spec.Ability);
-		if (Ability && (Spec.GetDynamicSpecSourceTags().HasTagExact(BeyondTags::Ability_Input_Duo) || Ability->InputTag == BeyondTags::Ability_Input_Duo))
-		{
-			Icon = Ability->Icon;
-			break;
-		}
-	}
-	Meter->SetDuoIcon(Icon);
+	// The icon of whatever sits on the duo slot (the duo loadout; same rule as the G key)
+	const UBeyondGameplayAbility* Ability = Cast<UBeyondGameplayAbility>(Leader->FindAbilityOnInput(BeyondTags::Ability_Input_Duo));
+	Meter->SetDuoIcon(Ability ? Ability->Icon.Get() : nullptr);
 }
 
 void ABeyondPlayerController::HandleBondChanged(float Bond, float MaxBond)

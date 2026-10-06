@@ -9,7 +9,10 @@
 
 class ABeyondCharacterBase;
 class UBeyondBondMeterWidget;
+class UBeyondDuoSkillTreeComponent;
 class UBeyondPartyComponent;
+class UBeyondSkillTreeAsset;
+class UBeyondSkillTreeComponent;
 struct FOnAttributeChangeData;
 class UInputAction;
 class UInputMappingContext;
@@ -32,6 +35,42 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Party")
 	TObjectPtr<UBeyondPartyComponent> PartyComponent;
+
+	// The duo skill tree (Bond Points, duo powers, duo loadout)
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Party")
+	TObjectPtr<UBeyondDuoSkillTreeComponent> DuoSkillTree;
+
+	// Given to Duo Skill Tree on BeginPlay
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Party|Skill Tree")
+	TObjectPtr<UBeyondSkillTreeAsset> DuoSkillTreeAsset;
+
+	// Opens / closes the skill tree screen (K)
+	UPROPERTY(EditDefaultsOnly, Category = "Input")
+	TObjectPtr<UInputAction> SkillTreeAction;
+
+	// The skill tree screen; leave empty to disable it
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Skill Tree")
+	TSubclassOf<UUserWidget> SkillTreeWidgetClass;
+
+	// Pause the game while the skill tree is open
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Skill Tree")
+	bool bPauseWhileSkillTreeOpen = true;
+
+	// Opens the skill tree on a tab (0: the leader's tree; the duo tree is the last tab)
+	UFUNCTION(BlueprintCallable, Category = "UI|Skill Tree")
+	void OpenSkillTree(int32 Tab = -1);
+
+	UFUNCTION(BlueprintCallable, Category = "UI|Skill Tree")
+	void CloseSkillTree();
+
+	UFUNCTION(BlueprintCallable, Category = "UI|Skill Tree")
+	void ToggleSkillTree();
+
+	UFUNCTION(BlueprintPure, Category = "UI|Skill Tree")
+	bool IsSkillTreeOpen() const;
+
+	UFUNCTION(BlueprintPure, Category = "UI|Skill Tree")
+	UUserWidget* GetSkillTreeWidget() const { return SkillTreeWidget; }
 
 	UPROPERTY(EditDefaultsOnly, Category = "Input")
 	TArray<TObjectPtr<UInputMappingContext>> DefaultMappingContexts;
@@ -96,6 +135,9 @@ protected:
 
 	UFUNCTION()
 	void HandleBondChanged(float Bond, float MaxBond);
+
+	UFUNCTION()
+	void HandleDuoTreeChanged(UBeyondSkillTreeComponent* Tree);
 
 private:
 	// Where AttachToHUD puts a widget in the HUD canvas (or the viewport without one)
@@ -165,6 +207,11 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UUserWidget> CrosshairWidget;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UUserWidget> SkillTreeWidget;
+
+	bool bPausedBySkillTree = false;
 
 	FTimerHandle CrosshairTimer;
 

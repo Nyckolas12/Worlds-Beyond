@@ -14,6 +14,7 @@
 #include "GameFramework/PlayerController.h"
 #include "HAL/IConsoleManager.h"
 #include "Kismet/GameplayStatics.h"
+#include "Progression/BeyondSkillTreeComponent.h"
 #include "TimerManager.h"
 
 namespace
@@ -78,6 +79,10 @@ void UBeyondPartyComponent::BeginPlay()
 		Combat->OnDamageDealt.AddUniqueDynamic(this, &ThisClass::HandleDamageDealt);
 		Combat->OnCharacterKilled.AddUniqueDynamic(this, &ThisClass::HandleCharacterKilled);
 	}
+	if (UBeyondSkillTreeComponent* DuoTree = GetDuoTree())
+	{
+		DuoTree->OnSkillTreeChanged.AddUniqueDynamic(this, &ThisClass::HandleSkillTreeChanged);
+	}
 }
 
 void UBeyondPartyComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -111,6 +116,79 @@ void UBeyondPartyComponent::HandleCharacterKilled(ABeyondCharacterBase* Victim, 
 		static_cast<int32>(Victim->Rank), Victim->GetCharacterLevel(), Reward);
 	AwardExperience(Reward);
 	OnExperienceAwarded.Broadcast(Victim, Reward);
+
+	// Main bosses also give Bond Points for the duo tree
+	if (Victim->Rank == EBeyondEnemyRank::Boss && BondPointsPerBoss > 0)
+	{
+		AddBondPoints(BondPointsPerBoss);
+		SaveProgress();
+	}
+}
+
+int32 UBeyondPartyComponent::GetPartyLevel() const
+{
+	int32 Level = 1;
+	for (const ABeyondCharacterBase* Member : Members)
+	{
+		if (IsValid(Member))
+		{
+			Level = FMath::Max(Level, Member->GetCharacterLevel());
+		}
+	}
+	return Level;
+}
+
+void UBeyondPartyComponent::AddBondPoints(int32 Amount)
+{
+	if (Amount > 0)
+	{
+		BondPoints += Amount;
+		OnBondPointsChanged.Broadcast(BondPoints);
+	}
+}
+
+bool UBeyondPartyComponent::SpendBondPoints(int32 Amount)
+{
+	if (Amount < 0 || BondPoints < Amount)
+	{
+		return false;
+	}
+	BondPoints -= Amount;
+	OnBondPointsChanged.Broadcast(BondPoints);
+	return true;
+}
+
+void UBeyondPartyComponent::AwardBondPointsForLevel(int32 Level)
+{
+	// One per LevelsPerBondPoint party levels (3, 6, 9 ...); both demigods levelling together only counts once
+	int32 Earned = 0;
+	while (BondPointsLevel + LevelsPerBondPoint <= Level)
+	{
+		BondPointsLevel += LevelsPerBondPoint;
+		++Earned;
+	}
+	if (Earned > 0)
+	{
+		UE_LOG(LogBeyond, Log, TEXT("Party: level %d, +%d Bond Point%s"), Level, Earned, Earned == 1 ? TEXT("") : TEXT("s"));
+		AddBondPoints(Earned);
+	}
+}
+
+void UBeyondPartyComponent::SetBondModifiers(float GainMultiplier, float EchoFraction)
+{
+	BondGainMultiplier = FMath::Max(GainMultiplier, 0.0f);
+	BondEchoFraction = FMath::Clamp(EchoFraction, 0.0f, 0.9f);
+}
+
+UBeyondSkillTreeComponent* UBeyondPartyComponent::GetDuoTree() const
+{
+	const AActor* Owner = GetOwner();
+	return Owner ? Owner->FindComponentByClass<UBeyondDuoSkillTreeComponent>() : nullptr;
+}
+
+void UBeyondPartyComponent::HandleSkillTreeChanged(UBeyondSkillTreeComponent* Tree)
+{
+	SaveProgress();
 }
 
 void UBeyondPartyComponent::AwardExperience(float Amount)
@@ -131,6 +209,7 @@ void UBeyondPartyComponent::AwardExperience(float Amount)
 
 void UBeyondPartyComponent::HandleMemberLevelUp(ABeyondCharacterBase* Member, int32 NewLevel)
 {
+	AwardBondPointsForLevel(NewLevel);
 	OnMemberLevelUp.Broadcast(Member, NewLevel);
 	SaveProgress();
 }
@@ -142,7 +221,7 @@ bool UBeyondPartyComponent::IsSavingEnabled() const
 
 bool UBeyondPartyComponent::SaveProgress()
 {
-	if (!bProgressLoaded || !IsSavingEnabled() || Members.IsEmpty())
+	if (!bProgressLoaded || bRestoringProgress || !IsSavingEnabled() || Members.IsEmpty())
 	{
 		return false;
 	}
@@ -165,7 +244,20 @@ bool UBeyondPartyComponent::SaveProgress()
 			Progress.Level = Member->GetCharacterLevel();
 			Progress.Experience = Member->GetExperience();
 			Progress.SkillPoints = Member->GetSkillPoints();
+			if (const UBeyondSkillTreeComponent* Tree = Member->GetSkillTreeComponent())
+			{
+				Progress.SkillRanks = Tree->GetRanks();
+			}
 		}
+	}
+
+	Save->Version = 2;
+	Save->BondPoints = BondPoints;
+	Save->BondPointsLevel = BondPointsLevel;
+	if (const UBeyondDuoSkillTreeComponent* DuoTree = Cast<UBeyondDuoSkillTreeComponent>(GetDuoTree()))
+	{
+		Save->DuoRanks = DuoTree->GetRanks();
+		Save->DuoLoadout = FSoftClassPath(DuoTree->GetDuoLoadout().Get());
 	}
 
 	const bool bSaved = UGameplayStatics::SaveGameToSlot(Save, UBeyondSaveGame::SlotName, UBeyondSaveGame::UserIndex);
@@ -187,28 +279,60 @@ bool UBeyondPartyComponent::LoadProgress()
 		return false;
 	}
 
+	TGuardValue<bool> Restoring(bRestoringProgress, true);
 	for (ABeyondCharacterBase* Member : Members)
 	{
 		const FBeyondMemberProgress* Progress = IsValid(Member) ? Save->Members.Find(Member->GetClass()->GetFName()) : nullptr;
 		if (Progress && Member->CanGainExperience())
 		{
 			Member->RestoreProgress(Progress->Level, Progress->Experience, Progress->SkillPoints);
-			UE_LOG(LogBeyond, Log, TEXT("Party: %s restored at level %d (%.0f EXP, %d skill points)"), *Member->GetName(),
-				Progress->Level, Progress->Experience, Progress->SkillPoints);
+			if (UBeyondSkillTreeComponent* Tree = Member->GetSkillTreeComponent())
+			{
+				Tree->RestoreRanks(Progress->SkillRanks);
+			}
+			UE_LOG(LogBeyond, Log, TEXT("Party: %s restored at level %d (%.0f EXP, %d skill points, %d skills)"), *Member->GetName(),
+				Progress->Level, Progress->Experience, Progress->SkillPoints, Progress->SkillRanks.Num());
 		}
 	}
+
+	BondPoints = FMath::Max(Save->BondPoints, 0);
+	BondPointsLevel = FMath::Max(Save->BondPointsLevel, 0);
+	OnBondPointsChanged.Broadcast(BondPoints);
+	if (UBeyondDuoSkillTreeComponent* DuoTree = Cast<UBeyondDuoSkillTreeComponent>(GetDuoTree()))
+	{
+		DuoTree->RestoreRanks(Save->DuoRanks);
+		if (UClass* Loadout = Save->DuoLoadout.TryLoadClass<UGameplayAbility>())
+		{
+			DuoTree->SetDuoLoadout(Loadout);
+		}
+	}
+	// Saves from before Bond Points existed: catch up on the levels already reached
+	AwardBondPointsForLevel(GetPartyLevel());
 	return true;
 }
 
 void UBeyondPartyComponent::ResetProgress()
 {
 	UGameplayStatics::DeleteGameInSlot(UBeyondSaveGame::SlotName, UBeyondSaveGame::UserIndex);
+	TGuardValue<bool> Restoring(bRestoringProgress, true);
 	for (ABeyondCharacterBase* Member : Members)
 	{
 		if (IsValid(Member) && Member->CanGainExperience())
 		{
+			// Ranks first (no refund), then level 1 with no points
+			if (UBeyondSkillTreeComponent* Tree = Member->GetSkillTreeComponent())
+			{
+				Tree->RestoreRanks(TMap<FName, int32>());
+			}
 			Member->RestoreProgress(1, 0.0f, 0);
 		}
+	}
+	BondPoints = 0;
+	BondPointsLevel = 0;
+	OnBondPointsChanged.Broadcast(BondPoints);
+	if (UBeyondSkillTreeComponent* DuoTree = GetDuoTree())
+	{
+		DuoTree->RestoreRanks(TMap<FName, int32>());
 	}
 	UE_LOG(LogBeyond, Log, TEXT("Party: progress reset to level 1"));
 }
@@ -249,7 +373,7 @@ void UBeyondPartyComponent::HandleDamageDealt(AActor* DamageInstigator, AActor* 
 
 	if (FindMemberFor(Target))
 	{
-		AddBond(Damage * BondPerDamageTaken);
+		AddBond(Damage * BondPerDamageTaken * BondGainMultiplier);
 		return;
 	}
 
@@ -271,6 +395,7 @@ void UBeyondPartyComponent::HandleDamageDealt(AActor* DamageInstigator, AActor* 
 	}
 	Recent.Member = Attacker;
 	Recent.Time = Now;
+	Gain *= BondGainMultiplier;
 
 	if (RecentHits.Num() > 64)
 	{
@@ -300,7 +425,8 @@ bool UBeyondPartyComponent::ConsumeBond()
 	{
 		return false;
 	}
-	SetBond(0.0f);
+	// Bond Echo (duo tree) leaves part of the meter filled
+	SetBond(MaxBond * BondEchoFraction);
 	return true;
 }
 
@@ -386,6 +512,10 @@ void UBeyondPartyComponent::AddMember(ABeyondCharacterBase* Member)
 		Members.Add(Member);
 		Member->OnCharacterKilled.AddUniqueDynamic(this, &ThisClass::HandleMemberKilled);
 		Member->OnCharacterLevelUp.AddUniqueDynamic(this, &ThisClass::HandleMemberLevelUp);
+		if (UBeyondSkillTreeComponent* Tree = Member->GetSkillTreeComponent())
+		{
+			Tree->OnSkillTreeChanged.AddUniqueDynamic(this, &ThisClass::HandleSkillTreeChanged);
+		}
 	}
 }
 

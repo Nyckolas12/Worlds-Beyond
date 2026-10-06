@@ -13,6 +13,7 @@ namespace BeyondTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Duo, "State.Duo", "Performing the duo super move; the companion AI waits");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Branded, "State.Branded", "Carries a brand (Sunbrand): takes extra damage, the brander's melee hit detonates it");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Dashing, "State.Dashing", "Mid-dash");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Aegis, "State.Aegis", "Storm shield (Tempest Aegis): less damage taken, part of it reflected");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Active, "Ability.Active", "Any attacking/casting ability is running");
 
@@ -71,4 +72,5 @@ namespace BeyondTags
 	UE_DEFINE_GAMEPLAY_TAG(Ability_Input_R, "Ability.Input.R");
 	UE_DEFINE_GAMEPLAY_TAG(Ability_Input_Dodge, "Ability.Input.Dodge");
 	UE_DEFINE_GAMEPLAY_TAG(Ability_Input_Duo, "Ability.Input.Duo");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Input_Unbound, "Ability.Input.Unbound", "Granted but on no key (duo powers not in the duo loadout)");
 }

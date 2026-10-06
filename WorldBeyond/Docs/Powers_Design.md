@@ -110,6 +110,24 @@ interrupted for the whole move; the buddy AI waits.
 All timings, damage, radii, montages and effects are properties on `GA_Duo_HeavensJudgment`. Blueprint hook
 **On Phase Started (Phase, Conduit, Striker)** is there for polish (camera, slow motion, voice lines).
 
+## Duo powers from the duo tree
+
+Unlocked with Bond Points in the duo skill tree (K → Duo), then put on G with a right-click (the **duo loadout**).
+Both are `GA_Duo_HeavensJudgment` copies with a variant switched on (*Duo | Variant* on the ability), so they keep its
+three phases, montages and effects; tune them on the assets in `/Game/WorldsBeyond/Abilities/Duo/`.
+
+- **Eclipse Brand** (party level 6, 2 Bond Points) — Heaven: 6 flashes (10 damage each) that also **brand** every
+  enemy they strike for Ji-Woong (Sunbrand's settings, 10 s). Judgment: after the shockwave (150 → 70), **every brand
+  within 1.5× the radius goes off** at once, nearest first, and Angel's lightning chains through each one (30 damage,
+  stun). Ji-Woong's sword can also set the brands off early.
+- **Tempest Aegis** (party level 9, 2 Bond Points) — Heaven: 4 flashes; Judgment: a lighter shockwave (120 → 60);
+  then **both demigods carry a storm shield for 8 s**: damage taken −40 %, and half of each hit is thrown back at the
+  attacker as lightning (it grows with the shielded demigod's Arcana).
+- **Ranks:** *Heaven's Wrath*, *Total Eclipse* and *Eye of the Tempest* add +15 % damage per rank to their move (all
+  its hits, the chain lightning and brand detonations included).
+- Other duo nodes: *Kindred Spirits* / *Soul-Bound* (Bond meter fills faster), *Lingering Bond* (after a duo move the
+  meter keeps 15 % per rank).
+
 ### Polish list
 - Retarget the mannequin montages (battle cry, jump attack, sword draw, hadouken) onto the MetaHuman skeleton, and give
   the MetaHumans' `CharacterMesh0` the body mesh (or copy root motion) so leaps actually travel.

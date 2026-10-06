@@ -23,6 +23,7 @@
 #include "Perception/AISenseConfig_Sight.h"
 #include "Perception/AISense_Damage.h"
 #include "Progression/BeyondProgressionAttributeSet.h"
+#include "Progression/BeyondSkillTreeComponent.h"
 #include "WorldBeyond.h"
 
 // Sets default values
@@ -498,6 +499,42 @@ void ABeyondCharacterBase::CreateProgressionSet()
 	ProgressionSet = NewObject<UBeyondProgressionAttributeSet>(this, TEXT("ProgressionAttributeSet"));
 	AbilitySystemComponent->AddSpawnedAttribute(ProgressionSet);
 	ProgressionSet->OnLevelUp.AddUObject(this, &ThisClass::HandleLevelUp);
+
+	SkillTreeComponent = NewObject<UBeyondSkillTreeComponent>(this, TEXT("SkillTree"));
+	SkillTreeComponent->Tree = SkillTree;
+	SkillTreeComponent->RegisterComponent();
+}
+
+bool ABeyondCharacterBase::SpendSkillPoints(int32 Amount)
+{
+	if (!ProgressionSet || !AbilitySystemComponent || Amount < 0 || GetSkillPoints() < Amount)
+	{
+		return false;
+	}
+	AbilitySystemComponent->SetNumericAttributeBase(UBeyondProgressionAttributeSet::GetSkillPointsAttribute(), static_cast<float>(GetSkillPoints() - Amount));
+	return true;
+}
+
+void ABeyondCharacterBase::AddSkillPoints(int32 Amount)
+{
+	if (ProgressionSet && AbilitySystemComponent && Amount > 0)
+	{
+		AbilitySystemComponent->SetNumericAttributeBase(UBeyondProgressionAttributeSet::GetSkillPointsAttribute(), static_cast<float>(GetSkillPoints() + Amount));
+	}
+}
+
+const UGameplayAbility* ABeyondCharacterBase::FindAbilityOnInput(const FGameplayTag& InputTag) const
+{
+	TArray<FGameplayAbilitySpecHandle> Handles;
+	CollectSpecsWithInputTag(InputTag, Handles);
+	for (const FGameplayAbilitySpecHandle& Handle : Handles)
+	{
+		if (const FGameplayAbilitySpec* Spec = AbilitySystemComponent->FindAbilitySpecFromHandle(Handle); Spec && Spec->Ability)
+		{
+			return Spec->Ability;
+		}
+	}
+	return nullptr;
 }
 
 int32 ABeyondCharacterBase::GetCharacterLevel() const

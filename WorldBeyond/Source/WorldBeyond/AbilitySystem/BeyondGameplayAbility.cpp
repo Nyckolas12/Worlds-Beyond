@@ -55,7 +55,18 @@ FRotator UBeyondGameplayAbility::GetAimRotation(FVector Origin) const
 
 bool UBeyondGameplayAbility::ApplyDamageToTarget(AActor* Target, float Amount, FGameplayTag DamageType, FGameplayTag HitResponse, bool bUnblockable)
 {
-	return UBeyondCombatLibrary::ApplyDamage(GetAvatarActorFromActorInfo(), Target, Amount, DamageType, HitResponse, bUnblockable, GetAvatarActorFromActorInfo());
+	return UBeyondCombatLibrary::ApplyDamage(GetAvatarActorFromActorInfo(), Target, Amount * GetLevelDamageScale(), DamageType, HitResponse, bUnblockable,
+		GetAvatarActorFromActorInfo());
+}
+
+float UBeyondGameplayAbility::GetLevelDamageScale() const
+{
+	return 1.0f + DamagePerLevel * FMath::Max(GetAbilityLevel() - 1, 0);
+}
+
+float UBeyondGameplayAbility::GetLevelCooldownScale(int32 Level) const
+{
+	return FMath::Max(0.4f, 1.0f - CooldownReductionPerLevel * FMath::Max(Level - 1, 0));
 }
 
 TArray<AActor*> UBeyondGameplayAbility::FindHostilesInRadius(FVector Center, float Radius) const
@@ -122,7 +133,7 @@ void UBeyondGameplayAbility::ApplyCooldown(const FGameplayAbilitySpecHandle Hand
 	if (Spec.IsValid())
 	{
 		Spec.Data->DynamicGrantedTags.AppendTags(CooldownTags);
-		Spec.Data->SetSetByCallerMagnitude(BeyondTags::SetByCaller_Duration, CooldownDuration);
+		Spec.Data->SetSetByCallerMagnitude(BeyondTags::SetByCaller_Duration, CooldownDuration * GetLevelCooldownScale(GetAbilityLevel(Handle, ActorInfo)));
 		ApplyGameplayEffectSpecToOwner(Handle, ActorInfo, ActivationInfo, Spec);
 	}
 }

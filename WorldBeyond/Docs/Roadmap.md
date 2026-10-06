@@ -7,8 +7,8 @@ gets its own plan in [Plans/](Plans/), built one at a time in this order:
 | # | Plan | Status | Why this order |
 |---|---|---|---|
 | **1A** | [Leveling and stats in GAS](Plans/01_Leveling_SkillTree.md#plan-1a--leveling-and-stats-done) | **Built** (pass 7) | Armor, enemies and loot all build on stats / EXP |
-| **1B** | [Skill tree + duo powers](Plans/01_Leveling_SkillTree.md#plan-1b--skill-tree-and-duo-powers-next) | Next | Uses the skill points from 1A and the pushed `SkillTreeSystem` |
-| 2 | Items, inventory, **armor tiers + set effects**, loot drops | Planned | Uses Plan 1 stats; bosses (3) need loot |
+| **1B** | [Skill tree + duo powers](Plans/01_Leveling_SkillTree.md#plan-1b--skill-tree-and-duo-powers-done) | **Built** (pass 8) | Uses the skill points from 1A and the pushed `SkillTreeSystem` |
+| 2 | Items, inventory, **armor tiers + set effects**, loot drops | Next | Uses Plan 1 stats; bosses (3) need loot |
 | 3 | **Enemies, mini-bosses, main bosses** (phases, mechanics, twists, loot) | Planned | Uses EXP (1) and loot (2) |
 | 4 | **Dialogue**: NPCs, village chatter, demigod banter | Planned | Villages (5) get populated with it |
 | 5 | **Open world**: regions, villages, POIs, boss arenas, map / fast travel | Planned | Biggest and content-heavy; uses all of the above |

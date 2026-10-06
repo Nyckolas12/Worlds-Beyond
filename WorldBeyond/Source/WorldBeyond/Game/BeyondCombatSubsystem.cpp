@@ -90,8 +90,92 @@ bool UBeyondCombatSubsystem::IsBranded(const AActor* Target) const
 	return TargetASC && Brands.Contains(TargetASC);
 }
 
+bool UBeyondCombatSubsystem::DetonateBrand(AActor* Target)
+{
+	UAbilitySystemComponent* TargetASC = GetASC(Target);
+	if (!TargetASC || !Brands.Contains(TargetASC))
+	{
+		return false;
+	}
+	Detonate(TargetASC);
+	return true;
+}
+
+bool UBeyondCombatSubsystem::ApplyAegis(AActor* Target, const FBeyondAegisSettings& Settings)
+{
+	UAbilitySystemComponent* TargetASC = GetASC(Target);
+	if (!TargetASC || Settings.Duration <= 0.0f || UBeyondCombatLibrary::IsActorDead(Target))
+	{
+		return false;
+	}
+
+	RemoveAegis(Target);
+
+	FAegisState& State = Aegises.Add(TargetASC);
+	State.Target = Target;
+	State.Settings = Settings;
+	State.Aura = BeyondFX::SpawnAttached(Settings.AuraFX, Target->GetRootComponent());
+	TargetASC->AddLooseGameplayTag(BeyondTags::State_Aegis);
+
+	TWeakObjectPtr<AActor> WeakTarget(Target);
+	GetWorld()->GetTimerManager().SetTimer(State.Timer, FTimerDelegate::CreateWeakLambda(this, [this, WeakTarget]()
+	{
+		RemoveAegis(WeakTarget.Get());
+	}), Settings.Duration, false);
+	return true;
+}
+
+void UBeyondCombatSubsystem::RemoveAegis(AActor* Target)
+{
+	UAbilitySystemComponent* TargetASC = GetASC(Target);
+	FAegisState State;
+	if (!TargetASC || !Aegises.RemoveAndCopyValue(TargetASC, State))
+	{
+		return;
+	}
+
+	GetWorld()->GetTimerManager().ClearTimer(State.Timer);
+	if (UFXSystemComponent* Aura = State.Aura.Get())
+	{
+		Aura->DestroyComponent();
+	}
+	TargetASC->SetLooseGameplayTagCount(BeyondTags::State_Aegis, 0);
+}
+
+bool UBeyondCombatSubsystem::HasAegis(const AActor* Target) const
+{
+	UAbilitySystemComponent* TargetASC = GetASC(Target);
+	return TargetASC && Aegises.Contains(TargetASC);
+}
+
 float UBeyondCombatSubsystem::ModifyIncomingDamage(UAbilitySystemComponent& TargetASC, AActor* DamageInstigator, const FGameplayTagContainer& DamageTags, float Damage)
 {
+	// Storm shield: less damage, and part of the hit thrown back at a hostile attacker (next tick, outside this callback)
+	if (const FAegisState* Aegis = Aegises.Find(&TargetASC))
+	{
+		AActor* Shielded = Aegis->Target.Get();
+		const float Reflected = Damage * Aegis->Settings.ReflectFraction;
+		Damage *= 1.0f - FMath::Clamp(Aegis->Settings.DamageReduction, 0.0f, 0.95f);
+
+		if (Reflected > 0.0f && Shielded && DamageInstigator && DamageInstigator != Shielded && UBeyondCombatLibrary::AreHostile(Shielded, DamageInstigator))
+		{
+			TWeakObjectPtr<AActor> WeakShielded(Shielded);
+			TWeakObjectPtr<AActor> WeakAttacker(DamageInstigator);
+			const FGameplayTag Response = Aegis->Settings.ReflectHitResponse.IsValid() ? Aegis->Settings.ReflectHitResponse : BeyondTags::Event_Hit_Light;
+			const FBeyondFX ReflectFX = Aegis->Settings.ReflectFX;
+			GetWorld()->GetTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(this, [this, WeakShielded, WeakAttacker, Reflected, Response, ReflectFX]()
+			{
+				AActor* Attacker = WeakAttacker.Get();
+				if (!Attacker || UBeyondCombatLibrary::IsActorDead(Attacker))
+				{
+					return;
+				}
+				BeyondFX::SpawnAtLocation(this, ReflectFX, Attacker->GetActorLocation());
+				UBeyondCombatLibrary::ApplyDamage(WeakShielded.Get(), Attacker, Reflected, BeyondTags::DamageType_Projectile, Response, true);
+			}));
+		}
+	}
+
 	FBrandState* State = Brands.Find(&TargetASC);
 	if (!State || State->bDetonating)
 	{

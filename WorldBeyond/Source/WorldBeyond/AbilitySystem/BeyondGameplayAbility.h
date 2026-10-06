@@ -77,6 +77,24 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Cooldowns", meta = (Categories = "Cooldown"))
 	FGameplayTagContainer CooldownTags;
 
+	/**
+	 * Skill tree ranks raise the ability's level (UBeyondSkillTreeComponent). Each level above 1 adds this much
+	 * damage (0.15 = +15 %) to hits made through ApplyDamageToTarget / GetLevelDamageScale ...
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Upgrades", meta = (ClampMin = "0"))
+	float DamagePerLevel = 0.15f;
+
+	// ... and takes this much off Cooldown Duration (never below 40 % of it)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Upgrades", meta = (ClampMin = "0", ClampMax = "0.5"))
+	float CooldownReductionPerLevel = 0.08f;
+
+	// 1 + Damage Per Level x (level - 1)
+	UFUNCTION(BlueprintPure, Category = "Ability|Upgrades")
+	float GetLevelDamageScale() const;
+
+	// Cooldown multiplier at a level
+	float GetLevelCooldownScale(int32 Level) const;
+
 	UFUNCTION(BlueprintPure, Category = "Ability")
 	ABeyondCharacterBase* GetBeyondCharacter() const;
 
@@ -91,7 +109,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Ability|Aim")
 	FRotator GetAimRotation(FVector Origin) const;
 
-	// Damage through the shared pipeline with this ability's avatar as the instigator
+	// Damage through the shared pipeline with this ability's avatar as the instigator (scaled by the ability's level)
 	UFUNCTION(BlueprintCallable, Category = "Ability|Combat")
 	bool ApplyDamageToTarget(AActor* Target, float Amount, UPARAM(meta = (Categories = "DamageType")) FGameplayTag DamageType, UPARAM(meta = (Categories = "Event.Hit")) FGameplayTag HitResponse, bool bUnblockable = false);
 

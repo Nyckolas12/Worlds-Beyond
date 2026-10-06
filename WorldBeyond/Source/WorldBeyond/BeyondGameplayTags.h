@@ -18,6 +18,7 @@ namespace BeyondTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Duo);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Branded);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Dashing);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Aegis);
 
 	// Owned while an attack / cast ability runs (blocks other attacks)
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Active);
@@ -85,4 +86,6 @@ namespace BeyondTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Input_R);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Input_Dodge);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Input_Duo);
+	// A granted ability no key activates (duo powers not on the duo slot)
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Input_Unbound);
 }

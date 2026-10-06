@@ -18,6 +18,8 @@
 #include "BeyondCharacterBase.generated.h"
 
 class UBeyondAbilitySet;
+class UBeyondSkillTreeAsset;
+class UBeyondSkillTreeComponent;
 class UInputAction;
 class UAnimMontage;
 class USkeletalMeshComponent;
@@ -144,6 +146,20 @@ public:
 	void RestoreProgress(int32 NewLevel, float NewExperience, int32 NewSkillPoints);
 
 	UBeyondProgressionAttributeSet* GetProgressionSet() const { return ProgressionSet; }
+
+	// Takes Amount skill points; false (and nothing taken) if there aren't enough
+	UFUNCTION(BlueprintCallable, Category = "Progression")
+	bool SpendSkillPoints(int32 Amount);
+
+	UFUNCTION(BlueprintCallable, Category = "Progression")
+	void AddSkillPoints(int32 Amount);
+
+	// This demigod's skill tree (Player team only; created from Skill Tree)
+	UFUNCTION(BlueprintPure, Category = "Progression")
+	UBeyondSkillTreeComponent* GetSkillTreeComponent() const { return SkillTreeComponent; }
+
+	// The ability a key slot fires (same rule as player input); null if none
+	const UGameplayAbility* FindAbilityOnInput(const FGameplayTag& InputTag) const;
 
 	// What this character gains per level above 1
 	UFUNCTION(BlueprintPure, Category = "Progression")
@@ -290,6 +306,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Progression")
 	FBeyondFX LevelUpFX;
 
+	// The demigod's skill tree (spent with skill points); see UBeyondSkillTreeComponent
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Progression")
+	TObjectPtr<UBeyondSkillTreeAsset> SkillTree;
+
 	UFUNCTION(BlueprintImplementableEvent, Category = "Progression")
 	void OnLevelUp(int32 NewLevel);
 
@@ -409,6 +429,9 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UBeyondProgressionAttributeSet> ProgressionSet;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UBeyondSkillTreeComponent> SkillTreeComponent;
 
 	FActiveGameplayEffectHandle LevelStatsHandle;
 

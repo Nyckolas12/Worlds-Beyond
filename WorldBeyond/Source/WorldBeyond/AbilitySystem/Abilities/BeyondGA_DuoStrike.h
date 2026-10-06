@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "AbilitySystem/BeyondFX.h"
 #include "AbilitySystem/BeyondGameplayAbility.h"
+#include "Game/BeyondCombatSubsystem.h"
 #include "BeyondGA_DuoStrike.generated.h"
 
 class ABeyondCharacterBase;
@@ -21,6 +22,12 @@ class UFXSystemComponent;
  * 3. Judgment - the Striker slams down, releasing a shockwave that falls off from the centre.
  *
  * Both demigods are invincible and uninterruptible throughout; the companion AI waits (State.Duo).
+ *
+ * The other duo powers are this ability with a variant switched on (unlocked in the duo skill tree):
+ * - Eclipse Brand: the flashes brand what they strike, the shockwave sets every brand off and lightning chains
+ *   between them;
+ * - Tempest Aegis: after the shockwave both demigods carry a storm shield that reflects damage.
+ * Skill tree ranks raise the ability's level: all its damage x Get Level Damage Scale.
  */
 UCLASS(Blueprintable)
 class WORLDBEYOND_API UBeyondGA_DuoStrike : public UBeyondGameplayAbility
@@ -114,6 +121,30 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Duo|3 Judgment", meta = (ClampMin = "0"))
 	float RecoveryTime = 0.6f;
 
+	// ---- Variants (Eclipse Brand, Tempest Aegis); leave them off for Heaven's Judgment
+
+	// Every enemy a Heaven flash strikes gets branded by the Striker
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Duo|Variant")
+	bool bBrandStruckEnemies = false;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Duo|Variant", meta = (EditCondition = "bBrandStruckEnemies"))
+	FBeyondBrandSettings StruckBrand;
+
+	// The shockwave sets off every brand in range (after its own damage), and the Conduit's lightning chains through them
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Duo|Variant")
+	bool bShockwaveDetonatesBrands = false;
+
+	// Damage of the chain lightning at each branded enemy
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Duo|Variant", meta = (ClampMin = "0", EditCondition = "bShockwaveDetonatesBrands"))
+	float ChainDamage = 30.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Duo|Variant", meta = (EditCondition = "bShockwaveDetonatesBrands"))
+	FBeyondFX ChainFX;
+
+	// After the shockwave both demigods get this storm shield (Duration 0: none)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Duo|Variant")
+	FBeyondAegisSettings Aegis;
+
 	// Which party member plays which part; false if the party can't do the move right now (for UI hints)
 	UFUNCTION(BlueprintPure, Category = "Duo")
 	bool FindDuo(ABeyondCharacterBase*& OutConduit, ABeyondCharacterBase*& OutStriker) const;
@@ -137,6 +168,7 @@ private:
 	void StartJudgment();
 	void HandleStrikerEvent(const FGameplayEventData* Payload);
 	void Shockwave();
+	void DetonateBrandsAround(const FVector& Center);
 	void Finish();
 	void UnbindStrikerEvent();
 	static float PlayMontageOn(ABeyondCharacterBase* Character, UAnimMontage* Montage);
