@@ -14,6 +14,7 @@
 #include "AbilitySystem/BeyondAbilitySet.h"
 #include "AbilitySystem/BeyondCombatLibrary.h"
 #include "AbilitySystem/BeyondGameplayAbility.h"
+#include "AbilitySystem/BeyondGameplayEffects.h"
 #include "BeyondGameplayTags.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Game/BeyondCombatSubsystem.h"
@@ -21,6 +22,8 @@
 #include "Perception/AISenseConfig_Hearing.h"
 #include "Perception/AISenseConfig_Sight.h"
 #include "Perception/AISense_Damage.h"
+#include "Progression/BeyondProgressionAttributeSet.h"
+#include "WorldBeyond.h"
 
 // Sets default values
 ABeyondCharacterBase::ABeyondCharacterBase()
@@ -423,6 +426,7 @@ void ABeyondCharacterBase::InitAbilitySystem()
 	{
 		bStartupGiven = true;
 
+		CreateProgressionSet();
 		InitializeAttributeSet();
 
 		if (AbilitySet)
@@ -461,7 +465,172 @@ void ABeyondCharacterBase::InitializeAttributeSet()
 		AbilitySystemComponent->SetNumericAttributeBase(UCharacterAttributeSet::GetCurrentStaminaAttribute(), DefaultMaxStamina);
 	}
 
+	// Combat stats and level; growth for the levels above 1 goes on top through an effect
+	AbilitySystemComponent->SetNumericAttributeBase(UCharacterAttributeSet::GetStrengthAttribute(), BaseStrength);
+	AbilitySystemComponent->SetNumericAttributeBase(UCharacterAttributeSet::GetArcanaAttribute(), BaseArcana);
+	AbilitySystemComponent->SetNumericAttributeBase(UCharacterAttributeSet::GetDefenseAttribute(), BaseDefense);
+	const int32 MaxLevel = GetDefault<UBeyondProgressionSettings>()->MaxLevel;
+	AbilitySystemComponent->SetNumericAttributeBase(UCharacterAttributeSet::GetLevelAttribute(), static_cast<float>(FMath::Clamp(StartingLevel, 1, MaxLevel)));
+	ApplyLevelStats();
+	RefillVitals();
+}
+
+FText ABeyondCharacterBase::GetCharacterDisplayName() const
+{
+	if (!DisplayName.IsEmpty())
+	{
+		return DisplayName;
+	}
+	FString Name = GetClass()->GetName();
+	Name.RemoveFromEnd(TEXT("_C"));
+	Name.RemoveFromStart(TEXT("BP_"));
+	return FText::FromString(Name);
+}
+
+void ABeyondCharacterBase::CreateProgressionSet()
+{
+	// Only the demigods earn EXP; enemies just have a Level
+	if (ProgressionSet || !AbilitySystemComponent || TeamAffiliation != EBeyondTeam::Player)
+	{
+		return;
+	}
+
+	ProgressionSet = NewObject<UBeyondProgressionAttributeSet>(this, TEXT("ProgressionAttributeSet"));
+	AbilitySystemComponent->AddSpawnedAttribute(ProgressionSet);
+	ProgressionSet->OnLevelUp.AddUObject(this, &ThisClass::HandleLevelUp);
+}
+
+int32 ABeyondCharacterBase::GetCharacterLevel() const
+{
+	return AttributeSet ? FMath::Max(1, FMath::RoundToInt(AttributeSet->GetLevel())) : 1;
+}
+
+float ABeyondCharacterBase::GetExperience() const
+{
+	return ProgressionSet ? ProgressionSet->GetExperience() : 0.0f;
+}
+
+float ABeyondCharacterBase::GetExperienceToNextLevel() const
+{
+	return UBeyondProgressionSettings::GetExperienceToNextLevel(GetCharacterLevel());
+}
+
+int32 ABeyondCharacterBase::GetSkillPoints() const
+{
+	return ProgressionSet ? FMath::RoundToInt(ProgressionSet->GetSkillPoints()) : 0;
+}
+
+float ABeyondCharacterBase::GetExperienceRewardValue() const
+{
+	return ExperienceReward >= 0.0f ? ExperienceReward : UBeyondProgressionSettings::GetExperienceReward(Rank, GetCharacterLevel());
+}
+
+void ABeyondCharacterBase::GrantExperience(float Amount)
+{
+	if (!ProgressionSet || !AbilitySystemComponent || !HasAuthority() || Amount <= 0.0f)
+	{
+		return;
+	}
+
+	const FGameplayEffectSpecHandle Spec = AbilitySystemComponent->MakeOutgoingSpec(UBeyondGE_GrantExperience::StaticClass(), 1.0f, AbilitySystemComponent->MakeEffectContext());
+	if (Spec.IsValid())
+	{
+		Spec.Data->SetSetByCallerMagnitude(BeyondTags::SetByCaller_Experience, Amount);
+		AbilitySystemComponent->ApplyGameplayEffectSpecToSelf(*Spec.Data);
+	}
+}
+
+void ABeyondCharacterBase::RestoreProgress(int32 NewLevel, float NewExperience, int32 NewSkillPoints)
+{
+	if (!AbilitySystemComponent || !HasAuthority())
+	{
+		return;
+	}
+
+	const int32 MaxLevel = GetDefault<UBeyondProgressionSettings>()->MaxLevel;
+	NewLevel = FMath::Clamp(NewLevel, 1, MaxLevel);
+	AbilitySystemComponent->SetNumericAttributeBase(UCharacterAttributeSet::GetLevelAttribute(), static_cast<float>(NewLevel));
+	if (ProgressionSet)
+	{
+		const float Needed = UBeyondProgressionSettings::GetExperienceToNextLevel(NewLevel);
+		AbilitySystemComponent->SetNumericAttributeBase(UBeyondProgressionAttributeSet::GetExperienceAttribute(),
+			Needed > 0.0f ? FMath::Clamp(NewExperience, 0.0f, Needed - 1.0f) : 0.0f);
+		AbilitySystemComponent->SetNumericAttributeBase(UBeyondProgressionAttributeSet::GetSkillPointsAttribute(), static_cast<float>(FMath::Max(NewSkillPoints, 0)));
+	}
+	ApplyLevelStats();
+	RefillVitals();
+}
+
+void ABeyondCharacterBase::ApplyLevelStats()
+{
+	if (!AbilitySystemComponent || !HasAuthority())
+	{
+		return;
+	}
+
+	// The new effect goes on before the old one comes off, so max health never dips and cuts current health
+	const FActiveGameplayEffectHandle OldHandle = LevelStatsHandle;
+	LevelStatsHandle.Invalidate();
+
+	const int32 Levels = GetCharacterLevel() - 1;
+	if (Levels > 0)
+	{
+		const FGameplayEffectSpecHandle Spec = AbilitySystemComponent->MakeOutgoingSpec(UBeyondGE_LevelStats::StaticClass(), 1.0f, AbilitySystemComponent->MakeEffectContext());
+		if (Spec.IsValid())
+		{
+			Spec.Data->SetSetByCallerMagnitude(BeyondTags::SetByCaller_MaxHealth, StatGrowth.MaxHealth * Levels);
+			Spec.Data->SetSetByCallerMagnitude(BeyondTags::SetByCaller_MaxStamina, StatGrowth.MaxStamina * Levels);
+			Spec.Data->SetSetByCallerMagnitude(BeyondTags::SetByCaller_Strength, StatGrowth.Strength * Levels);
+			Spec.Data->SetSetByCallerMagnitude(BeyondTags::SetByCaller_Arcana, StatGrowth.Arcana * Levels);
+			Spec.Data->SetSetByCallerMagnitude(BeyondTags::SetByCaller_Defense, StatGrowth.Defense * Levels);
+			LevelStatsHandle = AbilitySystemComponent->ApplyGameplayEffectSpecToSelf(*Spec.Data);
+		}
+	}
+
+	if (OldHandle.IsValid())
+	{
+		AbilitySystemComponent->RemoveActiveGameplayEffect(OldHandle);
+	}
+}
+
+void ABeyondCharacterBase::RefillVitals()
+{
+	if (!AbilitySystemComponent || !AttributeSet || AbilitySystemComponent->HasMatchingGameplayTag(BeyondTags::State_Dead))
+	{
+		SyncLegacyHealth();
+		return;
+	}
+
+	AbilitySystemComponent->SetNumericAttributeBase(UCharacterAttributeSet::GetCurrentHealthAttribute(), AttributeSet->GetMaxHealth());
+	AbilitySystemComponent->SetNumericAttributeBase(UCharacterAttributeSet::GetCurrentStaminaAttribute(), AttributeSet->GetMaxStamina());
 	SyncLegacyHealth();
+}
+
+void ABeyondCharacterBase::HandleLevelUp(int32 OldLevel, int32 NewLevel)
+{
+	UE_LOG(LogBeyond, Log, TEXT("%s reached level %d (from %d), %d skill points"), *GetName(), NewLevel, OldLevel, GetSkillPoints());
+
+	ApplyLevelStats();
+	RefillVitals();
+	// This runs inside the EXP effect's execution; refill again once the new maximums have settled
+	GetWorldTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(this, [this]()
+	{
+		RefillVitals();
+	}));
+	BeyondFX::SpawnAttached(LevelUpFX, GetRootComponent());
+
+	if (AbilitySystemComponent)
+	{
+		FGameplayEventData Payload;
+		Payload.EventTag = BeyondTags::Event_Progression_LevelUp;
+		Payload.Instigator = this;
+		Payload.Target = this;
+		Payload.EventMagnitude = static_cast<float>(NewLevel);
+		AbilitySystemComponent->HandleGameplayEvent(BeyondTags::Event_Progression_LevelUp, &Payload);
+	}
+
+	OnLevelUp(NewLevel);
+	OnCharacterLevelUp.Broadcast(this, NewLevel);
 }
 
 void ABeyondCharacterBase::HandleHealthAttributeChanged(const FOnAttributeChangeData& ChangeData)
@@ -592,6 +761,12 @@ void ABeyondCharacterBase::Die()
 
 	OnKilled(Killer);
 	OnCharacterKilled.Broadcast(this, Killer);
+
+	// World-wide kill feed (the party hands out EXP from it)
+	if (UBeyondCombatSubsystem* Combat = UBeyondCombatSubsystem::Get(this))
+	{
+		Combat->OnCharacterKilled.Broadcast(this, Killer);
+	}
 
 	if (DestroyDelayAfterDeath > 0.0f)
 	{

@@ -14,11 +14,14 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FBeyondLeaderChangedSignature, ABey
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FBeyondReviveProgressSignature, ABeyondCharacterBase*, DownedMember, float, Progress);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FBeyondPartyWipedSignature);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FBeyondBondChangedSignature, float, Bond, float, MaxBond);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FBeyondMemberLevelUpSignature, ABeyondCharacterBase*, Member, int32, NewLevel);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FBeyondExperienceAwardedSignature, ABeyondCharacterBase*, Victim, float, Experience);
 
 /**
  * The two demigods: the player controls the leader, the other is driven by a companion controller.
- * Handles swapping, auto-swap when the leader falls, proximity revives, party wipes, and the shared
- * Bond meter that charges the duo super move. Lives on ABeyondPlayerController.
+ * Handles swapping, auto-swap when the leader falls, proximity revives, party wipes, the shared
+ * Bond meter that charges the duo super move, shared EXP from kills and saving the party's progress.
+ * Lives on ABeyondPlayerController.
  */
 UCLASS(ClassGroup = (Beyond), meta = (BlueprintSpawnableComponent))
 class WORLDBEYOND_API UBeyondPartyComponent : public UActorComponent
@@ -89,6 +92,36 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Party|Bond")
 	FBeyondBondChangedSignature OnBondChanged;
 
+	// Any member levelled up from EXP (the HUD shows the banner)
+	UPROPERTY(BlueprintAssignable, Category = "Party|Progression")
+	FBeyondMemberLevelUpSignature OnMemberLevelUp;
+
+	// The party was given EXP for a kill (each member got Experience)
+	UPROPERTY(BlueprintAssignable, Category = "Party|Progression")
+	FBeyondExperienceAwardedSignature OnExperienceAwarded;
+
+	// Save levels / EXP to the "BeyondProgress" slot and load them on start (also needs the Beyond.SaveProgress console variable)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Party|Progression")
+	bool bSaveProgress = true;
+
+	// Gives every member the same EXP (a downed member gets it too)
+	UFUNCTION(BlueprintCallable, Category = "Party|Progression")
+	void AwardExperience(float Amount);
+
+	UFUNCTION(BlueprintCallable, Category = "Party|Progression")
+	bool SaveProgress();
+
+	UFUNCTION(BlueprintCallable, Category = "Party|Progression")
+	bool LoadProgress();
+
+	// Deletes the save and puts every member back to level 1
+	UFUNCTION(BlueprintCallable, Category = "Party|Progression")
+	void ResetProgress();
+
+	// bSaveProgress and the Beyond.SaveProgress console variable
+	UFUNCTION(BlueprintPure, Category = "Party|Progression")
+	bool IsSavingEnabled() const;
+
 	UFUNCTION(BlueprintPure, Category = "Party|Bond")
 	float GetBond() const { return Bond; }
 
@@ -138,6 +171,12 @@ protected:
 	UFUNCTION()
 	void HandleDamageDealt(AActor* DamageInstigator, AActor* Target, float Damage);
 
+	UFUNCTION()
+	void HandleCharacterKilled(ABeyondCharacterBase* Victim, AActor* Killer);
+
+	UFUNCTION()
+	void HandleMemberLevelUp(ABeyondCharacterBase* Member, int32 NewLevel);
+
 private:
 	APlayerController* GetPlayerController() const;
 	void AddMember(ABeyondCharacterBase* Member);
@@ -165,5 +204,7 @@ private:
 	float ReviveProgress = 0.0f;
 	float LastSwapTime = -1000.0f;
 	bool bInitialized = false;
+	// Nothing is written before the save was read, so a fresh party can't overwrite it
+	bool bProgressLoaded = false;
 	FTimerHandle AutoSwapTimer;
 };

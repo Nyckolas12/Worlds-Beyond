@@ -9,11 +9,13 @@
 #include "Subsystems/WorldSubsystem.h"
 #include "BeyondCombatSubsystem.generated.h"
 
+class ABeyondCharacterBase;
 class UAbilitySystemComponent;
 class UAnimMontage;
 class UFXSystemComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FBeyondDamageDealtSignature, AActor*, DamageInstigator, AActor*, Target, float, Damage);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FBeyondCharacterDiedSignature, ABeyondCharacterBase*, Victim, AActor*, Killer);
 
 /** What a brand does to the character carrying it (see UBeyondGA_Brand / Sunbrand) */
 USTRUCT(BlueprintType)
@@ -53,7 +55,7 @@ struct WORLDBEYOND_API FBeyondBrandSettings
 /**
  * World-wide combat services:
  * - a damage feed (every Beyond character reports the damage it takes), so systems like the party's Bond meter
- *   don't have to bind to every enemy;
+ *   don't have to bind to every enemy, and a kill feed (the party's EXP);
  * - brands: marks that amplify damage taken and detonate on the brander's next melee hit;
  * - montage variants: runtime copies of an attack montage on another slot (the sword combo on the upper body).
  */
@@ -66,6 +68,10 @@ public:
 	// Damage that got through (blocked / parried hits are not reported)
 	UPROPERTY(BlueprintAssignable, Category = "Beyond|Combat")
 	FBeyondDamageDealtSignature OnDamageDealt;
+
+	// Every Beyond character's death (Killer: whoever dealt the last damage, may be null)
+	UPROPERTY(BlueprintAssignable, Category = "Beyond|Combat")
+	FBeyondCharacterDiedSignature OnCharacterKilled;
 
 	static UBeyondCombatSubsystem* Get(const UObject* WorldContext);
 

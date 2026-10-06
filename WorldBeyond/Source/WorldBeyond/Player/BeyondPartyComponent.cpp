@@ -10,9 +10,50 @@
 #include "BeyondGameplayTags.h"
 #include "Game/BeyondCombatSubsystem.h"
 #include "Game/BeyondGameMode.h"
+#include "Game/BeyondSaveGame.h"
 #include "GameFramework/PlayerController.h"
+#include "HAL/IConsoleManager.h"
 #include "Kismet/GameplayStatics.h"
 #include "TimerManager.h"
+
+namespace
+{
+	TAutoConsoleVariable<bool> CVarBeyondSaveProgress(
+		TEXT("Beyond.SaveProgress"), true,
+		TEXT("Save the party's levels / EXP to the BeyondProgress slot and load them on start (0: start fresh, nothing is written)."));
+
+	UBeyondPartyComponent* FindParty(const UWorld* World)
+	{
+		const APlayerController* PC = World ? World->GetFirstPlayerController() : nullptr;
+		return PC ? PC->FindComponentByClass<UBeyondPartyComponent>() : nullptr;
+	}
+
+	FAutoConsoleCommandWithWorldAndArgs GiveExperienceCommand(
+		TEXT("Beyond.GiveExperience"),
+		TEXT("Beyond.GiveExperience <Amount>: give every party member EXP (default 100)."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
+		{
+			if (UBeyondPartyComponent* Party = FindParty(World))
+			{
+				Party->AwardExperience(Args.IsEmpty() ? 100.0f : FCString::Atof(*Args[0]));
+			}
+		}));
+
+	FAutoConsoleCommandWithWorld ResetProgressCommand(
+		TEXT("Beyond.ResetProgress"),
+		TEXT("Delete the saved party progress and put both demigods back to level 1."),
+		FConsoleCommandWithWorldDelegate::CreateLambda([](UWorld* World)
+		{
+			if (UBeyondPartyComponent* Party = FindParty(World))
+			{
+				Party->ResetProgress();
+			}
+			else
+			{
+				UGameplayStatics::DeleteGameInSlot(UBeyondSaveGame::SlotName, UBeyondSaveGame::UserIndex);
+			}
+		}));
+}
 
 UBeyondPartyComponent::UBeyondPartyComponent()
 {
@@ -35,16 +76,141 @@ void UBeyondPartyComponent::BeginPlay()
 	if (UBeyondCombatSubsystem* Combat = UBeyondCombatSubsystem::Get(this))
 	{
 		Combat->OnDamageDealt.AddUniqueDynamic(this, &ThisClass::HandleDamageDealt);
+		Combat->OnCharacterKilled.AddUniqueDynamic(this, &ThisClass::HandleCharacterKilled);
 	}
 }
 
 void UBeyondPartyComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	SaveProgress();
+
 	if (UBeyondCombatSubsystem* Combat = UBeyondCombatSubsystem::Get(this))
 	{
 		Combat->OnDamageDealt.RemoveDynamic(this, &ThisClass::HandleDamageDealt);
+		Combat->OnCharacterKilled.RemoveDynamic(this, &ThisClass::HandleCharacterKilled);
 	}
 	Super::EndPlay(EndPlayReason);
+}
+
+void UBeyondPartyComponent::HandleCharacterKilled(ABeyondCharacterBase* Victim, AActor* Killer)
+{
+	// Only kills by the party count (projectiles, brands and the duo move resolve to whoever cast them)
+	const ABeyondCharacterBase* KillerMember = FindMemberFor(Killer);
+	if (!Victim || Members.Contains(Victim) || !KillerMember || !UBeyondCombatLibrary::AreHostile(KillerMember, Victim))
+	{
+		return;
+	}
+
+	const float Reward = Victim->GetExperienceRewardValue();
+	if (Reward <= 0.0f)
+	{
+		return;
+	}
+
+	UE_LOG(LogBeyond, Log, TEXT("Party: %s killed %s (rank %d, level %d): +%.0f EXP each"), *KillerMember->GetName(), *Victim->GetName(),
+		static_cast<int32>(Victim->Rank), Victim->GetCharacterLevel(), Reward);
+	AwardExperience(Reward);
+	OnExperienceAwarded.Broadcast(Victim, Reward);
+}
+
+void UBeyondPartyComponent::AwardExperience(float Amount)
+{
+	if (Amount <= 0.0f)
+	{
+		return;
+	}
+	// Shared like a JRPG party: the companion and a downed member get it too
+	for (ABeyondCharacterBase* Member : Members)
+	{
+		if (IsValid(Member))
+		{
+			Member->GrantExperience(Amount);
+		}
+	}
+}
+
+void UBeyondPartyComponent::HandleMemberLevelUp(ABeyondCharacterBase* Member, int32 NewLevel)
+{
+	OnMemberLevelUp.Broadcast(Member, NewLevel);
+	SaveProgress();
+}
+
+bool UBeyondPartyComponent::IsSavingEnabled() const
+{
+	return bSaveProgress && CVarBeyondSaveProgress.GetValueOnGameThread();
+}
+
+bool UBeyondPartyComponent::SaveProgress()
+{
+	if (!bProgressLoaded || !IsSavingEnabled() || Members.IsEmpty())
+	{
+		return false;
+	}
+
+	UBeyondSaveGame* Save = Cast<UBeyondSaveGame>(UGameplayStatics::LoadGameFromSlot(UBeyondSaveGame::SlotName, UBeyondSaveGame::UserIndex));
+	if (!Save)
+	{
+		Save = Cast<UBeyondSaveGame>(UGameplayStatics::CreateSaveGameObject(UBeyondSaveGame::StaticClass()));
+	}
+	if (!Save)
+	{
+		return false;
+	}
+
+	for (const ABeyondCharacterBase* Member : Members)
+	{
+		if (IsValid(Member) && Member->CanGainExperience())
+		{
+			FBeyondMemberProgress& Progress = Save->Members.FindOrAdd(Member->GetClass()->GetFName());
+			Progress.Level = Member->GetCharacterLevel();
+			Progress.Experience = Member->GetExperience();
+			Progress.SkillPoints = Member->GetSkillPoints();
+		}
+	}
+
+	const bool bSaved = UGameplayStatics::SaveGameToSlot(Save, UBeyondSaveGame::SlotName, UBeyondSaveGame::UserIndex);
+	UE_LOG(LogBeyond, Log, TEXT("Party: progress %s"), bSaved ? TEXT("saved") : TEXT("could not be saved"));
+	return bSaved;
+}
+
+bool UBeyondPartyComponent::LoadProgress()
+{
+	bProgressLoaded = true;
+	if (!IsSavingEnabled() || !UGameplayStatics::DoesSaveGameExist(UBeyondSaveGame::SlotName, UBeyondSaveGame::UserIndex))
+	{
+		return false;
+	}
+
+	const UBeyondSaveGame* Save = Cast<UBeyondSaveGame>(UGameplayStatics::LoadGameFromSlot(UBeyondSaveGame::SlotName, UBeyondSaveGame::UserIndex));
+	if (!Save)
+	{
+		return false;
+	}
+
+	for (ABeyondCharacterBase* Member : Members)
+	{
+		const FBeyondMemberProgress* Progress = IsValid(Member) ? Save->Members.Find(Member->GetClass()->GetFName()) : nullptr;
+		if (Progress && Member->CanGainExperience())
+		{
+			Member->RestoreProgress(Progress->Level, Progress->Experience, Progress->SkillPoints);
+			UE_LOG(LogBeyond, Log, TEXT("Party: %s restored at level %d (%.0f EXP, %d skill points)"), *Member->GetName(),
+				Progress->Level, Progress->Experience, Progress->SkillPoints);
+		}
+	}
+	return true;
+}
+
+void UBeyondPartyComponent::ResetProgress()
+{
+	UGameplayStatics::DeleteGameInSlot(UBeyondSaveGame::SlotName, UBeyondSaveGame::UserIndex);
+	for (ABeyondCharacterBase* Member : Members)
+	{
+		if (IsValid(Member) && Member->CanGainExperience())
+		{
+			Member->RestoreProgress(1, 0.0f, 0);
+		}
+	}
+	UE_LOG(LogBeyond, Log, TEXT("Party: progress reset to level 1"));
 }
 
 ABeyondCharacterBase* UBeyondPartyComponent::FindMemberFor(const AActor* Actor) const
@@ -209,6 +375,7 @@ void UBeyondPartyComponent::InitializeParty(APawn* InitialLeader)
 		}
 	}
 
+	LoadProgress();
 	OnLeaderChanged.Broadcast(Leader, nullptr);
 }
 
@@ -218,6 +385,7 @@ void UBeyondPartyComponent::AddMember(ABeyondCharacterBase* Member)
 	{
 		Members.Add(Member);
 		Member->OnCharacterKilled.AddUniqueDynamic(this, &ThisClass::HandleMemberKilled);
+		Member->OnCharacterLevelUp.AddUniqueDynamic(this, &ThisClass::HandleMemberLevelUp);
 	}
 }
 

@@ -28,6 +28,7 @@ namespace BeyondTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Event_Montage_Trigger, "Event.Montage.Trigger", "Sent by a montage notify at the moment an ability should take effect");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Event_ShootProjectile, "Event.ShootProjectile", "Sent by a cast montage notify when the spell leaves the hand");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Event_Weapon_Equipped, "Event.Weapon.Equipped", "Equip / sheathe request; the weapon tag is in TargetTags");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Event_Progression_LevelUp, "Event.Progression.LevelUp", "Sent to a demigod when it levels up (EventMagnitude = new level)");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Weapon_Action_Draw, "Weapon.Action.Draw", "Equip event: draw the weapon (instigator tag)");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Weapon_Action_Sheathe, "Weapon.Action.Sheathe", "Equip event: put the weapon away (instigator tag)");
@@ -46,6 +47,12 @@ namespace BeyondTags
 	UE_DEFINE_GAMEPLAY_TAG(SetByCaller_Damage, "SetByCaller.Damage");
 	UE_DEFINE_GAMEPLAY_TAG(SetByCaller_Heal, "SetByCaller.Heal");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Duration, "SetByCaller.Duration", "Duration of UBeyondGE_Cooldown / UBeyondGE_Brand");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Experience, "SetByCaller.Experience", "EXP granted by UBeyondGE_GrantExperience");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_MaxHealth, "SetByCaller.MaxHealth", "Max health added by UBeyondGE_LevelStats");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_MaxStamina, "SetByCaller.MaxStamina", "Max stamina added by UBeyondGE_LevelStats");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Strength, "SetByCaller.Strength", "Strength added by UBeyondGE_LevelStats");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Arcana, "SetByCaller.Arcana", "Arcana added by UBeyondGE_LevelStats");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Defense, "SetByCaller.Defense", "Defense added by UBeyondGE_LevelStats");
 
 	UE_DEFINE_GAMEPLAY_TAG(GameplayCue_Damage_Burst, "GameplayCue.Damage.Burst");
 	UE_DEFINE_GAMEPLAY_TAG(GameplayCue_Heal_Burst, "GameplayCue.Heal.Burst");

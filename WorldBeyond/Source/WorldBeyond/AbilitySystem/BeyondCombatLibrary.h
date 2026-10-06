@@ -122,6 +122,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Beyond|Combat", meta = (DefaultToSelf = "Actor"))
 	static bool IsInCutscene(const AActor* Actor);
 
+	// Outgoing damage multiplier from the attacker's stats: 1 + Strength / 100 for melee, 1 + Arcana / 100 for
+	// projectiles and explosions (spells, abilities), 1 otherwise
+	static float GetDamageScale(const UAbilitySystemComponent* SourceASC, FGameplayTag DamageType);
+
 	// The anim Blueprint has a Slot node with this name (a montage on a slot it doesn't have shows nothing)
 	static bool HasAnimSlot(const UAnimInstance* AnimInstance, FName SlotName);
 

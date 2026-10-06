@@ -53,6 +53,10 @@ CurrentHealth(100.f),
 MaxHealth(100.f),
 CurrentStamina(100.f),
 MaxStamina(100.f),
+Strength(0.f),
+Arcana(0.f),
+Defense(0.f),
+Level(1.f),
 IncomingDamage(0.f),
 IncomingHeal(0.f)
 {
@@ -68,9 +72,13 @@ void UCharacterAttributeSet::ClampAttribute(const FGameplayAttribute& Attribute,
 	{
 		NewValue = FMath::Clamp(NewValue, 0.0f, GetMaxStamina());
 	}
-	else if (Attribute == GetMaxHealthAttribute() || Attribute == GetMaxStaminaAttribute())
+	else if (Attribute == GetMaxHealthAttribute() || Attribute == GetMaxStaminaAttribute() || Attribute == GetLevelAttribute())
 	{
 		NewValue = FMath::Max(NewValue, 1.0f);
+	}
+	else if (Attribute == GetStrengthAttribute() || Attribute == GetArcanaAttribute() || Attribute == GetDefenseAttribute())
+	{
+		NewValue = FMath::Max(NewValue, 0.0f);
 	}
 }
 
@@ -194,6 +202,9 @@ void UCharacterAttributeSet::HandleIncomingDamage(const FGameplayEffectModCallba
 		return;
 	}
 
+	// Defense: 100 Defense halves damage, 300 quarters it
+	Damage *= 100.0f / (100.0f + FMath::Max(GetDefense(), 0.0f));
+
 	// Brands (Sunbrand) amplify damage and detonate on the brander's melee hit
 	if (UBeyondCombatSubsystem* Combat = UBeyondCombatSubsystem::Get(TargetASC.GetAvatarActor()))
 	{
@@ -255,4 +266,8 @@ void UCharacterAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty
 	DOREPLIFETIME_CONDITION_NOTIFY(UCharacterAttributeSet, MaxHealth, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UCharacterAttributeSet, CurrentStamina, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UCharacterAttributeSet, MaxStamina, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UCharacterAttributeSet, Strength, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UCharacterAttributeSet, Arcana, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UCharacterAttributeSet, Defense, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UCharacterAttributeSet, Level, COND_None, REPNOTIFY_Always);
 }

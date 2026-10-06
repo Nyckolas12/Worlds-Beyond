@@ -25,6 +25,7 @@
 #include "TimerManager.h"
 #include "UI/BeyondBondMeterWidget.h"
 #include "UI/BeyondCrosshairWidget.h"
+#include "UI/BeyondProgressWidget.h"
 #include "UObject/UnrealType.h"
 
 namespace
@@ -79,6 +80,7 @@ ABeyondPlayerController::ABeyondPlayerController()
 {
 	PartyComponent = CreateDefaultSubobject<UBeyondPartyComponent>(TEXT("PartyComponent"));
 	BondWidgetClass = UBeyondBondMeterWidget::StaticClass();
+	ProgressWidgetClass = UBeyondProgressWidget::StaticClass();
 	CrosshairWidgetClass = UBeyondCrosshairWidget::StaticClass();
 }
 
@@ -102,6 +104,7 @@ void ABeyondPlayerController::BeginPlay()
 	if (IsLocalController())
 	{
 		CreateBondMeter();
+		CreateProgressWidget();
 		CreateCrosshair();
 		GetWorldTimerManager().SetTimer(BossBarTimer, this, &ThisClass::UpdateBossBar, 0.25f, true, 0.5f);
 	}
@@ -189,8 +192,129 @@ void ABeyondPlayerController::RefreshHUD()
 		}
 	}
 
-	// The Bond meter goes into the new HUD
+	// The Bond meter and the level display go into the new HUD
 	AttachBondMeter();
+	AttachProgressWidget();
+}
+
+UUserWidget* ABeyondPlayerController::AttachToHUD(UUserWidget* OwnWidget, UClass* PlacedType, const FHUDPlacement& Placement, bool& bInViewport, const TCHAR*& Where)
+{
+	// A widget of this type placed in the HUD in the designer wins
+	UUserWidget* Placed = nullptr;
+	if (PlacedType && HUDWidget && HUDWidget->WidgetTree)
+	{
+		HUDWidget->WidgetTree->ForEachWidget([&Placed, PlacedType, OwnWidget](UWidget* Widget)
+		{
+			if (!Placed && Widget && Widget != OwnWidget && Widget->IsA(PlacedType))
+			{
+				Placed = Cast<UUserWidget>(Widget);
+			}
+		});
+	}
+
+	if (Placed)
+	{
+		if (OwnWidget)
+		{
+			OwnWidget->RemoveFromParent();
+			bInViewport = false;
+		}
+		Where = TEXT("placed in the designer");
+		return Placed;
+	}
+	if (!OwnWidget)
+	{
+		return nullptr;
+	}
+
+	if (UCanvasPanel* HUDCanvas = HUDWidget ? Cast<UCanvasPanel>(HUDWidget->GetRootWidget()) : nullptr)
+	{
+		// A child of the HUD's canvas: ordinary UMG layout
+		OwnWidget->RemoveFromParent();
+		bInViewport = false;
+		if (UCanvasPanelSlot* CanvasSlot = HUDCanvas->AddChildToCanvas(OwnWidget))
+		{
+			if (Placement.bFillScreen)
+			{
+				CanvasSlot->SetAnchors(FAnchors(0.0f, 0.0f, 1.0f, 1.0f));
+				CanvasSlot->SetAlignment(FVector2D::ZeroVector);
+				CanvasSlot->SetOffsets(FMargin(0.0f));
+			}
+			else
+			{
+				CanvasSlot->SetAnchors(Placement.Anchors);
+				CanvasSlot->SetAlignment(Placement.Alignment);
+				CanvasSlot->SetAutoSize(true);
+				CanvasSlot->SetPosition(Placement.Offset);
+			}
+			CanvasSlot->SetZOrder(Placement.ZOrder);
+		}
+		Where = TEXT("added by code");
+		return OwnWidget;
+	}
+
+	Where = TEXT("viewport");
+	if (!bInViewport)
+	{
+		OwnWidget->RemoveFromParent();
+		OwnWidget->AddToViewport(1);
+		if (!Placement.bFillScreen)
+		{
+			// A point anchor needs an explicit size on the viewport (UE5 reads the desired size once, before Slate
+			// has measured the widget), so measure it first
+			OwnWidget->SetAnchorsInViewport(Placement.Anchors);
+			OwnWidget->SetAlignmentInViewport(Placement.Alignment);
+			OwnWidget->ForceLayoutPrepass();
+			FVector2D WidgetSize = OwnWidget->GetDesiredSize();
+			if (WidgetSize.X < 1.0 || WidgetSize.Y < 1.0)
+			{
+				WidgetSize = Placement.FallbackSize;
+			}
+			OwnWidget->SetDesiredSizeInViewport(WidgetSize);
+			OwnWidget->SetPositionInViewport(Placement.Offset, false);
+		}
+		bInViewport = true;
+	}
+	return OwnWidget;
+}
+
+void ABeyondPlayerController::CreateProgressWidget()
+{
+	if (bProgressWidgetCreated)
+	{
+		return;
+	}
+	bProgressWidgetCreated = true;
+
+	// Like the Bond meter: into the HUD once RefreshHUD made it, straight away when there is no HUD
+	if (!HUDWidgetClass || HUDWidget)
+	{
+		AttachProgressWidget();
+	}
+}
+
+void ABeyondPlayerController::AttachProgressWidget()
+{
+	if (!bProgressWidgetCreated || !IsLocalController() || !ProgressWidgetClass)
+	{
+		return;
+	}
+
+	if (!OwnProgressWidget)
+	{
+		OwnProgressWidget = CreateWidget<UUserWidget>(this, ProgressWidgetClass);
+	}
+
+	FHUDPlacement Placement;
+	Placement.bFillScreen = true;
+	Placement.ZOrder = 9;
+	const TCHAR* Where = TEXT("");
+	ProgressWidget = AttachToHUD(OwnProgressWidget, UBeyondProgressWidget::StaticClass(), Placement, bProgressWidgetInViewport, Where);
+	if (ProgressWidget)
+	{
+		UE_LOG(LogBeyond, Log, TEXT("Level display: %s in %s (%s)"), *GetNameSafe(ProgressWidget->GetClass()),
+			HUDWidget ? *GetNameSafe(HUDWidget->GetClass()) : TEXT("the viewport"), Where);
+	}
 }
 
 void ABeyondPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -222,79 +346,22 @@ void ABeyondPlayerController::AttachBondMeter()
 		return;
 	}
 
-	// A meter placed in the HUD in the designer wins
-	UUserWidget* Placed = nullptr;
-	if (HUDWidget && HUDWidget->WidgetTree)
+	if (!OwnBondWidget && BondWidgetClass)
 	{
-		HUDWidget->WidgetTree->ForEachWidget([&Placed](UWidget* Widget)
-		{
-			if (!Placed && Widget && Widget->IsA<UBeyondBondMeterWidget>())
-			{
-				Placed = Cast<UUserWidget>(Widget);
-			}
-		});
+		OwnBondWidget = CreateWidget<UUserWidget>(this, BondWidgetClass);
 	}
 
+	// Anchored at the bottom centre like the ability bar
+	FHUDPlacement Placement;
+	Placement.Anchors = FAnchors(0.5f, 1.0f);
+	Placement.Alignment = FVector2D(0.5f, 1.0f);
+	Placement.Offset = BondMeterOffset;
+	Placement.ZOrder = 10;
 	const TCHAR* Where = TEXT("");
-	if (Placed)
+	BondWidget = AttachToHUD(OwnBondWidget, UBeyondBondMeterWidget::StaticClass(), Placement, bBondMeterInViewport, Where);
+	if (!BondWidget)
 	{
-		if (OwnBondWidget)
-		{
-			OwnBondWidget->RemoveFromParent();
-			bBondMeterInViewport = false;
-		}
-		BondWidget = Placed;
-		Where = TEXT("placed in the designer");
-	}
-	else
-	{
-		if (!OwnBondWidget && BondWidgetClass)
-		{
-			OwnBondWidget = CreateWidget<UUserWidget>(this, BondWidgetClass);
-		}
-		BondWidget = OwnBondWidget;
-		if (!BondWidget)
-		{
-			return;
-		}
-
-		if (UCanvasPanel* HUDCanvas = HUDWidget ? Cast<UCanvasPanel>(HUDWidget->GetRootWidget()) : nullptr)
-		{
-			// A child of the HUD's canvas, anchored at the bottom centre like the ability bar: ordinary UMG layout
-			BondWidget->RemoveFromParent();
-			bBondMeterInViewport = false;
-			if (UCanvasPanelSlot* MeterSlot = HUDCanvas->AddChildToCanvas(BondWidget))
-			{
-				MeterSlot->SetAnchors(FAnchors(0.5f, 1.0f));
-				MeterSlot->SetAlignment(FVector2D(0.5f, 1.0f));
-				MeterSlot->SetAutoSize(true);
-				MeterSlot->SetPosition(BondMeterOffset);
-				MeterSlot->SetZOrder(10);
-			}
-			Where = TEXT("added by code");
-		}
-		else
-		{
-			Where = TEXT("viewport");
-			if (!bBondMeterInViewport)
-			{
-				// No HUD canvas: on the viewport. A point anchor needs an explicit size there (UE5 reads the desired
-				// size once, before Slate has measured the widget), so measure it first.
-				BondWidget->RemoveFromParent();
-				BondWidget->AddToViewport(1);
-				BondWidget->SetAnchorsInViewport(FAnchors(0.5f, 1.0f));
-				BondWidget->SetAlignmentInViewport(FVector2D(0.5f, 1.0f));
-				BondWidget->ForceLayoutPrepass();
-				FVector2D MeterSize = BondWidget->GetDesiredSize();
-				if (MeterSize.X < 1.0 || MeterSize.Y < 1.0)
-				{
-					MeterSize = FVector2D(800.0f, 320.0f);
-				}
-				BondWidget->SetDesiredSizeInViewport(MeterSize);
-				BondWidget->SetPositionInViewport(BondMeterOffset, false);
-				bBondMeterInViewport = true;
-			}
-		}
+		return;
 	}
 
 	UE_LOG(LogBeyond, Log, TEXT("Bond meter: %s in %s (%s), offset (%.0f, %.0f) from the bottom centre"),

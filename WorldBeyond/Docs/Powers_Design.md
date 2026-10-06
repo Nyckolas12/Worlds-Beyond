@@ -9,6 +9,10 @@ Two demigods, two kinds of power:
 Together they have one super move, **Heaven's Judgment**, charged by the party's **Bond** meter.
 
 Numbers below are the prototype values on the ability assets (`/Game/WorldsBeyond/Abilities/`); tune them there.
+They are base damage: since pass 7 melee hits scale with the attacker's **Strength** and spells (projectiles,
+explosions, the spikes) with **Arcana**, +1 % per point, and the target's **Defense** reduces them (see *Leveling* in
+[GAS_Prototype.md](GAS_Prototype.md#leveling)). More powers and stronger versions unlock through the skill tree
+(Plan 1B, [Plans/01_Leveling_SkillTree.md](Plans/01_Leveling_SkillTree.md)).
 
 ---
 

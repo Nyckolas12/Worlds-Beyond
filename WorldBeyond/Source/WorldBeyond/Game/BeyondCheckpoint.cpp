@@ -5,6 +5,8 @@
 #include "Components/BoxComponent.h"
 #include "Game/BeyondGameMode.h"
 #include "GameFramework/Pawn.h"
+#include "GameFramework/Controller.h"
+#include "Player/BeyondPartyComponent.h"
 
 ABeyondCheckpoint::ABeyondCheckpoint()
 {
@@ -38,6 +40,12 @@ void ABeyondCheckpoint::HandleOverlap(UPrimitiveComponent* OverlappedComponent, 
 	{
 		bActivated = true;
 		GameMode->SetCheckpoint(SpawnPoint->GetComponentTransform());
+
+		// Checkpoints also save the party's progress
+		if (UBeyondPartyComponent* Party = Pawn->GetController() ? Pawn->GetController()->FindComponentByClass<UBeyondPartyComponent>() : nullptr)
+		{
+			Party->SaveProgress();
+		}
 		OnActivated();
 	}
 }
