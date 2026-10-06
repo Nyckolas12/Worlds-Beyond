@@ -61,18 +61,18 @@ namespace BeyondProgressionTest
 		return GEditor ? GEditor->PlayWorld.Get() : nullptr;
 	}
 
-	float TotalExperience(const ABeyondCharacterBase* Character)
+	float TotalExperienceOf(const ABeyondCharacterBase* Character)
 	{
 		return Character ? UBeyondProgressionSettings::GetTotalExperience(Character->GetCharacterLevel(), Character->GetExperience()) : 0.0f;
 	}
 
-	float GetStat(const ABeyondCharacterBase* Character, const FGameplayAttribute& Attribute)
+	float ReadStat(const ABeyondCharacterBase* Character, const FGameplayAttribute& Attribute)
 	{
 		const UAbilitySystemComponent* ASC = Character ? Character->GetAbilitySystemComponent() : nullptr;
 		return ASC ? ASC->GetNumericAttribute(Attribute) : 0.0f;
 	}
 
-	void SetBaseStat(ABeyondCharacterBase* Character, const FGameplayAttribute& Attribute, float Value)
+	void WriteBaseStat(ABeyondCharacterBase* Character, const FGameplayAttribute& Attribute, float Value)
 	{
 		if (UAbilitySystemComponent* ASC = Character ? Character->GetAbilitySystemComponent() : nullptr)
 		{
@@ -81,7 +81,7 @@ namespace BeyondProgressionTest
 	}
 
 	// Stop an enemy's AI so it neither attacks nor blocks during a measurement
-	void Freeze(ABeyondCharacterBase* Enemy)
+	void FreezeEnemy(ABeyondCharacterBase* Enemy)
 	{
 		if (!Enemy)
 		{
@@ -105,12 +105,12 @@ namespace BeyondProgressionTest
 	}
 
 	// Damage that lands for sure (no block, parry or invincibility); returns the health it took
-	float MeasureHit(ABeyondCharacterBase* Source, ABeyondCharacterBase* Target, float Amount, const FGameplayTag& DamageType)
+	float MeasureHitDamage(ABeyondCharacterBase* Source, ABeyondCharacterBase* Target, float Amount, const FGameplayTag& DamageType)
 	{
-		Freeze(Target);
+		FreezeEnemy(Target);
 		// Plenty of health so the hit is never clamped
-		SetBaseStat(Target, UCharacterAttributeSet::GetMaxHealthAttribute(), 100000.0f);
-		SetBaseStat(Target, UCharacterAttributeSet::GetCurrentHealthAttribute(), 100000.0f);
+		WriteBaseStat(Target, UCharacterAttributeSet::GetMaxHealthAttribute(), 100000.0f);
+		WriteBaseStat(Target, UCharacterAttributeSet::GetCurrentHealthAttribute(), 100000.0f);
 		const float Before = UBeyondCombatLibrary::GetActorHealth(Target);
 		UBeyondCombatLibrary::ApplyDamage(Source, Target, Amount, DamageType, FGameplayTag(), true, nullptr, true, true);
 		return Before - UBeyondCombatLibrary::GetActorHealth(Target);
@@ -200,8 +200,8 @@ bool FBeyondProgressionTest::RunTest(const FString& Parameters)
 			T.TestEqual(*FString::Printf(TEXT("%s starts with no skill points"), *Name), Member->GetSkillPoints(), 0);
 		}
 		T.TestFalse(TEXT("Angel has a display name"), Angel->GetCharacterDisplayName().IsEmpty());
-		T.TestTrue(TEXT("migrate_pass7: Angel leans Arcana"), Angel->StatGrowth.Arcana > Angel->StatGrowth.Strength);
-		T.TestTrue(TEXT("migrate_pass7: Ji-Woong leans Strength"), JiWoong->StatGrowth.Strength > JiWoong->StatGrowth.Arcana);
+		T.TestTrue(TEXT("migrate_pass7: Angel leans Arcana"), Angel->GetStatGrowth().Arcana > Angel->GetStatGrowth().Strength);
+		T.TestTrue(TEXT("migrate_pass7: Ji-Woong leans Strength"), JiWoong->GetStatGrowth().Strength > JiWoong->GetStatGrowth().Arcana);
 
 		for (TActorIterator<ABeyondCharacterBase> It(World); It; ++It)
 		{
@@ -210,7 +210,7 @@ bool FBeyondProgressionTest::RunTest(const FString& Parameters)
 				continue;
 			}
 			T.TestFalse(*FString::Printf(TEXT("Enemy %s does not earn EXP"), *It->GetName()), It->CanGainExperience());
-			Freeze(*It);
+			FreezeEnemy(*It);
 			if (It->BossBarWidgetClass)
 			{
 				State->Boss = *It;
@@ -274,11 +274,11 @@ bool FBeyondProgressionTest::RunTest(const FString& Parameters)
 		}
 		State->Victim = Victim;
 		State->Numbers.Add(TEXT("Reward"), Victim->GetExperienceRewardValue());
-		State->Numbers.Add(TEXT("AngelTotal"), TotalExperience(Angel));
-		State->Numbers.Add(TEXT("JiWoongTotal"), TotalExperience(JiWoong));
+		State->Numbers.Add(TEXT("AngelTotal"), TotalExperienceOf(Angel));
+		State->Numbers.Add(TEXT("JiWoongTotal"), TotalExperienceOf(JiWoong));
 		T.TestTrue(TEXT("A regular enemy is worth some EXP"), Victim->GetExperienceRewardValue() > 0.0f);
 
-		Freeze(Victim);
+		FreezeEnemy(Victim);
 		UBeyondCombatLibrary::ApplyDamage(Angel, Victim, 1000000.0f, BeyondTags::DamageType_Projectile, BeyondTags::Event_Hit_Light,
 			true, nullptr, true, true);
 		return true;
@@ -295,8 +295,8 @@ bool FBeyondProgressionTest::RunTest(const FString& Parameters)
 		}
 		const float Reward = State->Numbers.FindRef(TEXT("Reward"));
 		T.TestTrue(TEXT("The enemy died"), UBeyondCombatLibrary::IsActorDead(State->Victim.Get()));
-		T.TestEqual(TEXT("Angel (the killer) got the enemy's EXP"), TotalExperience(Angel) - State->Numbers.FindRef(TEXT("AngelTotal")), Reward, 0.01f);
-		T.TestEqual(TEXT("Ji-Woong got the same EXP (shared party EXP)"), TotalExperience(JiWoong) - State->Numbers.FindRef(TEXT("JiWoongTotal")), Reward, 0.01f);
+		T.TestEqual(TEXT("Angel (the killer) got the enemy's EXP"), TotalExperienceOf(Angel) - State->Numbers.FindRef(TEXT("AngelTotal")), Reward, 0.01f);
+		T.TestEqual(TEXT("Ji-Woong got the same EXP (shared party EXP)"), TotalExperienceOf(JiWoong) - State->Numbers.FindRef(TEXT("JiWoongTotal")), Reward, 0.01f);
 		return true;
 	}));
 
@@ -311,13 +311,13 @@ bool FBeyondProgressionTest::RunTest(const FString& Parameters)
 		{
 			return true;
 		}
-		State->Numbers.Add(TEXT("AngelMaxHealth"), GetStat(Angel, UCharacterAttributeSet::GetMaxHealthAttribute()));
-		State->Numbers.Add(TEXT("AngelArcana"), GetStat(Angel, UCharacterAttributeSet::GetArcanaAttribute()));
-		State->Numbers.Add(TEXT("JiWoongStrength"), GetStat(JiWoong, UCharacterAttributeSet::GetStrengthAttribute()));
+		State->Numbers.Add(TEXT("AngelMaxHealth"), ReadStat(Angel, UCharacterAttributeSet::GetMaxHealthAttribute()));
+		State->Numbers.Add(TEXT("AngelArcana"), ReadStat(Angel, UCharacterAttributeSet::GetArcanaAttribute()));
+		State->Numbers.Add(TEXT("JiWoongStrength"), ReadStat(JiWoong, UCharacterAttributeSet::GetStrengthAttribute()));
 		State->Numbers.Add(TEXT("AngelLevel"), static_cast<float>(Angel->GetCharacterLevel()));
 
 		// Hurt Angel so the refill shows
-		SetBaseStat(Angel, UCharacterAttributeSet::GetCurrentHealthAttribute(), GetStat(Angel, UCharacterAttributeSet::GetMaxHealthAttribute()) * 0.4f);
+		WriteBaseStat(Angel, UCharacterAttributeSet::GetCurrentHealthAttribute(), ReadStat(Angel, UCharacterAttributeSet::GetMaxHealthAttribute()) * 0.4f);
 
 		const float Needed = Angel->GetExperienceToNextLevel() - Angel->GetExperience();
 		State->Numbers.Add(TEXT("Leftover"), 5.0f);
@@ -342,10 +342,10 @@ bool FBeyondProgressionTest::RunTest(const FString& Parameters)
 		T.TestEqual(TEXT("Angel got a skill point"), Angel->GetSkillPoints(), PointsPerLevel * OldLevel);
 		T.TestEqual(TEXT("Ji-Woong got a skill point"), JiWoong->GetSkillPoints(), PointsPerLevel * OldLevel);
 
-		const float MaxHealth = GetStat(Angel, UCharacterAttributeSet::GetMaxHealthAttribute());
-		T.TestEqual(TEXT("Angel's max health grew by his Stat Growth"), MaxHealth - State->Numbers.FindRef(TEXT("AngelMaxHealth")), Angel->StatGrowth.MaxHealth, 0.01f);
-		T.TestEqual(TEXT("Angel's Arcana grew"), GetStat(Angel, UCharacterAttributeSet::GetArcanaAttribute()) - State->Numbers.FindRef(TEXT("AngelArcana")), Angel->StatGrowth.Arcana, 0.01f);
-		T.TestEqual(TEXT("Ji-Woong's Strength grew"), GetStat(JiWoong, UCharacterAttributeSet::GetStrengthAttribute()) - State->Numbers.FindRef(TEXT("JiWoongStrength")), JiWoong->StatGrowth.Strength, 0.01f);
+		const float MaxHealth = ReadStat(Angel, UCharacterAttributeSet::GetMaxHealthAttribute());
+		T.TestEqual(TEXT("Angel's max health grew by his Stat Growth"), MaxHealth - State->Numbers.FindRef(TEXT("AngelMaxHealth")), Angel->GetStatGrowth().MaxHealth, 0.01f);
+		T.TestEqual(TEXT("Angel's Arcana grew"), ReadStat(Angel, UCharacterAttributeSet::GetArcanaAttribute()) - State->Numbers.FindRef(TEXT("AngelArcana")), Angel->GetStatGrowth().Arcana, 0.01f);
+		T.TestEqual(TEXT("Ji-Woong's Strength grew"), ReadStat(JiWoong, UCharacterAttributeSet::GetStrengthAttribute()) - State->Numbers.FindRef(TEXT("JiWoongStrength")), JiWoong->GetStatGrowth().Strength, 0.01f);
 		T.TestEqual(TEXT("A level-up refills health"), UBeyondCombatLibrary::GetActorHealth(Angel), MaxHealth, 0.5f);
 
 		if (const UBeyondProgressWidget* Progress = State->PC.IsValid() ? Cast<UBeyondProgressWidget>(State->PC->GetProgressWidget()) : nullptr)
@@ -373,24 +373,24 @@ bool FBeyondProgressionTest::RunTest(const FString& Parameters)
 		const UAbilitySystemComponent* JiWoongASC = JiWoong->GetAbilitySystemComponent();
 		const float StrengthBase = JiWoongASC->GetNumericAttributeBase(Strength);
 		const float DefenseBase = Target->GetAbilitySystemComponent()->GetNumericAttributeBase(Defense);
-		SetBaseStat(Target, Defense, 0.0f);
+		WriteBaseStat(Target, Defense, 0.0f);
 
-		const float StrengthNow = GetStat(JiWoong, Strength);
-		const float Plain = MeasureHit(JiWoong, Target, 100.0f, BeyondTags::DamageType_Melee);
+		const float StrengthNow = ReadStat(JiWoong, Strength);
+		const float Plain = MeasureHitDamage(JiWoong, Target, 100.0f, BeyondTags::DamageType_Melee);
 		T.TestEqual(TEXT("Melee damage x (1 + Strength / 100)"), Plain, 100.0f * (1.0f + StrengthNow / 100.0f), 0.5f);
 
-		SetBaseStat(JiWoong, Strength, StrengthBase + 100.0f);
-		const float Stronger = MeasureHit(JiWoong, Target, 100.0f, BeyondTags::DamageType_Melee);
+		WriteBaseStat(JiWoong, Strength, StrengthBase + 100.0f);
+		const float Stronger = MeasureHitDamage(JiWoong, Target, 100.0f, BeyondTags::DamageType_Melee);
 		T.TestEqual(TEXT("+100 Strength adds 100 % of the base hit"), Stronger - Plain, 100.0f, 0.5f);
-		SetBaseStat(JiWoong, Strength, StrengthBase);
+		WriteBaseStat(JiWoong, Strength, StrengthBase);
 
-		const float Environment = MeasureHit(JiWoong, Target, 100.0f, BeyondTags::DamageType_Environment);
+		const float Environment = MeasureHitDamage(JiWoong, Target, 100.0f, BeyondTags::DamageType_Environment);
 		T.TestEqual(TEXT("Environment damage ignores the attacker's stats"), Environment, 100.0f, 0.5f);
 
-		SetBaseStat(Target, Defense, 100.0f);
-		const float Armored = MeasureHit(JiWoong, Target, 100.0f, BeyondTags::DamageType_Environment);
+		WriteBaseStat(Target, Defense, 100.0f);
+		const float Armored = MeasureHitDamage(JiWoong, Target, 100.0f, BeyondTags::DamageType_Environment);
 		T.TestEqual(TEXT("100 Defense halves damage taken"), Armored, 50.0f, 0.5f);
-		SetBaseStat(Target, Defense, DefenseBase);
+		WriteBaseStat(Target, Defense, DefenseBase);
 		return true;
 	}));
 
@@ -419,14 +419,14 @@ bool FBeyondProgressionTest::RunTest(const FString& Parameters)
 		const int32 Level = JiWoong->GetCharacterLevel();
 		const float Experience = JiWoong->GetExperience();
 		const int32 Points = JiWoong->GetSkillPoints();
-		const float LevelOneMaxHealth = GetStat(JiWoong, UCharacterAttributeSet::GetMaxHealthAttribute()) - JiWoong->StatGrowth.MaxHealth * (Level - 1);
+		const float LevelOneMaxHealth = ReadStat(JiWoong, UCharacterAttributeSet::GetMaxHealthAttribute()) - JiWoong->GetStatGrowth().MaxHealth * (Level - 1);
 
 		JiWoong->RestoreProgress(5, 10.0f, 3);
 		T.TestEqual(TEXT("Restore: level"), JiWoong->GetCharacterLevel(), 5);
 		T.TestEqual(TEXT("Restore: EXP"), JiWoong->GetExperience(), 10.0f, 0.01f);
 		T.TestEqual(TEXT("Restore: skill points"), JiWoong->GetSkillPoints(), 3);
-		T.TestEqual(TEXT("Restore: stats for level 5"), GetStat(JiWoong, UCharacterAttributeSet::GetMaxHealthAttribute()),
-			LevelOneMaxHealth + JiWoong->StatGrowth.MaxHealth * 4.0f, 0.5f);
+		T.TestEqual(TEXT("Restore: stats for level 5"), ReadStat(JiWoong, UCharacterAttributeSet::GetMaxHealthAttribute()),
+			LevelOneMaxHealth + JiWoong->GetStatGrowth().MaxHealth * 4.0f, 0.5f);
 
 		JiWoong->RestoreProgress(Level, Experience, Points);
 		T.TestEqual(TEXT("Restore back"), JiWoong->GetCharacterLevel(), Level);

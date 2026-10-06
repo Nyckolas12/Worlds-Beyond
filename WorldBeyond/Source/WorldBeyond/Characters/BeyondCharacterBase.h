@@ -145,6 +145,10 @@ public:
 
 	UBeyondProgressionAttributeSet* GetProgressionSet() const { return ProgressionSet; }
 
+	// What this character gains per level above 1
+	UFUNCTION(BlueprintPure, Category = "Progression")
+	FBeyondStatGrowth GetStatGrowth() const { return StatGrowth; }
+
 	/**
 	 * The skeletal mesh that actually animates. MetaHumans keep CharacterMesh0 empty and animate a "Body"
 	 * child, so abilities play montages and attach weapons here instead of on GetMesh().
