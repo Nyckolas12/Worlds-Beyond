@@ -12,8 +12,9 @@ one plan per system under [Plans/](Plans/).
 |---|---|---|
 | `UCharacterAttributeSet` | `Source/WorldBeyond/CharacterAttributeSet.*` | Health/Stamina, **Strength / Arcana / Defense / Level**, `IncomingDamage`/`IncomingHeal`; blocking, parrying, invincibility, Defense, brands, death, no friendly fire |
 | Progression | `Progression/` | `UBeyondProgressionAttributeSet` (EXP, skill points; only on the demigods), `UBeyondProgressionSettings` (*Project Settings → Game → Worlds Beyond Progression*: EXP curve, max level, EXP per enemy rank), `FBeyondStatGrowth`. See *Leveling* below |
-| `UBeyondProgressWidget` | `UI/BeyondProgressWidget.*` | Level badge + EXP bar (bottom left), "+25 EXP" pop-ups and the LEVEL UP banner (top centre); drawn in C++, put into `W_PlayerHud` by the player controller |
-| `UBeyondSaveGame` | `Game/BeyondSaveGame.*` | Slot `BeyondProgress`: each demigod's level, EXP, skill points and skill ranks; the party's Bond Points, duo ranks and duo loadout |
+| `UBeyondProgressWidget` | `UI/BeyondProgressWidget.*` | Level badge + EXP bar (bottom left), "+25 EXP" pop-ups and the LEVEL UP banner (top centre), the F pickup prompt and loot toasts; drawn in C++, put into `W_PlayerHud` by the player controller |
+| `UBeyondSaveGame` | `Game/BeyondSaveGame.*` | Slot `BeyondProgress`: each demigod's level, EXP, skill points, skill ranks and equipped items; the party's Bond Points, duo ranks, duo loadout and bag |
+| Items and loot | `Items/`, `UI/BeyondInventoryWidget.*` | Item / armor set / database data assets, `UBeyondInventoryComponent` (the party's bag, on the player controller), `UBeyondEquipmentComponent` (per demigod: slots, stats, set effects), `UBeyondLootSettings` (*Project Settings → Game → Worlds Beyond Loot*), `ABeyondLootDrop`; the I screen. See *Items and loot* below |
 | Skill trees | `Progression/BeyondSkillTree*`, `UI/BeyondSkillTreeWidget.*` | Tree data assets, `UBeyondSkillTreeComponent` (per demigod, skill points) and `UBeyondDuoSkillTreeComponent` (on the player controller, Bond Points, duo loadout); the K screen. See *Skill trees* below |
 | `ABeyondCharacterBase` | `Characters/BeyondCharacterBase.*` | Parent of `BP_Angel`, `BP_Ji-Woong`, `BP_Enemy_Base`. Grants abilities once, team, ability input slots, death/revive, attack tokens. `GetCombatMesh()` is the mesh that animates (`Body` on MetaHumans); `Suppressed Abilities`; `Duo Role`; `Boss Bar Widget Class`; enemy AI perception detects hostile teams |
 | Legacy bridge | `Characters/BeyondLegacyDamageBridge.*` | Mirrors GAS health into `BPC_DamageSystem` and fires its `OnDamageResponse` / `OnBlocked` / `OnDeath`, so existing hit-react, death and health-bar Blueprints keep working |
@@ -45,6 +46,8 @@ one plan per system under [Plans/](Plans/).
 | **G** | The duo power in the **duo loadout** (Heaven's Judgment until you pick another in the duo tree) when the Bond meter is full | same |
 | Tab | Swap | Swap |
 | **K** | **Skill trees** (pauses the game) | same |
+| **F** | **Pick up** the loot you're standing at | same |
+| **I** | **Equipment & inventory** (pauses the game) | same |
 
 The Bond meter fills as the demigods deal and take damage, faster when both hit the same enemy.
 Heaven's Judgment needs a full meter and both demigods alive within 15 m of each other; you can't Tab-swap while it plays.
@@ -203,6 +206,29 @@ Done earlier: TakeDamage routed into GAS, attack tokens, enemy heal, death handl
   the duo tree: *Party → Skill Tree → Duo Skill Tree Asset* on `BP_PC`.
 - Node lists: [Plans/01_Leveling_SkillTree.md](Plans/01_Leveling_SkillTree.md#the-trees-as-built-tune-them-in-the-editor).
 
+## Items and loot
+
+- Enemies drop loot when the party kills them: Regular 12 %, Elite 35 %, mini-bosses always 2 items (one a set
+  piece), main bosses always 3 (a set piece and a weapon), at the enemy's level. Drops glow in their tier's colour:
+  white Common, green Uncommon, blue Rare, purple Epic, gold Legendary.
+- Walk up to a drop: the HUD shows **F  Name (Tier)**; F puts it in the party's bag (60 items) and a toast lists it.
+- **I** opens the equipment screen (paused): Q / E switch demigod; click a bag item to wear it (what was in that slot
+  goes back to the bag), click a worn item to take it off; hover for details: stats against what's worn (green
+  better, red worse), the set and both its bonuses. A green arrow marks an upgrade, a red cross an item that demigod
+  can't use (the other's weapon type). **X** twice throws the hovered bag item away. K goes to the skill tree, I / Esc
+  close.
+- **Armor sets** (all four pieces Rare or better): 2 pieces give a stat bonus, 4 switch on the effect —
+  **Venomweave** (Q / E / R coat weapon and spells in venom for 6 s: hits poison), **Stormforged** (hits can chain
+  lightning to 3 more enemies), **Sunforged** (hits burn; less damage taken above half health). Full list:
+  [Plans/02_Items_Armor_Loot.md](Plans/02_Items_Armor_Loot.md).
+- A fresh game (or a save from before items) starts with each demigod's Common weapon and Wanderer's Chest and Boots.
+- Items are data in `/Game/WorldsBeyond/Items/` (`Sets/`, `Armor/`, `Weapons/`, `DA_ItemDatabase`); give an item an
+  **Icon** and the screens show it instead of the drawn slot glyph. Drop rates, tier scaling, the drop glow, pickup
+  range and starter kit: *Project Settings → Game → Worlds Beyond Loot*. A boss's own drops: *Loot → Guaranteed Loot*
+  on its Blueprint.
+- Saved with the rest of the progress (the bag and what each demigod wears); `Beyond.ResetProgress` empties the bag
+  and hands out the starter kit again.
+
 ## Level checklist (`MAP_Demo_Main`)
 
 - Place a **BeyondCheckpoint** before each encounter (the arrow is the respawn point).
@@ -214,7 +240,7 @@ Done earlier: TakeDamage routed into GAS, attack tokens, enemy heal, death handl
 Run with the editor closed (build the C++ first):
 
 ```
-UnrealEditor-Cmd.exe WorldBeyond.uproject -run=pythonscript -script=<repo>/WorldBeyond/Scripts/Migration/migrate_pass8.py -unattended -nosplash -NullRHI
+UnrealEditor-Cmd.exe WorldBeyond.uproject -run=pythonscript -script=<repo>/WorldBeyond/Scripts/Migration/migrate_pass9.py -unattended -nosplash -NullRHI
 UnrealEditor-Cmd.exe WorldBeyond.uproject -run=pythonscript -script=<repo>/WorldBeyond/Scripts/Migration/fit_outfits.py -unattended -nosplash -NullRHI
 UnrealEditor-Cmd.exe WorldBeyond.uproject -run=pythonscript -script=<repo>/WorldBeyond/Scripts/Migration/cleanup_legacy.py -unattended -nosplash -NullRHI
 UnrealEditor-Cmd.exe WorldBeyond.uproject -ExecCmds="Automation RunTests WorldsBeyond.Prototype;Quit" -unattended -nullrhi -nosplash -TestExit="Automation Test Queue Empty"
@@ -244,6 +270,10 @@ UnrealEditor-Cmd.exe WorldBeyond.uproject -ExecCmds="Automation RunTests WorldsB
   `GA_Duo_TempestAegis` (copies of Heaven's Judgment with their variant on), the trees on `BP_Angel` / `BP_Ji-Woong` /
   `BP_PC`, `IA_SkillTree` on K. Trees and duo powers are only created when missing; `BEYOND_REBUILD_TREES=1` rebuilds
   the trees (in PowerShell `$env:BEYOND_REBUILD_TREES = "1"` first). Report: `last_run_pass8.txt`.
+- `migrate_pass9.py` — pass 9 (Plan 2, items and loot): the three armor sets, 24 armor pieces, 6 weapons and
+  `DA_ItemDatabase` in `/Game/WorldsBeyond/Items/`, `IA_Interact` on F and `IA_Inventory` on I (on `BP_PC`),
+  Ji-Woong's old Blueprint F event (Blink) switched off. Items are only created when missing;
+  `BEYOND_REBUILD_ITEMS=1` rebuilds them (asset names stay, so saved items still load). Report: `last_run_pass9.txt`.
 - `fit_outfits.py` — snug-fits the outfits (see *Clothing fit* below). Needs the **GeometryScripting** plugin, which
   `WorldBeyond.uproject` now enables (editor only).
 - All passes are idempotent and back up every asset they save to `Saved/MigrationBackups/<timestamp>/`; shared helpers live in
@@ -277,6 +307,15 @@ UnrealEditor-Cmd.exe WorldBeyond.uproject -ExecCmds="Automation RunTests WorldsB
   refused, duo ranks on both demigods, the duo reset, the K screen (opens paused on the leader's tree, three tabs, hold
   to unlock, explains a locked node, closes unpaused), saved ranks restored without spending, Tempest Aegis halving a
   hit and reflecting it.
+- `WorldsBeyond.Prototype.Items` — the item database (names, stats, weapon types, three sets with one piece per slot),
+  tier / level scaling and bonus stats, set pieces never below Rare, the starter kit, equipping from the bag (stats
+  up, the old item back in the bag, taking off removes the stats), a sword refused on Angel but fine on Ji-Woong,
+  2-piece bonus, full sets (on test sets with every proc forced): Q starts Venom Infusion, an infused hit poisons and
+  it ticks, breaking the set ends the infusion, set damage never sets off set effects, chain lightning hits a nearby
+  enemy, Sunfire's −15 % above half health and its burn ticking; a Boss-ranked roll (3 items, a set piece and a
+  weapon, at the enemy's level), the kill dropping them, F picking up the nearest drop (toast), a full bag refusing,
+  the I screen (paused, two tabs, equip / refuse / take off / discard, sorted bag, K switching to the skill tree),
+  items in the save game.
 - Every PIE test sets `Beyond.SaveProgress 0` while it runs, so your saved levels are never loaded or overwritten.
 - Also in the editor: *Tools → Test Automation*, filter WorldsBeyond.
 
@@ -324,3 +363,5 @@ Clothing* in the MetaHuman editor and assemble again. The fitted copies can then
 - Angel's LMB spell is still Blueprint and plays its voice line on every cast. Its trace (camera centre, Visibility)
   matches the crosshair, but unlike the GAS casts it doesn't skip the buddy if he stands in the line of fire.
 - The outfit fit is geometric: the cloth follows the body's skinning, it isn't simulated.
+- Items change stats, not looks: no armor or weapon meshes yet (each item has an unused *Visual Mesh* slot), and the
+  weapon in hand stays the demigod's own sword / staff whatever is equipped.

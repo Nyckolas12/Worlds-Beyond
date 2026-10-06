@@ -18,6 +18,8 @@
 #include "BeyondCharacterBase.generated.h"
 
 class UBeyondAbilitySet;
+class UBeyondEquipmentComponent;
+class UBeyondItemDefinition;
 class UBeyondSkillTreeAsset;
 class UBeyondSkillTreeComponent;
 class UInputAction;
@@ -157,6 +159,14 @@ public:
 	// This demigod's skill tree (Player team only; created from Skill Tree)
 	UFUNCTION(BlueprintPure, Category = "Progression")
 	UBeyondSkillTreeComponent* GetSkillTreeComponent() const { return SkillTreeComponent; }
+
+	// What this demigod wears (Player team only)
+	UFUNCTION(BlueprintPure, Category = "Equipment")
+	UBeyondEquipmentComponent* GetEquipmentComponent() const { return EquipmentComponent; }
+
+	// Always dropped when this enemy is defeated by the party, on top of its rank's random loot (boss drops)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loot")
+	TArray<TSoftObjectPtr<UBeyondItemDefinition>> GuaranteedLoot;
 
 	// The ability a key slot fires (same rule as player input); null if none
 	const UGameplayAbility* FindAbilityOnInput(const FGameplayTag& InputTag) const;
@@ -432,6 +442,9 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UBeyondSkillTreeComponent> SkillTreeComponent;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UBeyondEquipmentComponent> EquipmentComponent;
 
 	FActiveGameplayEffectHandle LevelStatsHandle;
 

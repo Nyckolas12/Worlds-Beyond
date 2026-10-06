@@ -4,10 +4,12 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "Items/BeyondItemTypes.h"
 #include "Styling/SlateBrush.h"
 #include "BeyondProgressWidget.generated.h"
 
 class ABeyondCharacterBase;
+class UBeyondInventoryComponent;
 class UBeyondPartyComponent;
 class USoundBase;
 
@@ -15,6 +17,8 @@ class USoundBase;
  * The leader's level badge and EXP bar (bottom left) and a "LEVEL UP" banner (top centre), drawn in C++ so no
  * Widget Blueprint is needed. ABeyondPlayerController stretches it over W_PlayerHud's canvas; it reads the leader
  * every frame and listens to the party for level-ups and EXP awards.
+ * Loot: the "F  Item (Tier)" prompt when a drop is in reach, a stack of pickup toasts in tier colours (right side)
+ * and short notices ("Your bag is full").
  */
 UCLASS(Blueprintable)
 class WORLDBEYOND_API UBeyondProgressWidget : public UUserWidget
@@ -31,6 +35,24 @@ public:
 	// "+25 EXP" over the bar
 	UFUNCTION(BlueprintCallable, Category = "Progress")
 	void ShowExperienceGain(float Amount);
+
+	// "Venomweave Helm (Rare)" slides in on the right for a few seconds
+	UFUNCTION(BlueprintCallable, Category = "Progress|Loot")
+	void ShowLootToast(const FBeyondItemInstance& Item);
+
+	// A short centred line (warnings like "Your bag is full")
+	UFUNCTION(BlueprintCallable, Category = "Progress|Loot")
+	void ShowNotice(const FText& Text);
+
+	UFUNCTION(BlueprintPure, Category = "Progress|Loot")
+	int32 GetToastCount() const { return Toasts.Num(); }
+
+	// The pickup prompt being shown (empty when nothing is in reach)
+	UFUNCTION(BlueprintPure, Category = "Progress|Loot")
+	FString GetPickupPrompt() const { return PromptLabel; }
+
+	UFUNCTION(BlueprintPure, Category = "Progress|Loot")
+	FText GetNotice() const { return Notice; }
 
 	// What the badge / bar are heading to (the leader's level and EXP fraction)
 	UFUNCTION(BlueprintPure, Category = "Progress")
@@ -89,6 +111,20 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Progress|Banner")
 	TObjectPtr<USoundBase> LevelUpSound;
 
+	// Seconds a pickup toast stays, and how many show at once
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Progress|Loot", meta = (ClampMin = "0.5"))
+	float ToastDuration = 4.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Progress|Loot", meta = (ClampMin = "1"))
+	int32 MaxToasts = 5;
+
+	// Pickup prompt centre: fraction of the screen
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Progress|Loot")
+	FVector2D PromptPosition = FVector2D(0.5f, 0.68f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Progress|Style")
+	FLinearColor WarningColor = FLinearColor(1.0f, 0.42f, 0.35f, 1.0f);
+
 protected:
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
@@ -102,6 +138,9 @@ protected:
 	UFUNCTION()
 	void HandleExperienceAwarded(ABeyondCharacterBase* Victim, float Experience);
 
+	UFUNCTION()
+	void HandleItemAdded(const FBeyondItemInstance& Item);
+
 private:
 	static constexpr float BannerFadeIn = 0.25f;
 	static constexpr float BannerFadeOut = 0.6f;
@@ -110,8 +149,10 @@ private:
 	float GetBannerDuration() const { return BannerFadeIn + BannerHoldTime + BannerFadeOut; }
 	void BindToParty();
 	void ReadLeader();
+	void ReadPickupTarget();
 
 	TWeakObjectPtr<UBeyondPartyComponent> BoundParty;
+	TWeakObjectPtr<UBeyondInventoryComponent> BoundInventory;
 	TWeakObjectPtr<ABeyondCharacterBase> ShownLeader;
 
 	// Pill / circle shape (rounded box with half-height corners)
@@ -136,4 +177,21 @@ private:
 	float GainAmount = 0.0f;
 	float GainAge = -1.0f;
 	float AnimTime = 0.0f;
+
+	struct FLootToast
+	{
+		FString Label;
+		FString Detail;
+		FLinearColor Color = FLinearColor::White;
+		float Age = 0.0f;
+	};
+	// Newest first
+	TArray<FLootToast> Toasts;
+
+	FString PromptLabel;
+	FLinearColor PromptColor = FLinearColor::White;
+	float PromptAge = 0.0f;
+
+	FText Notice;
+	float NoticeAge = -1.0f;
 };

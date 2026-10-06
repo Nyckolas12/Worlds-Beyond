@@ -60,6 +60,26 @@ class WORLDBEYOND_API UBeyondGE_SkillStats : public UBeyondGE_LevelStats
 	GENERATED_BODY()
 };
 
+/** Stats from equipped items and 2-piece set bonuses (same SetByCaller stats as UBeyondGE_LevelStats). */
+UCLASS()
+class WORLDBEYOND_API UBeyondGE_EquipmentStats : public UBeyondGE_LevelStats
+{
+	GENERATED_BODY()
+};
+
+/**
+ * Damage over time (armor-set poison and burn): every second deals SetByCaller.Damage through IncomingDamage, for
+ * SetByCaller.Duration seconds. The applier adds a DamageType.Proc.* tag so the ticks never trigger set effects.
+ */
+UCLASS()
+class WORLDBEYOND_API UBeyondGE_DamageOverTime : public UGameplayEffect
+{
+	GENERATED_BODY()
+
+public:
+	UBeyondGE_DamageOverTime();
+};
+
 /**
  * Cooldown used by UBeyondGameplayAbility's Cooldown Duration: lasts SetByCaller.Duration seconds and grants
  * the ability's Cooldown Tags through the spec, so one effect class serves every ability.

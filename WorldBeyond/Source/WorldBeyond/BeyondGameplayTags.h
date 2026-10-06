@@ -48,6 +48,11 @@ namespace BeyondTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(DamageType_Projectile);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(DamageType_Explosion);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(DamageType_Environment);
+	// Damage from armor-set effects (poison, burn, chain lightning): never triggers set effects itself
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(DamageType_Proc);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(DamageType_Proc_Poison);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(DamageType_Proc_Burn);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(DamageType_Proc_Lightning);
 
 	// Damage flags (mirror S_DamageInfo booleans)
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Damage_Unblockable);

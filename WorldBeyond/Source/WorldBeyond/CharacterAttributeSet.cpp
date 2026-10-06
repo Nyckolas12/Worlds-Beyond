@@ -224,6 +224,17 @@ void UCharacterAttributeSet::HandleIncomingDamage(const FGameplayEffectModCallba
 	SendHitEvent(&TargetASC, HitResponse, Instigator, Damage);
 	OnHitTaken.Broadcast(Instigator, Causer, Damage, HitResponse);
 
+	// The hit feed for on-hit effects (armor sets), with the damage's tags
+	if (Damage > 0.0f)
+	{
+		if (UBeyondCombatSubsystem* Combat = UBeyondCombatSubsystem::Get(TargetASC.GetAvatarActor()))
+		{
+			FGameplayTagContainer AssetTags;
+			Spec.GetAllAssetTags(AssetTags);
+			Combat->NotifyHitLanded(Instigator, TargetASC.GetAvatarActor(), Damage, AssetTags);
+		}
+	}
+
 	CheckOutOfHealth(Data);
 }
 

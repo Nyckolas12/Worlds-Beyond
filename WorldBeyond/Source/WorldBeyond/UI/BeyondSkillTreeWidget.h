@@ -18,7 +18,7 @@ class UTexture2D;
  * (its background, slot frame, lock and glow textures); the trees come from UBeyondSkillTreeAsset data and the rules
  * from UBeyondSkillTreeComponent.
  * Mouse: hover for details, hold the left button on a node to unlock it, right-click a duo power to put it on G.
- * Keys: Q / E (or arrows) switch trees, R twice resets the tree (refund), K / Esc close.
+ * Keys: Q / E (or arrows) switch trees, R twice resets the tree (refund), I goes to the equipment screen, K / Esc close.
  */
 UCLASS(Blueprintable)
 class WORLDBEYOND_API UBeyondSkillTreeWidget : public UUserWidget

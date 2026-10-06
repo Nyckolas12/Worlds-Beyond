@@ -13,6 +13,11 @@
 #include "Game/BeyondSaveGame.h"
 #include "GameFramework/PlayerController.h"
 #include "HAL/IConsoleManager.h"
+#include "Items/BeyondEquipmentComponent.h"
+#include "Items/BeyondInventoryComponent.h"
+#include "Items/BeyondItemLibrary.h"
+#include "Items/BeyondLootDrop.h"
+#include "Items/BeyondLootSettings.h"
 #include "Kismet/GameplayStatics.h"
 #include "Progression/BeyondSkillTreeComponent.h"
 #include "TimerManager.h"
@@ -83,6 +88,10 @@ void UBeyondPartyComponent::BeginPlay()
 	{
 		DuoTree->OnSkillTreeChanged.AddUniqueDynamic(this, &ThisClass::HandleSkillTreeChanged);
 	}
+	if (UBeyondInventoryComponent* Inventory = GetInventory())
+	{
+		Inventory->OnInventoryChanged.AddUniqueDynamic(this, &ThisClass::HandleInventoryChanged);
+	}
 }
 
 void UBeyondPartyComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -104,6 +113,11 @@ void UBeyondPartyComponent::HandleCharacterKilled(ABeyondCharacterBase* Victim, 
 	if (!Victim || Members.Contains(Victim) || !KillerMember || !UBeyondCombatLibrary::AreHostile(KillerMember, Victim))
 	{
 		return;
+	}
+
+	if (bDropLoot)
+	{
+		DropLoot(Victim);
 	}
 
 	const float Reward = Victim->GetExperienceRewardValue();
@@ -191,6 +205,97 @@ void UBeyondPartyComponent::HandleSkillTreeChanged(UBeyondSkillTreeComponent* Tr
 	SaveProgress();
 }
 
+void UBeyondPartyComponent::HandleInventoryChanged()
+{
+	QueueSave();
+}
+
+void UBeyondPartyComponent::HandleEquipmentChanged(UBeyondEquipmentComponent* Equipment)
+{
+	QueueSave();
+}
+
+void UBeyondPartyComponent::QueueSave()
+{
+	if (bSaveQueued || bRestoringProgress || !bProgressLoaded || !IsSavingEnabled())
+	{
+		return;
+	}
+	if (UWorld* World = GetWorld())
+	{
+		bSaveQueued = true;
+		World->GetTimerManager().SetTimerForNextTick(this, &ThisClass::FlushQueuedSave);
+	}
+}
+
+void UBeyondPartyComponent::FlushQueuedSave()
+{
+	if (bSaveQueued)
+	{
+		bSaveQueued = false;
+		SaveProgress();
+	}
+}
+
+UBeyondInventoryComponent* UBeyondPartyComponent::GetInventory() const
+{
+	const AActor* Owner = GetOwner();
+	return Owner ? Owner->FindComponentByClass<UBeyondInventoryComponent>() : nullptr;
+}
+
+int32 UBeyondPartyComponent::DropLoot(ABeyondCharacterBase* Victim)
+{
+	if (!Victim)
+	{
+		return 0;
+	}
+	FRandomStream Stream(FMath::Rand());
+	const TArray<FBeyondItemInstance> Items = UBeyondItemLibrary::RollLoot(Victim, Stream);
+	UBeyondLootSubsystem* Loot = UBeyondLootSubsystem::Get(this);
+	if (Items.IsEmpty() || !Loot)
+	{
+		return 0;
+	}
+
+	for (const FBeyondItemInstance& Item : Items)
+	{
+		UE_LOG(LogBeyond, Log, TEXT("Loot: %s dropped %s (%s, item level %d)"), *Victim->GetName(), *UBeyondItemLibrary::GetItemName(Item).ToString(),
+			*UBeyondItemLibrary::GetTierName(Item.Tier).ToString(), Item.ItemLevel);
+	}
+	return Loot->SpawnDrops(Items, Victim->GetActorLocation()).Num();
+}
+
+void UBeyondPartyComponent::GiveStarterKit()
+{
+	bStarterKitGiven = true;
+	UBeyondInventoryComponent* Inventory = GetInventory();
+	for (const TSoftObjectPtr<UBeyondItemDefinition>& StarterEntry : GetDefault<UBeyondLootSettings>()->StarterItems)
+	{
+		const UBeyondItemDefinition* Definition = StarterEntry.LoadSynchronous();
+		if (!Definition)
+		{
+			continue;
+		}
+
+		// A copy for everyone who can use it and has the slot free (weapons only fit their own demigod)
+		bool bGiven = false;
+		for (ABeyondCharacterBase* Member : Members)
+		{
+			UBeyondEquipmentComponent* Equipment = IsValid(Member) ? Member->GetEquipmentComponent() : nullptr;
+			FBeyondItemInstance Worn;
+			if (Equipment && !Equipment->GetEquipped(Definition->Slot, Worn))
+			{
+				bGiven |= Equipment->EquipItem(UBeyondItemLibrary::MakeItem(Definition, EBeyondItemTier::Common, 1));
+			}
+		}
+		if (!bGiven && Inventory)
+		{
+			Inventory->ReturnItem(UBeyondItemLibrary::MakeItem(Definition, EBeyondItemTier::Common, 1));
+		}
+	}
+	UE_LOG(LogBeyond, Log, TEXT("Party: starter kit given"));
+}
+
 void UBeyondPartyComponent::AwardExperience(float Amount)
 {
 	if (Amount <= 0.0f)
@@ -248,10 +353,15 @@ bool UBeyondPartyComponent::SaveProgress()
 			{
 				Progress.SkillRanks = Tree->GetRanks();
 			}
+			if (const UBeyondEquipmentComponent* Equipment = Member->GetEquipmentComponent())
+			{
+				Progress.Equipped = Equipment->GetEquippedItems();
+			}
 		}
 	}
 
-	Save->Version = 2;
+	bSaveQueued = false;
+	Save->Version = 3;
 	Save->BondPoints = BondPoints;
 	Save->BondPointsLevel = BondPointsLevel;
 	if (const UBeyondDuoSkillTreeComponent* DuoTree = Cast<UBeyondDuoSkillTreeComponent>(GetDuoTree()))
@@ -259,6 +369,11 @@ bool UBeyondPartyComponent::SaveProgress()
 		Save->DuoRanks = DuoTree->GetRanks();
 		Save->DuoLoadout = FSoftClassPath(DuoTree->GetDuoLoadout().Get());
 	}
+	if (const UBeyondInventoryComponent* Inventory = GetInventory())
+	{
+		Save->Inventory = Inventory->GetItems();
+	}
+	Save->bStarterKitGiven = bStarterKitGiven;
 
 	const bool bSaved = UGameplayStatics::SaveGameToSlot(Save, UBeyondSaveGame::SlotName, UBeyondSaveGame::UserIndex);
 	UE_LOG(LogBeyond, Log, TEXT("Party: progress %s"), bSaved ? TEXT("saved") : TEXT("could not be saved"));
@@ -290,6 +405,10 @@ bool UBeyondPartyComponent::LoadProgress()
 			{
 				Tree->RestoreRanks(Progress->SkillRanks);
 			}
+			if (UBeyondEquipmentComponent* Equipment = Member->GetEquipmentComponent())
+			{
+				Equipment->RestoreEquipped(Progress->Equipped);
+			}
 			UE_LOG(LogBeyond, Log, TEXT("Party: %s restored at level %d (%.0f EXP, %d skill points, %d skills)"), *Member->GetName(),
 				Progress->Level, Progress->Experience, Progress->SkillPoints, Progress->SkillRanks.Num());
 		}
@@ -308,6 +427,14 @@ bool UBeyondPartyComponent::LoadProgress()
 	}
 	// Saves from before Bond Points existed: catch up on the levels already reached
 	AwardBondPointsForLevel(GetPartyLevel());
+
+	// Saves from before items existed (version 2) have an empty bag and get the starter kit
+	if (UBeyondInventoryComponent* Inventory = GetInventory())
+	{
+		Inventory->RestoreItems(Save->Inventory);
+	}
+	bStarterKitGiven = Save->bStarterKitGiven;
+	UE_LOG(LogBeyond, Log, TEXT("Party: bag restored with %d items"), Save->Inventory.Num());
 	return true;
 }
 
@@ -325,8 +452,17 @@ void UBeyondPartyComponent::ResetProgress()
 				Tree->RestoreRanks(TMap<FName, int32>());
 			}
 			Member->RestoreProgress(1, 0.0f, 0);
+			if (UBeyondEquipmentComponent* Equipment = Member->GetEquipmentComponent())
+			{
+				Equipment->RestoreEquipped(TMap<EBeyondItemSlot, FBeyondItemInstance>());
+			}
 		}
 	}
+	if (UBeyondInventoryComponent* Inventory = GetInventory())
+	{
+		Inventory->RestoreItems(TArray<FBeyondItemInstance>());
+	}
+	GiveStarterKit();
 	BondPoints = 0;
 	BondPointsLevel = 0;
 	OnBondPointsChanged.Broadcast(BondPoints);
@@ -499,9 +635,14 @@ void UBeyondPartyComponent::InitializeParty(APawn* InitialLeader)
 		{
 			GiveToCompanionController(Member, Leader);
 		}
+		BindMemberComponents(Member);
 	}
 
 	LoadProgress();
+	if (!bStarterKitGiven)
+	{
+		GiveStarterKit();
+	}
 	OnLeaderChanged.Broadcast(Leader, nullptr);
 }
 
@@ -512,10 +653,23 @@ void UBeyondPartyComponent::AddMember(ABeyondCharacterBase* Member)
 		Members.Add(Member);
 		Member->OnCharacterKilled.AddUniqueDynamic(this, &ThisClass::HandleMemberKilled);
 		Member->OnCharacterLevelUp.AddUniqueDynamic(this, &ThisClass::HandleMemberLevelUp);
-		if (UBeyondSkillTreeComponent* Tree = Member->GetSkillTreeComponent())
-		{
-			Tree->OnSkillTreeChanged.AddUniqueDynamic(this, &ThisClass::HandleSkillTreeChanged);
-		}
+		BindMemberComponents(Member);
+	}
+}
+
+void UBeyondPartyComponent::BindMemberComponents(ABeyondCharacterBase* Member)
+{
+	if (!Member)
+	{
+		return;
+	}
+	if (UBeyondSkillTreeComponent* Tree = Member->GetSkillTreeComponent())
+	{
+		Tree->OnSkillTreeChanged.AddUniqueDynamic(this, &ThisClass::HandleSkillTreeChanged);
+	}
+	if (UBeyondEquipmentComponent* Equipment = Member->GetEquipmentComponent())
+	{
+		Equipment->OnEquipmentChanged.AddUniqueDynamic(this, &ThisClass::HandleEquipmentChanged);
 	}
 }
 

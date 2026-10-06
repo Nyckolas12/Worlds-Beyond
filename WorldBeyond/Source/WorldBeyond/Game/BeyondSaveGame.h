@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/SaveGame.h"
+#include "Items/BeyondItemTypes.h"
 #include "UObject/SoftObjectPath.h"
 #include "BeyondSaveGame.generated.h"
 
@@ -26,11 +27,15 @@ struct WORLDBEYOND_API FBeyondMemberProgress
 	// Skill tree: node id -> rank
 	UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Progress")
 	TMap<FName, int32> SkillRanks;
+
+	// What the demigod wears (Plan 2)
+	UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Progress")
+	TMap<EBeyondItemSlot, FBeyondItemInstance> Equipped;
 };
 
 /**
  * The party's progress (one slot, "BeyondProgress"). Written by UBeyondPartyComponent on level-ups, skill tree
- * changes, checkpoints and when play ends, read when the party is set up. The inventory (Plan 2) joins it later.
+ * changes, item pickups / equipment changes, checkpoints and when play ends, read when the party is set up.
  */
 UCLASS()
 class WORLDBEYOND_API UBeyondSaveGame : public USaveGame
@@ -41,9 +46,9 @@ public:
 	static const FString SlotName;
 	static constexpr int32 UserIndex = 0;
 
-	// 1: levels (Plan 1A); 2: skill trees, Bond Points, duo loadout (Plan 1B)
+	// 1: levels (Plan 1A); 2: skill trees, Bond Points, duo loadout (Plan 1B); 3: inventory and equipment (Plan 2)
 	UPROPERTY(SaveGame, BlueprintReadOnly, Category = "Save")
-	int32 Version = 2;
+	int32 Version = 3;
 
 	// Keyed by the demigod's class name (BP_Angel_C, BP_Ji-Woong_C)
 	UPROPERTY(SaveGame, BlueprintReadOnly, Category = "Save")
@@ -63,4 +68,12 @@ public:
 	// The duo power on G
 	UPROPERTY(SaveGame, BlueprintReadOnly, Category = "Save")
 	FSoftClassPath DuoLoadout;
+
+	// The party's bag
+	UPROPERTY(SaveGame, BlueprintReadOnly, Category = "Save")
+	TArray<FBeyondItemInstance> Inventory;
+
+	// The starter kit was handed out (older saves get it on load)
+	UPROPERTY(SaveGame, BlueprintReadOnly, Category = "Save")
+	bool bStarterKitGiven = false;
 };

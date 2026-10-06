@@ -60,6 +60,15 @@ namespace
 	}
 }
 
+UBeyondGE_DamageOverTime::UBeyondGE_DamageOverTime()
+{
+	DurationPolicy = EGameplayEffectDurationType::HasDuration;
+	DurationMagnitude = SetByCallerDuration();
+	Period = FScalableFloat(1.0f);
+	bExecutePeriodicEffectOnApplication = false;
+	Modifiers.Add(MakeSetByCallerModifier(UCharacterAttributeSet::GetIncomingDamageAttribute(), BeyondTags::SetByCaller_Damage));
+}
+
 UBeyondGE_Cooldown::UBeyondGE_Cooldown()
 {
 	DurationPolicy = EGameplayEffectDurationType::HasDuration;

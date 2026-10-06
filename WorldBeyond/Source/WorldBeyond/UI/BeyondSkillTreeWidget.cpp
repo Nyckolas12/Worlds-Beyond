@@ -581,6 +581,16 @@ FReply UBeyondSkillTreeWidget::NativeOnKeyDown(const FGeometry& InGeometry, cons
 		Close();
 		return FReply::Handled();
 	}
+	if (Key == EKeys::I)
+	{
+		// Straight over to the equipment & inventory screen
+		CancelHold();
+		if (ABeyondPlayerController* PC = Cast<ABeyondPlayerController>(GetOwningPlayer()))
+		{
+			PC->OpenInventory();
+		}
+		return FReply::Handled();
+	}
 	if (Key == EKeys::Q || Key == EKeys::Left || Key == EKeys::Gamepad_LeftShoulder)
 	{
 		CycleTab(-1);
@@ -873,8 +883,8 @@ int32 UBeyondSkillTreeWidget::NativePaint(const FPaintArgs& Args, const FGeometr
 			TreeWithAlpha(bMessageWarning ? WarningColor : GoldColor, Alpha), 0.5f, TooltipLayer);
 	}
 	const FString Controls = Cast<UBeyondDuoSkillTreeComponent>(Tree)
-		? FString(TEXT("Hold LMB: unlock    RMB: put a duo power on G    Q / E: switch tree    R: reset    K / Esc: close"))
-		: FString(TEXT("Hold LMB: unlock    Q / E: switch tree    R: reset (refund)    K / Esc: close"));
+		? FString(TEXT("Hold LMB: unlock    RMB: put a duo power on G    Q / E: switch tree    R: reset    I: equipment    K / Esc: close"))
+		: FString(TEXT("Hold LMB: unlock    Q / E: switch tree    R: reset (refund)    I: equipment    K / Esc: close"));
 	DrawLabel(Controls, BodyFont, FVector2f(LocalSize.X * 0.5f, LocalSize.Y - 46.0f), TreeWithAlpha(TextColor, 0.65f), 0.5f, TextLayer);
 
 	return TooltipLayer + 3;

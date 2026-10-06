@@ -18,6 +18,11 @@
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "Items/BeyondInventoryComponent.h"
+#include "Items/BeyondItemLibrary.h"
+#include "Items/BeyondLootDrop.h"
+#include "Items/BeyondLootSettings.h"
+#include "Kismet/GameplayStatics.h"
 #include "Engine/LevelScriptActor.h"
 #include "Engine/LocalPlayer.h"
 #include "Engine/World.h"
@@ -26,9 +31,13 @@
 #include "TimerManager.h"
 #include "UI/BeyondBondMeterWidget.h"
 #include "UI/BeyondCrosshairWidget.h"
+#include "UI/BeyondInventoryWidget.h"
 #include "UI/BeyondProgressWidget.h"
 #include "UI/BeyondSkillTreeWidget.h"
+#include "Sound/SoundBase.h"
 #include "UObject/UnrealType.h"
+
+#define LOCTEXT_NAMESPACE "BeyondPlayerController"
 
 namespace
 {
@@ -82,7 +91,10 @@ ABeyondPlayerController::ABeyondPlayerController()
 {
 	PartyComponent = CreateDefaultSubobject<UBeyondPartyComponent>(TEXT("PartyComponent"));
 	DuoSkillTree = CreateDefaultSubobject<UBeyondDuoSkillTreeComponent>(TEXT("DuoSkillTree"));
+	InventoryComponent = CreateDefaultSubobject<UBeyondInventoryComponent>(TEXT("Inventory"));
 	SkillTreeWidgetClass = UBeyondSkillTreeWidget::StaticClass();
+	InventoryWidgetClass = UBeyondInventoryWidget::StaticClass();
+	PickupSound = TSoftObjectPtr<USoundBase>(FSoftObjectPath(TEXT("/Game/Audio/energy-charge-up.energy-charge-up")));
 	BondWidgetClass = UBeyondBondMeterWidget::StaticClass();
 	ProgressWidgetClass = UBeyondProgressWidget::StaticClass();
 	CrosshairWidgetClass = UBeyondCrosshairWidget::StaticClass();
@@ -153,6 +165,14 @@ void ABeyondPlayerController::SetupInputComponent()
 		{
 			EnhancedInput->BindAction(SkillTreeAction.Get(), ETriggerEvent::Started, this, &ThisClass::ToggleSkillTree);
 		}
+		if (InteractAction)
+		{
+			EnhancedInput->BindAction(InteractAction.Get(), ETriggerEvent::Started, this, &ThisClass::Input_Interact);
+		}
+		if (InventoryAction)
+		{
+			EnhancedInput->BindAction(InventoryAction.Get(), ETriggerEvent::Started, this, &ThisClass::ToggleInventory);
+		}
 	}
 }
 
@@ -173,6 +193,55 @@ void ABeyondPlayerController::AddMappingContexts()
 void ABeyondPlayerController::Input_Swap()
 {
 	PartyComponent->SwapLeader();
+}
+
+void ABeyondPlayerController::Input_Interact()
+{
+	PickUpNearestLoot();
+}
+
+ABeyondLootDrop* ABeyondPlayerController::FindPickupTarget() const
+{
+	const APawn* Leader = GetPawn();
+	const UBeyondLootSubsystem* Loot = UBeyondLootSubsystem::Get(this);
+	if (!Leader || !Loot || UBeyondCombatLibrary::IsActorDead(Leader))
+	{
+		return nullptr;
+	}
+	return Loot->FindNearestDrop(Leader->GetActorLocation(), GetDefault<UBeyondLootSettings>()->PickupRange);
+}
+
+bool ABeyondPlayerController::PickUpNearestLoot()
+{
+	ABeyondLootDrop* Drop = FindPickupTarget();
+	if (!Drop)
+	{
+		return false;
+	}
+	if (InventoryComponent->IsFull())
+	{
+		ShowNotice(LOCTEXT("BagFull", "Your bag is full: press I and discard something"));
+		return false;
+	}
+	if (!InventoryComponent->AddItem(Drop->GetItem()))
+	{
+		return false;
+	}
+	if (USoundBase* Sound = PickupSound.IsNull() ? nullptr : PickupSound.LoadSynchronous())
+	{
+		UGameplayStatics::PlaySound2D(this, Sound, 0.6f, 1.25f);
+	}
+	Drop->Destroy();
+	return true;
+}
+
+void ABeyondPlayerController::ShowNotice(const FText& Text)
+{
+	if (UBeyondProgressWidget* Progress = Cast<UBeyondProgressWidget>(ProgressWidget))
+	{
+		Progress->ShowNotice(Text);
+	}
+	UE_LOG(LogBeyond, Log, TEXT("Notice: %s"), *Text.ToString());
 }
 
 void ABeyondPlayerController::HandleLeaderChanged(ABeyondCharacterBase* NewLeader, ABeyondCharacterBase* OldLeader)
@@ -335,56 +404,80 @@ void ABeyondPlayerController::AttachProgressWidget()
 	}
 }
 
-void ABeyondPlayerController::OpenSkillTree(int32 Tab)
+UUserWidget* ABeyondPlayerController::OpenMenuWidget(TObjectPtr<UUserWidget>& Widget, const TSubclassOf<UUserWidget>& WidgetClass, bool bPause)
 {
-	if (!IsLocalController() || !SkillTreeWidgetClass)
+	if (!IsLocalController() || !WidgetClass)
 	{
-		return;
+		return nullptr;
 	}
-	if (!SkillTreeWidget)
+	if (!Widget)
 	{
-		SkillTreeWidget = CreateWidget<UUserWidget>(this, SkillTreeWidgetClass);
+		Widget = CreateWidget<UUserWidget>(this, WidgetClass);
 	}
-	if (!SkillTreeWidget)
+	if (!Widget)
 	{
-		return;
+		return nullptr;
 	}
 
-	if (!SkillTreeWidget->IsInViewport())
+	// One menu at a time: the other one just goes away (input mode and pause carry over)
+	for (UUserWidget* Other : { SkillTreeWidget.Get(), InventoryWidget.Get() })
 	{
-		SkillTreeWidget->AddToViewport(50);
+		if (Other && Other != Widget && Other->IsInViewport())
+		{
+			Other->RemoveFromParent();
+		}
 	}
-	if (UBeyondSkillTreeWidget* Tree = Cast<UBeyondSkillTreeWidget>(SkillTreeWidget))
+	if (!Widget->IsInViewport())
 	{
-		Tree->RefreshTabs();
-		Tree->SelectTab(Tab >= 0 ? Tab : Tree->FindTabFor(GetPawn()));
+		Widget->AddToViewport(50);
 	}
 
 	FInputModeUIOnly InputMode;
-	InputMode.SetWidgetToFocus(SkillTreeWidget->TakeWidget());
+	InputMode.SetWidgetToFocus(Widget->TakeWidget());
 	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
 	SetInputMode(InputMode);
 	SetShowMouseCursor(true);
 
-	if (bPauseWhileSkillTreeOpen && !IsPaused())
+	if (bPause && !IsPaused())
 	{
-		bPausedBySkillTree = SetPause(true);
+		bPausedByMenu = SetPause(true);
+	}
+	else if (!bPause && bPausedByMenu)
+	{
+		SetPause(false);
+		bPausedByMenu = false;
+	}
+	return Widget;
+}
+
+void ABeyondPlayerController::CloseMenuWidget(UUserWidget* Widget)
+{
+	if (Widget)
+	{
+		Widget->RemoveFromParent();
+	}
+	SetInputMode(FInputModeGameOnly());
+	SetShowMouseCursor(false);
+	if (bPausedByMenu)
+	{
+		SetPause(false);
+		bPausedByMenu = false;
+	}
+}
+
+void ABeyondPlayerController::OpenSkillTree(int32 Tab)
+{
+	UBeyondSkillTreeWidget* Tree = Cast<UBeyondSkillTreeWidget>(OpenMenuWidget(SkillTreeWidget, SkillTreeWidgetClass, bPauseWhileSkillTreeOpen));
+	if (Tree)
+	{
+		Tree->RefreshTabs();
+		Tree->SelectTab(Tab >= 0 ? Tab : Tree->FindTabFor(GetPawn()));
 	}
 }
 
 void ABeyondPlayerController::CloseSkillTree()
 {
-	if (SkillTreeWidget)
-	{
-		SkillTreeWidget->RemoveFromParent();
-	}
-	SetInputMode(FInputModeGameOnly());
-	SetShowMouseCursor(false);
-	if (bPausedBySkillTree)
-	{
-		SetPause(false);
-		bPausedBySkillTree = false;
-	}
+	CloseMenuWidget(SkillTreeWidget);
 }
 
 void ABeyondPlayerController::ToggleSkillTree()
@@ -402,6 +495,38 @@ void ABeyondPlayerController::ToggleSkillTree()
 bool ABeyondPlayerController::IsSkillTreeOpen() const
 {
 	return SkillTreeWidget && SkillTreeWidget->IsInViewport();
+}
+
+void ABeyondPlayerController::OpenInventory(int32 Tab)
+{
+	UBeyondInventoryWidget* Screen = Cast<UBeyondInventoryWidget>(OpenMenuWidget(InventoryWidget, InventoryWidgetClass, bPauseWhileInventoryOpen));
+	if (Screen)
+	{
+		Screen->RefreshTabs();
+		Screen->SelectTab(Tab >= 0 ? Tab : Screen->FindTabFor(GetPawn()));
+	}
+}
+
+void ABeyondPlayerController::CloseInventory()
+{
+	CloseMenuWidget(InventoryWidget);
+}
+
+void ABeyondPlayerController::ToggleInventory()
+{
+	if (IsInventoryOpen())
+	{
+		CloseInventory();
+	}
+	else
+	{
+		OpenInventory();
+	}
+}
+
+bool ABeyondPlayerController::IsInventoryOpen() const
+{
+	return InventoryWidget && InventoryWidget->IsInViewport();
 }
 
 void ABeyondPlayerController::HandleDuoTreeChanged(UBeyondSkillTreeComponent* Tree)
@@ -645,3 +770,5 @@ void ABeyondPlayerController::RefreshBossHealth()
 			UBeyondCombatLibrary::GetActorHealth(Boss), UBeyondCombatLibrary::GetActorMaxHealth(Boss));
 	}
 }
+
+#undef LOCTEXT_NAMESPACE

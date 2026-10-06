@@ -39,6 +39,10 @@ namespace BeyondTags
 	UE_DEFINE_GAMEPLAY_TAG(DamageType_Projectile, "DamageType.Projectile");
 	UE_DEFINE_GAMEPLAY_TAG(DamageType_Explosion, "DamageType.Explosion");
 	UE_DEFINE_GAMEPLAY_TAG(DamageType_Environment, "DamageType.Environment");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(DamageType_Proc, "DamageType.Proc", "Damage from armor-set effects; never triggers set effects itself");
+	UE_DEFINE_GAMEPLAY_TAG(DamageType_Proc_Poison, "DamageType.Proc.Poison");
+	UE_DEFINE_GAMEPLAY_TAG(DamageType_Proc_Burn, "DamageType.Proc.Burn");
+	UE_DEFINE_GAMEPLAY_TAG(DamageType_Proc_Lightning, "DamageType.Proc.Lightning");
 
 	UE_DEFINE_GAMEPLAY_TAG(Damage_Unblockable, "Damage.Unblockable");
 	UE_DEFINE_GAMEPLAY_TAG(Damage_Unparryable, "Damage.Unparryable");

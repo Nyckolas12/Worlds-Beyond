@@ -24,6 +24,7 @@
 #include "Perception/AISense_Damage.h"
 #include "Progression/BeyondProgressionAttributeSet.h"
 #include "Progression/BeyondSkillTreeComponent.h"
+#include "Items/BeyondEquipmentComponent.h"
 #include "WorldBeyond.h"
 
 // Sets default values
@@ -503,6 +504,9 @@ void ABeyondCharacterBase::CreateProgressionSet()
 	SkillTreeComponent = NewObject<UBeyondSkillTreeComponent>(this, TEXT("SkillTree"));
 	SkillTreeComponent->Tree = SkillTree;
 	SkillTreeComponent->RegisterComponent();
+
+	EquipmentComponent = NewObject<UBeyondEquipmentComponent>(this, TEXT("Equipment"));
+	EquipmentComponent->RegisterComponent();
 }
 
 bool ABeyondCharacterBase::SpendSkillPoints(int32 Amount)
