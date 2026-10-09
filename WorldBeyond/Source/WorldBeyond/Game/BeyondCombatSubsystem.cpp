@@ -170,9 +170,18 @@ void UBeyondCombatSubsystem::NotifyHitLanded(AActor* DamageInstigator, AActor* T
 
 float UBeyondCombatSubsystem::ModifyIncomingDamage(UAbilitySystemComponent& TargetASC, AActor* DamageInstigator, const FGameplayTagContainer& DamageTags, float Damage)
 {
+	// The attacker's own scale (boss clones hit softer)
+	if (const ABeyondCharacterBase* Source = Cast<ABeyondCharacterBase>(DamageInstigator))
+	{
+		Damage *= Source->GetOutgoingDamageScale();
+	}
+
 	// Armor (Sunforged): less damage while healthy
 	if (const ABeyondCharacterBase* Character = Cast<ABeyondCharacterBase>(TargetASC.GetAvatarActor()))
 	{
+		// The character's own rules (elite affixes)
+		Damage = Character->ModifyDamageTaken(Damage, DamageInstigator, DamageTags);
+
 		if (const UBeyondEquipmentComponent* Equipment = Character->GetEquipmentComponent())
 		{
 			Damage *= Equipment->GetDamageTakenMultiplier();

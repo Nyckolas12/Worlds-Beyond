@@ -460,8 +460,8 @@ void UBeyondGA_DuoStrike::RemoveEffects(TArray<TWeakObjectPtr<UFXSystemComponent
 
 bool UBeyondGA_DuoStrike::IsBoss(const AActor* Actor)
 {
-	const ABeyondCharacterBase* Character = Cast<ABeyondCharacterBase>(Actor);
-	return Character && Character->BossBarWidgetClass;
+	// Mini-bosses and bosses by rank too (Plan 3), not only Blueprint enemies with a boss bar
+	return UBeyondCombatLibrary::IsBoss(Actor);
 }
 
 void UBeyondGA_DuoStrike::EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled)

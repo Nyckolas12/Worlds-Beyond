@@ -431,8 +431,10 @@ bool FBeyondPowersTest::RunTest(const FString& Parameters)
 			}
 		}
 		T.TestTrue(TEXT("Ji-Woong: LMB presses the GAS sword combo"), bLeftMouseMapped && JiWoong->IsLegacyKeyInputDisabled());
-		T.TestTrue(TEXT("Ji-Woong: only his old LMB key event is switched off (\"1\" still draws the sword)"),
-			JiWoong->GetLegacyKeysToDisable().Num() == 1 && JiWoong->GetLegacyKeysToDisable()[0] == EKeys::LeftMouseButton);
+		// LMB (pass 4) and F (Blink, which would fire with the loot pickup: pass 9) are off; "1" still draws the sword
+		const TArray<FKey>& KeysOff = JiWoong->GetLegacyKeysToDisable();
+		T.TestTrue(TEXT("Ji-Woong: only his old LMB and F key events are switched off (\"1\" still draws the sword)"),
+			KeysOff.Num() == 2 && KeysOff.Contains(EKeys::LeftMouseButton) && KeysOff.Contains(EKeys::F));
 		if (const UBeyondGA_MeleeCombo* Combo = GetSwordCombo(JiWoong))
 		{
 			T.TestTrue(TEXT("Sword combo window is 15 % longer"), FMath::IsNearlyEqual(Combo->ComboWindowExtension, 0.15f, 0.01f));
@@ -993,15 +995,18 @@ bool FBeyondPowersTest::RunTest(const FString& Parameters)
 			// His Blueprint "1" (draw / sheathe) is still bound; the old LMB combo event is not
 			bool bOneBound = false;
 			bool bLeftMouseBound = false;
+			TArray<FString> BoundKeys;
 			if (const UInputComponent* Input = JiWoong->InputComponent)
 			{
 				for (const FInputKeyBinding& Binding : Input->KeyBindings)
 				{
 					bOneBound |= Binding.Chord.Key == EKeys::One;
 					bLeftMouseBound |= Binding.Chord.Key == EKeys::LeftMouseButton;
+					BoundKeys.AddUnique(Binding.Chord.Key.ToString());
 				}
 			}
-			T.TestTrue(TEXT("Controlling Ji-Woong, \"1\" is bound and the old LMB event isn't"), bOneBound && !bLeftMouseBound);
+			T.TestTrue(FString::Printf(TEXT("Controlling Ji-Woong, \"1\" is bound and the old LMB event isn't (bound: %s)"),
+				*FString::Join(BoundKeys, TEXT(", "))), bOneBound && !bLeftMouseBound);
 		}
 		return true;
 	}));
@@ -1294,6 +1299,11 @@ bool FBeyondPowersTest::RunTest(const FString& Parameters)
 	ADD_LATENT_AUTOMATION_COMMAND(FEndPlayMapCommand());
 	ADD_LATENT_AUTOMATION_COMMAND(FBeyondPowersStep([SaveProgressBefore]()
 	{
+		// Only once PIE is gone: the party saves when play ends, and that save must still see saving switched off
+		if (GEditor && GEditor->PlayWorld)
+		{
+			return false;
+		}
 		if (IConsoleVariable* Var = IConsoleManager::Get().FindConsoleVariable(TEXT("Beyond.SaveProgress")))
 		{
 			Var->Set(SaveProgressBefore.IsEmpty() ? TEXT("1") : *SaveProgressBefore, ECVF_SetByCode);

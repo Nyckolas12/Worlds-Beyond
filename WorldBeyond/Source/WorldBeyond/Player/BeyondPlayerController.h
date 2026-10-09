@@ -8,6 +8,7 @@
 #include "BeyondPlayerController.generated.h"
 
 class ABeyondCharacterBase;
+class UBeyondBossBarWidget;
 class ABeyondLootDrop;
 class UBeyondBondMeterWidget;
 class UBeyondDuoSkillTreeComponent;
@@ -169,15 +170,28 @@ public:
 	UFUNCTION(BlueprintPure, Category = "UI|Crosshair")
 	UUserWidget* GetCrosshairWidget() const { return CrosshairWidget; }
 
+	// Health plates over enemies in a fight (Plan 3); leave empty to hide them
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Enemies")
+	TSubclassOf<UUserWidget> EnemyPlatesWidgetClass;
+
+	UFUNCTION(BlueprintPure, Category = "UI|Enemies")
+	UUserWidget* GetEnemyPlatesWidget() const { return EnemyPlatesWidget; }
+
 	// Seconds the boss bar stays up after the boss dies
 	UPROPERTY(EditDefaultsOnly, Category = "UI|Boss", meta = (ClampMin = "0"))
 	float BossBarLingerAfterDeath = 2.0f;
 
-	UFUNCTION(BlueprintPure, Category = "UI|Boss")
-	UUserWidget* GetBossBarWidget() const { return BossBarWidget; }
+	// Bar for mini-bosses and bosses by rank (Plan 3); a Blueprint enemy's own Boss Bar Widget Class still wins for it
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Boss")
+	TSubclassOf<UBeyondBossBarWidget> RankedBossBarClass;
 
+	// The boss bar on screen (a Blueprint boss's widget or the C++ bar); null when none shows
 	UFUNCTION(BlueprintPure, Category = "UI|Boss")
-	ABeyondCharacterBase* GetShownBoss() const { return ShownBoss.Get(); }
+	UUserWidget* GetBossBarWidget() const;
+
+	// The (nearest) boss whose bar shows
+	UFUNCTION(BlueprintPure, Category = "UI|Boss")
+	ABeyondCharacterBase* GetShownBoss() const;
 
 protected:
 	virtual void BeginPlay() override;
@@ -233,6 +247,7 @@ private:
 	void UpdateCrosshair();
 	void RefreshDuoIcon();
 	void UpdateBossBar();
+	void UpdateRankedBossBars();
 	void ShowBossBar(ABeyondCharacterBase* Boss);
 	void HideBossBar();
 	void RefreshBossHealth();
@@ -269,6 +284,9 @@ private:
 	TObjectPtr<UUserWidget> CrosshairWidget;
 
 	UPROPERTY(Transient)
+	TObjectPtr<UUserWidget> EnemyPlatesWidget;
+
+	UPROPERTY(Transient)
 	TObjectPtr<UUserWidget> SkillTreeWidget;
 
 	UPROPERTY(Transient)
@@ -280,6 +298,12 @@ private:
 	FTimerHandle CrosshairTimer;
 
 	TWeakObjectPtr<ABeyondCharacterBase> ShownBoss;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UBeyondBossBarWidget> RankedBossBar;
+
+	TArray<TWeakObjectPtr<ABeyondCharacterBase>> RankedBosses;
+	TMap<TWeakObjectPtr<ABeyondCharacterBase>, float> BossDeathTimes;
 	FDelegateHandle BossHealthHandle;
 	FDelegateHandle BossMaxHealthHandle;
 	FTimerHandle BossBarTimer;

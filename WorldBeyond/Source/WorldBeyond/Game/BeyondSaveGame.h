@@ -46,9 +46,10 @@ public:
 	static const FString SlotName;
 	static constexpr int32 UserIndex = 0;
 
-	// 1: levels (Plan 1A); 2: skill trees, Bond Points, duo loadout (Plan 1B); 3: inventory and equipment (Plan 2)
+	// 1: levels (Plan 1A); 2: skill trees, Bond Points, duo loadout (Plan 1B); 3: inventory and equipment (Plan 2);
+	// 4: defeated story bosses (Plan 3)
 	UPROPERTY(SaveGame, BlueprintReadOnly, Category = "Save")
-	int32 Version = 3;
+	int32 Version = 4;
 
 	// Keyed by the demigod's class name (BP_Angel_C, BP_Ji-Woong_C)
 	UPROPERTY(SaveGame, BlueprintReadOnly, Category = "Save")
@@ -76,4 +77,8 @@ public:
 	// The starter kit was handed out (older saves get it on load)
 	UPROPERTY(SaveGame, BlueprintReadOnly, Category = "Save")
 	bool bStarterKitGiven = false;
+
+	// Story bosses the party has beaten (UBeyondBossDefinition::BossId)
+	UPROPERTY(SaveGame, BlueprintReadOnly, Category = "Save")
+	TArray<FName> DefeatedBosses;
 };

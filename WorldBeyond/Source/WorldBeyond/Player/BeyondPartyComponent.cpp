@@ -45,6 +45,17 @@ namespace
 			}
 		}));
 
+	FAutoConsoleCommandWithWorld ResetBossesCommand(
+		TEXT("Beyond.ResetBosses"),
+		TEXT("Forget which story bosses the party beat (their arenas bring them back)."),
+		FConsoleCommandWithWorldDelegate::CreateLambda([](UWorld* World)
+		{
+			if (UBeyondPartyComponent* Party = FindParty(World))
+			{
+				Party->ResetDefeatedBosses();
+			}
+		}));
+
 	FAutoConsoleCommandWithWorld ResetProgressCommand(
 		TEXT("Beyond.ResetProgress"),
 		TEXT("Delete the saved party progress and put both demigods back to level 1."),
@@ -115,7 +126,7 @@ void UBeyondPartyComponent::HandleCharacterKilled(ABeyondCharacterBase* Victim, 
 		return;
 	}
 
-	if (bDropLoot)
+	if (bDropLoot && Victim->CanDropLoot())
 	{
 		DropLoot(Victim);
 	}
@@ -361,7 +372,8 @@ bool UBeyondPartyComponent::SaveProgress()
 	}
 
 	bSaveQueued = false;
-	Save->Version = 3;
+	Save->Version = 4;
+	Save->DefeatedBosses = DefeatedBosses.Array();
 	Save->BondPoints = BondPoints;
 	Save->BondPointsLevel = BondPointsLevel;
 	if (const UBeyondDuoSkillTreeComponent* DuoTree = Cast<UBeyondDuoSkillTreeComponent>(GetDuoTree()))
@@ -435,12 +447,30 @@ bool UBeyondPartyComponent::LoadProgress()
 	}
 	bStarterKitGiven = Save->bStarterKitGiven;
 	UE_LOG(LogBeyond, Log, TEXT("Party: bag restored with %d items"), Save->Inventory.Num());
+	DefeatedBosses = TSet<FName>(Save->DefeatedBosses);
 	return true;
+}
+
+void UBeyondPartyComponent::MarkBossDefeated(FName BossId)
+{
+	if (!BossId.IsNone() && !DefeatedBosses.Contains(BossId))
+	{
+		DefeatedBosses.Add(BossId);
+		UE_LOG(LogBeyond, Log, TEXT("Party: boss %s defeated"), *BossId.ToString());
+		SaveProgress();
+	}
+}
+
+void UBeyondPartyComponent::ResetDefeatedBosses()
+{
+	DefeatedBosses.Reset();
+	SaveProgress();
 }
 
 void UBeyondPartyComponent::ResetProgress()
 {
 	UGameplayStatics::DeleteGameInSlot(UBeyondSaveGame::SlotName, UBeyondSaveGame::UserIndex);
+	DefeatedBosses.Reset();
 	TGuardValue<bool> Restoring(bRestoringProgress, true);
 	for (ABeyondCharacterBase* Member : Members)
 	{
@@ -827,6 +857,10 @@ void UBeyondPartyComponent::HandleMemberKilled(ABeyondCharacterBase* Member, AAc
 		GetWorld()->GetTimerManager().ClearTimer(AutoSwapTimer);
 		SetBond(0.0f);
 		OnPartyWiped.Broadcast();
+		if (UBeyondCombatSubsystem* Combat = UBeyondCombatSubsystem::Get(this))
+		{
+			Combat->OnPartyWiped.Broadcast();
+		}
 		if (ABeyondGameMode* GameMode = GetWorld()->GetAuthGameMode<ABeyondGameMode>())
 		{
 			GameMode->HandlePartyWiped(GetPlayerController());

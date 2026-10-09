@@ -68,6 +68,13 @@ public:
 	float AIUseBelowHealthPercent = 1.0f;
 
 	/**
+	 * Enemies: attack tokens this ability takes from its target while it runs (how many enemies may swing at one
+	 * demigod at once, see ABeyondCharacterBase::MaxAttackTokens). 0 for ranged attacks, buffs and summons.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AI", meta = (EditCondition = "bAIUsable", ClampMin = "0"))
+	int32 AIAttackTokenCost = 0;
+
+	/**
 	 * Simple cooldown without making a Gameplay Effect asset: when above 0 and no Cooldown Gameplay Effect Class
 	 * is set, committing applies UBeyondGE_Cooldown for this many seconds, granting Cooldown Tags.
 	 */

@@ -849,6 +849,8 @@ void ABeyondCharacterBase::Revive(float HealthFraction)
 	Capsule->SetCollisionEnabled(CapsuleCollision);
 	GetCharacterMovement()->SetMovementMode(MOVE_Walking);
 	SetLifeSpan(0.0f);
+	// Attackers that died holding tokens never gave them back
+	AvailableAttackTokens = MaxAttackTokens;
 
 	// The old Blueprint death handler disables the pawn's input
 	if (APlayerController* PC = Cast<APlayerController>(GetController()))

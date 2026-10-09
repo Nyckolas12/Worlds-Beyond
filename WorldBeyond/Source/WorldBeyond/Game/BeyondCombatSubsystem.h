@@ -110,6 +110,9 @@ public:
 	// Every hit that took health, with its damage tags (armor-set effects run on it); broadcast the tick after the hit
 	FBeyondHitLandedEvent OnHitLanded;
 
+	// The whole party went down (enemies go home and reset, boss arenas reset); broadcast by UBeyondPartyComponent
+	FSimpleMulticastDelegate OnPartyWiped;
+
 	// Called by UCharacterAttributeSet when damage landed
 	void NotifyHitLanded(AActor* DamageInstigator, AActor* Target, float Damage, const FGameplayTagContainer& DamageTags);
 

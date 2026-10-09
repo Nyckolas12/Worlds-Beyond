@@ -4,6 +4,7 @@
 #include "CharacterAttributeSet.h"
 #include "AbilitySystem/BeyondCombatLibrary.h"
 #include "BeyondGameplayTags.h"
+#include "Characters/BeyondCharacterBase.h"
 #include "Game/BeyondCombatSubsystem.h"
 #include "GameplayEffectExtension.h"
 #include "Net/UnrealNetwork.h"
@@ -185,6 +186,12 @@ void UCharacterAttributeSet::HandleIncomingDamage(const FGameplayEffectModCallba
 		return;
 	}
 
+	// An enemy walking home after giving up the fight can't be farmed on the way
+	if (TargetASC.HasMatchingGameplayTag(BeyondTags::State_Resetting))
+	{
+		return;
+	}
+
 	// Parry: no damage, and the attacker gets staggered
 	if (TargetASC.HasMatchingGameplayTag(BeyondTags::State_Parrying) && !SpecHasTag(Spec, BeyondTags::Damage_Unparryable))
 	{
@@ -211,6 +218,16 @@ void UCharacterAttributeSet::HandleIncomingDamage(const FGameplayEffectModCallba
 		FGameplayTagContainer AssetTags;
 		Spec.GetAllAssetTags(AssetTags);
 		Damage = Combat->ModifyIncomingDamage(TargetASC, Instigator, AssetTags, Damage);
+	}
+
+	// Bosses: one hit can't skip a phase (the floor is the next phase threshold)
+	if (const ABeyondCharacterBase* Character = Cast<ABeyondCharacterBase>(TargetASC.GetAvatarActor()))
+	{
+		const float Floor = Character->GetHealthFloor();
+		if (Floor > 0.0f)
+		{
+			Damage = FMath::Min(Damage, FMath::Max(GetCurrentHealth() - Floor, 0.0f));
+		}
 	}
 
 	SetCurrentHealth(FMath::Clamp(GetCurrentHealth() - Damage, 0.0f, GetMaxHealth()));

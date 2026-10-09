@@ -113,9 +113,10 @@ private:
 	FDelegateHandle HitLandedHandle;
 	FDelegateHandle AbilityActivatedHandle;
 
-	float InfusedUntil = -1.0f;
-	float NextInfusionTime = 0.0f;
-	float NextChainTime = 0.0f;
+	// World times are doubles: a float copy of "now" can round up and still count as in the future
+	double InfusedUntil = -1.0;
+	double NextInfusionTime = 0.0;
+	double NextChainTime = 0.0;
 	TWeakObjectPtr<UFXSystemComponent> InfusionAura;
 	FTimerHandle InfusionTimer;
 

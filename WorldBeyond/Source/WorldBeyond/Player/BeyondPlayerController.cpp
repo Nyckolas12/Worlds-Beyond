@@ -31,6 +31,10 @@
 #include "TimerManager.h"
 #include "UI/BeyondBondMeterWidget.h"
 #include "UI/BeyondCrosshairWidget.h"
+#include "UI/BeyondBossBarWidget.h"
+#include "UI/BeyondEnemyPlatesWidget.h"
+#include "Enemies/BeyondBossCharacter.h"
+#include "Enemies/BeyondBossDefinition.h"
 #include "UI/BeyondInventoryWidget.h"
 #include "UI/BeyondProgressWidget.h"
 #include "UI/BeyondSkillTreeWidget.h"
@@ -98,6 +102,8 @@ ABeyondPlayerController::ABeyondPlayerController()
 	BondWidgetClass = UBeyondBondMeterWidget::StaticClass();
 	ProgressWidgetClass = UBeyondProgressWidget::StaticClass();
 	CrosshairWidgetClass = UBeyondCrosshairWidget::StaticClass();
+	EnemyPlatesWidgetClass = UBeyondEnemyPlatesWidget::StaticClass();
+	RankedBossBarClass = UBeyondBossBarWidget::StaticClass();
 }
 
 void ABeyondPlayerController::BeginPlay()
@@ -129,6 +135,15 @@ void ABeyondPlayerController::BeginPlay()
 		CreateBondMeter();
 		CreateProgressWidget();
 		CreateCrosshair();
+		if (EnemyPlatesWidgetClass)
+		{
+			// Under the HUD's own widgets, full screen
+			EnemyPlatesWidget = CreateWidget<UUserWidget>(this, EnemyPlatesWidgetClass);
+			if (EnemyPlatesWidget)
+			{
+				EnemyPlatesWidget->AddToViewport(1);
+			}
+		}
 		GetWorldTimerManager().SetTimer(BossBarTimer, this, &ThisClass::UpdateBossBar, 0.25f, true, 0.5f);
 	}
 
@@ -662,8 +677,106 @@ void ABeyondPlayerController::HandleBondChanged(float Bond, float MaxBond)
 	}
 }
 
+UUserWidget* ABeyondPlayerController::GetBossBarWidget() const
+{
+	if (BossBarWidget)
+	{
+		return BossBarWidget;
+	}
+	return RankedBossBar && !RankedBosses.IsEmpty() ? RankedBossBar.Get() : nullptr;
+}
+
+ABeyondCharacterBase* ABeyondPlayerController::GetShownBoss() const
+{
+	if (ABeyondCharacterBase* Legacy = ShownBoss.Get())
+	{
+		return Legacy;
+	}
+	return RankedBosses.IsEmpty() ? nullptr : RankedBosses[0].Get();
+}
+
+void ABeyondPlayerController::UpdateRankedBossBars()
+{
+	const ABeyondCharacterBase* Leader = PartyComponent->GetLeader();
+	const float Now = GetWorld()->GetTimeSeconds();
+
+	// Mini-bosses and bosses by rank near the leader (two at most, nearest first); the dead linger a moment
+	TArray<TPair<float, ABeyondCharacterBase*>> Candidates;
+	for (TActorIterator<ABeyondCharacterBase> It(GetWorld()); Leader && It; ++It)
+	{
+		ABeyondCharacterBase* Candidate = *It;
+		if (Candidate->BossBarWidgetClass || !UBeyondCombatLibrary::IsBoss(Candidate))
+		{
+			continue;
+		}
+		if (UBeyondCombatLibrary::IsActorDead(Candidate))
+		{
+			const float* Died = BossDeathTimes.Find(Candidate);
+			if (!Died)
+			{
+				// Only bosses whose bar was up linger
+				if (!RankedBosses.Contains(Candidate))
+				{
+					continue;
+				}
+				Died = &BossDeathTimes.Add(Candidate, Now);
+			}
+			if (Now - *Died > BossBarLingerAfterDeath)
+			{
+				continue;
+			}
+		}
+		const ABeyondBossCharacter* BossCharacter = Cast<ABeyondBossCharacter>(Candidate);
+		const UBeyondBossDefinition* Definition = BossCharacter ? BossCharacter->GetBossDefinition() : nullptr;
+		const float Radius = Definition ? Definition->BarShowRadius : Candidate->BossBarShowRadius;
+		const float Distance = FVector::Dist(Leader->GetActorLocation(), Candidate->GetActorLocation());
+		// A bar already up stays until the party is well away
+		if (Distance <= (RankedBosses.Contains(Candidate) ? Radius * 1.5f : Radius))
+		{
+			Candidates.Add(TPair<float, ABeyondCharacterBase*>(Distance, Candidate));
+		}
+	}
+	Candidates.Sort([](const TPair<float, ABeyondCharacterBase*>& A, const TPair<float, ABeyondCharacterBase*>& B) { return A.Key < B.Key; });
+
+	TArray<ABeyondCharacterBase*> Shown;
+	RankedBosses.Reset();
+	for (const TPair<float, ABeyondCharacterBase*>& Candidate : Candidates)
+	{
+		if (Shown.Num() < 2)
+		{
+			Shown.Add(Candidate.Value);
+			RankedBosses.Add(Candidate.Value);
+		}
+	}
+
+	if (Shown.IsEmpty())
+	{
+		if (RankedBossBar)
+		{
+			RankedBossBar->SetBosses({});
+			RankedBossBar->SetVisibility(ESlateVisibility::Collapsed);
+		}
+		return;
+	}
+	if (!RankedBossBar && RankedBossBarClass)
+	{
+		RankedBossBar = CreateWidget<UBeyondBossBarWidget>(this, RankedBossBarClass);
+		if (RankedBossBar)
+		{
+			RankedBossBar->AddToViewport(3);
+		}
+	}
+	if (RankedBossBar)
+	{
+		RankedBossBar->SetBosses(Shown);
+		RankedBossBar->SetVisibility(ESlateVisibility::HitTestInvisible);
+	}
+}
+
 void ABeyondPlayerController::UpdateBossBar()
 {
+	UpdateRankedBossBars();
+
 	const ABeyondCharacterBase* Leader = PartyComponent->GetLeader();
 	const float Now = GetWorld()->GetTimeSeconds();
 

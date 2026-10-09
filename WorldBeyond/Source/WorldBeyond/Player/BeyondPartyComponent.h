@@ -124,6 +124,17 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Party|Progression")
 	void ResetProgress();
 
+	// Story bosses the party has beaten (saved): their arenas don't bring them back
+	UFUNCTION(BlueprintPure, Category = "Party|Bosses")
+	bool IsBossDefeated(FName BossId) const { return DefeatedBosses.Contains(BossId); }
+
+	UFUNCTION(BlueprintCallable, Category = "Party|Bosses")
+	void MarkBossDefeated(FName BossId);
+
+	// Every story boss back (console Beyond.ResetBosses)
+	UFUNCTION(BlueprintCallable, Category = "Party|Bosses")
+	void ResetDefeatedBosses();
+
 	// Defeated enemies drop loot (UBeyondLootSettings rules plus their Guaranteed Loot)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Party|Items")
 	bool bDropLoot = true;
@@ -282,6 +293,7 @@ private:
 	int32 BondPoints = 0;
 	int32 BondPointsLevel = 0;
 	bool bStarterKitGiven = false;
+	TSet<FName> DefeatedBosses;
 	bool bSaveQueued = false;
 	float BondGainMultiplier = 1.0f;
 	float BondEchoFraction = 0.0f;

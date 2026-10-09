@@ -31,6 +31,9 @@ one plan per system under [Plans/](Plans/).
 | `ABeyondCompanionController` | `AI/BeyondCompanionController.*` | Buddy AI: follow (with walk animation), defend the leader, use abilities by their AI hints, regroup; stands still while a cutscene (level sequence) has it or its leader |
 | `ABeyondGameMode`, `ABeyondCheckpoint` | `Game/` | Party wipe → respawn at the last checkpoint (or player start) |
 | `BTTask_BeyondActivateAbility` | `AI/` | Behavior tree task to run any GAS ability on an enemy |
+| Enemies (Plan 3A) | `Enemies/`, `AI/BeyondEnemyController.*` | `ABeyondEnemyCharacter` set up from a `UBeyondEnemyDefinition` (roster entry), its C++ brain, elite affixes, `UBeyondEnemySubsystem` (spawning, `Beyond.Spawn`), spawners, the C++ anim instance for creatures without an anim Blueprint. See *Enemies* below |
+| Telegraphs | `AbilitySystem/BeyondAreaStrike.*`, `Abilities/BeyondGA_AreaAttack.*` | Ground markers that fill, then hit (circle, ring, cone, line; meteors, lingering lava / poison); the enemies' attack ability |
+| Bosses (Plan 3B) | `Enemies/BeyondBoss*`, `Game/BeyondBossArena.*`, `UI/BeyondBossBarWidget.*` | Phases with a health floor, twists, arenas, the C++ boss bar, `BeyondGA_Leap` / `_Beam` / `_Summon` / `_Teleport` / `_Pull`. See *Bosses* below |
 
 ## Controls
 
@@ -229,6 +232,46 @@ Done earlier: TakeDamage routed into GAS, attack tokens, enemy heal, death handl
 - Saved with the rest of the progress (the bag and what each demigod wears); `Beyond.ResetProgress` empties the bag
   and hands out the starter kit again.
 
+## Enemies
+
+- **The roster** lives in `/Game/WorldsBeyond/Enemies/` (`DA_EnemyRoster`, `Roster/DA_Enemy_*`, `Affixes/DA_Affix_*`,
+  `Abilities/<Enemy>/GA_*`); full list in [Plans/03_Enemies_Bosses.md](Plans/03_Enemies_Bosses.md). Forest: Timber
+  Wolf, Raider, Raider Slinger, Treant; corrupted woods: Hollow Wraith, Cursed Knight, Corrupted Beast. They are
+  Paragon stand-ins with a region tint: put real art in a definition's *Looks* (Mesh, Anim Class or Locomotion).
+- **Spawning:** drop an **Enemy Spawner** in a level and fill *Entries* (enemy, count, level), or place a
+  `BeyondEnemyCharacter` and set its *Definition*. Console: `Beyond.Spawn forest_wolf 3 molten x1`
+  (`<id> [level] [elite | <affix id>...] [x<count>]`), `Beyond.ListEnemies`, `Beyond.KillEnemies`.
+- **How they fight:** they wander near home, see you in a cone (or when you get close, or hit them), call idle
+  packmates in, and use their abilities by the AI hints (range, weight, cooldown). Only *Max Attack Tokens* of them
+  swing at one demigod at once; the others circle. Casters keep their distance. Drag one too far from home and it
+  walks back, invulnerable, and refills. When the party wipes, every enemy is back home at full health.
+- **Telegraphs:** red markers fill on the ground before an attack lands; the spot is fixed when the attack starts, so
+  step out. Hazard pools stay lit while they burn. Colours: *Project Settings → Game → Worlds Beyond Enemies*.
+- **Elites** (spawner *Elite Chance*, or `elite` / an affix id in `Beyond.Spawn`): ×1.8 health, +30 Strength /
+  Arcana, bigger, a gold plate frame and a name like "Molten Raider". Affixes: Molten, Venomous, Stormcharged, Warded,
+  Juggernaut, Swift, Vampiric, Brood.
+- **Plates:** health, level and elite names float over enemies in a fight (`UBeyondEnemyPlatesWidget`; *Enemy Plates
+  Widget Class* on `BP_PC`).
+- **Tuning:** each `DA_Enemy_*` (stats, growth, AI ranges, hit reactions), each `GA_*` (damage, wind-up, cooldown,
+  *AI Attack Token Cost*), *Project Settings → Game → Worlds Beyond Enemies* (elite numbers, affix count, telegraph
+  material, plate range).
+
+## Bosses
+
+- **Kael'thar, the Molten Colossus** and **Hrimgar, the Frost Troll King** (main bosses), **Gorehide, the Pale
+  Alpha** and **Veyla, the Hollow Voice** (mini-bosses): `/Game/WorldsBeyond/Enemies/Bosses/` (`DA_Boss_*`,
+  `BP_Boss_*`). Phases, moves and twists: [Plans/03_Enemies_Bosses.md](Plans/03_Enemies_Bosses.md#plan-3b--bosses).
+- **Arena:** place a **Boss Arena**, set *Boss* and *Boss Level*, *Arena Radius* (hazards and the seal ring) and
+  *Engage Radius*, and put a checkpoint at its entrance. The boss waits until a demigod comes close (or hits it), then
+  the ring seals. A party wipe resets the fight; a beaten **story boss** stays beaten (saved); `Beyond.ResetBosses`
+  brings them back. The test arena (`/Game/WorldsBeyond/Maps/TestArena`) has all four.
+- **Phases:** the boss bar's notches show where the next phase starts; no hit skips one. At each threshold the boss
+  can't be hurt for a moment (the bar shimmers) while it changes phase, then the twist announces itself under the bar.
+  `Beyond.BossPhase 3` jumps the nearest boss to a phase.
+- **Rewards:** rank loot plus the boss's signature weapon (*Loot → Guaranteed Loot*); main bosses give a Bond Point.
+- **The hero Blueprints:** the Paragon `*PlayerCharacter` Blueprints were reparented to `BeyondBossCharacter` (their
+  anim Blueprints cast to them); backups are in `Saved/MigrationBackups/`. Boss montages use their **FullBody** slot.
+
 ## Level checklist (`MAP_Demo_Main`)
 
 - Place a **BeyondCheckpoint** before each encounter (the arrow is the respawn point).
@@ -274,6 +317,19 @@ UnrealEditor-Cmd.exe WorldBeyond.uproject -ExecCmds="Automation RunTests WorldsB
   `DA_ItemDatabase` in `/Game/WorldsBeyond/Items/`, `IA_Interact` on F and `IA_Inventory` on I (on `BP_PC`),
   Ji-Woong's old Blueprint F event (Blink) switched off. Items are only created when missing;
   `BEYOND_REBUILD_ITEMS=1` rebuilds them (asset names stay, so saved items still load). Report: `last_run_pass9.txt`.
+- `migrate_pass10.py` — pass 10 (Plan 3A, enemies): roster montages, `M_Beyond_Telegraph` / `M_Beyond_EnemyTint`
+  (rebuilt every run), two projectiles, the enemies' abilities and ability sets, 8 affixes, 7 roster enemies,
+  `DA_EnemyRoster`, and the test arena map (floor, navmesh, demigods, checkpoint, two camps). Data is only created when
+  missing; `BEYOND_REBUILD_ENEMIES=1` rebuilds it, `BEYOND_REBUILD_ARENA=1` rebuilds the map (the arena's navmesh is
+  rebuilt every run). Report: `last_run_pass10.txt`.
+- `migrate_pass11.py` — pass 11 (Plan 3B, bosses): reparents the four Paragon hero Blueprints to `BeyondBossCharacter`,
+  makes `BP_Boss_*`, FullBody boss montages, boss abilities and phase sets, the four boss definitions (added to the
+  roster), four signature weapons (added to `DA_ItemDatabase`) and four arenas in the test arena. Data is only created
+  when missing (`BEYOND_REBUILD_BOSSES=1` rebuilds it); arenas only when the map has none. Report: `last_run_pass11.txt`.
+- `migrate_pass12.py` — pass 12 (Plan 3 playtest fixes): the demigods' hit voice cues (`Angel_hitReact`,
+  `JI-Woong_HitReact`, played by `BP_Angel` / `BP_Ji-Woong` on every hit) share `SC_Beyond_HitVoice`: one hit line at a
+  time for the party, never cut off, none within 4 s of the last (*Retrigger Time*); Ji-Woong's old Blueprint LMB event
+  is switched off again (it had dropped out of *Legacy Keys To Disable*). Report: `last_run_pass12.txt`.
 - `fit_outfits.py` — snug-fits the outfits (see *Clothing fit* below). Needs the **GeometryScripting** plugin, which
   `WorldBeyond.uproject` now enables (editor only).
 - All passes are idempotent and back up every asset they save to `Saved/MigrationBackups/<timestamp>/`; shared helpers live in
@@ -316,7 +372,21 @@ UnrealEditor-Cmd.exe WorldBeyond.uproject -ExecCmds="Automation RunTests WorldsB
   weapon, at the enemy's level), the kill dropping them, F picking up the nearest drop (toast), a full bag refusing,
   the I screen (paused, two tabs, equip / refuse / take off / discard, sorted bag, K switching to the skill tree),
   items in the save game.
-- Every PIE test sets `Beyond.SaveProgress 0` while it runs, so your saved levels are never loaded or overwritten.
+- `WorldsBeyond.Prototype.Enemies` (in the test arena) — the roster and affixes exist, every roster enemy spawns at level 5
+  set up from its definition (team, health, brain, mesh, C++ anim instance, abilities and hit reaction, DefaultSlot
+  montages), `Beyond.Spawn forest_wolf 3 molten`, a raider runs at Angel (anim speed follows), a wolf sees him,
+  attack tokens capped with the rest circling and given back when they die, a telegraph missing when you step out and
+  hitting when you stay, the treant's smash locking its marker, leash home (no damage on the way, refilled), a montage
+  death without ragdoll and its EXP, Juggernaut / Swift / Venomous / Warded (40 % spells until a melee hit) / Molten
+  (burn, lava) / Vampiric / Stormcharged / Brood, the plates, a runtime spawner, the wipe sending enemies home.
+- `WorldsBeyond.Prototype.Bosses` (in the test arena) — the four bosses on their hero Blueprints (skin, hero anim
+  Blueprint, no camera, phase 1 tag, health floor), the C++ boss bar for one and two bosses, a huge hit stopping at the
+  threshold, the invulnerable transition, phase tag and abilities, Hrimgar's summons and enrage, the kill (Bond Point,
+  Glacierheart Rod, adds gone), Kael'thar's lava ring and pools (gone with him), Veyla's clones (no bar, 30 % damage),
+  Gorehide's pack halving damage, an arena waking and sealing, darkness, the wipe reset, a beaten story boss staying
+  beaten.
+- Every PIE test sets `Beyond.SaveProgress 0` while it runs and switches it back only once PIE has ended (the party
+  saves when play ends), so your saved levels are never loaded or overwritten.
 - Also in the editor: *Tools → Test Automation*, filter WorldsBeyond.
 
 In play: `showdebug abilitysystem` (PageUp/PageDown cycles actors), the Gameplay Debugger (`'`) for enemy
@@ -365,3 +435,7 @@ Clothing* in the MetaHuman editor and assemble again. The fitted copies can then
 - The outfit fit is geometric: the cloth follows the body's skinning, it isn't simulated.
 - Items change stats, not looks: no armor or weapon meshes yet (each item has an unused *Visual Mesh* slot), and the
   weapon in hand stays the demigod's own sword / staff whatever is equipped.
+- Enemies are Paragon stand-ins: no wolves, treants or wraiths are imported. Their capsules come from the mesh bounds
+  (pass 10 logs them); Kael'thar at ×2.5 is wider than the navmesh's agent, so keep his arena open.
+- Telegraph cones and lines assume the decal's U axis runs along the facing; if one points backwards in play, set
+  *ForwardSign* to -1 in `M_Beyond_Telegraph`.

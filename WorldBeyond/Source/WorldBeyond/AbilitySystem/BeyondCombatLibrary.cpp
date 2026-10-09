@@ -7,6 +7,7 @@
 #include "AbilitySystemBlueprintLibrary.h"
 #include "Characters/BeyondCharacterBase.h"
 #include "AbilitySystemComponent.h"
+#include "Blueprint/UserWidget.h"
 #include "AnimNodes/AnimNode_Slot.h"
 #include "Animation/AnimClassInterface.h"
 #include "Animation/AnimInstance.h"
@@ -72,6 +73,67 @@ bool UBeyondCombatLibrary::ApplyDamage(AActor* Source, AActor* Target, float Amo
 		TargetASC->ApplyGameplayEffectSpecToSelf(*Spec);
 	}
 	return true;
+}
+
+bool UBeyondCombatLibrary::ApplyDamageOverTime(AActor* Source, AActor* Target, float DamagePerSecond, float Duration, FGameplayTag DamageTag, const FBeyondFX& TargetFX)
+{
+	UAbilitySystemComponent* TargetASC = GetASC(Target);
+	if (!TargetASC || DamagePerSecond <= 0.0f || Duration <= 0.0f || IsActorDead(Target))
+	{
+		return false;
+	}
+
+	// Refresh: drop the DoT this source already has running with this tag
+	bool bWasActive = false;
+	FGameplayEffectQuery Query;
+	Query.EffectDefinition = UBeyondGE_DamageOverTime::StaticClass();
+	for (const FActiveGameplayEffectHandle& Handle : TargetASC->GetActiveEffects(Query))
+	{
+		const FActiveGameplayEffect* Active = TargetASC->GetActiveGameplayEffect(Handle);
+		if (!Active)
+		{
+			continue;
+		}
+		FGameplayTagContainer Tags;
+		Active->Spec.GetAllAssetTags(Tags);
+		if ((!DamageTag.IsValid() || Tags.HasTagExact(DamageTag)) && Active->Spec.GetEffectContext().GetOriginalInstigator() == Source)
+		{
+			TargetASC->RemoveActiveGameplayEffect(Handle);
+			bWasActive = true;
+		}
+	}
+
+	UAbilitySystemComponent* SourceASC = GetASC(Source);
+	UAbilitySystemComponent* SpecOwner = SourceASC ? SourceASC : TargetASC;
+	FGameplayEffectContextHandle Context = SpecOwner->MakeEffectContext();
+	Context.AddInstigator(Source, Source);
+	const FGameplayEffectSpecHandle Spec = SpecOwner->MakeOutgoingSpec(UBeyondGE_DamageOverTime::StaticClass(), 1.0f, Context);
+	if (!Spec.IsValid())
+	{
+		return false;
+	}
+	Spec.Data->SetSetByCallerMagnitude(BeyondTags::SetByCaller_Damage, DamagePerSecond);
+	Spec.Data->SetSetByCallerMagnitude(BeyondTags::SetByCaller_Duration, Duration);
+	if (DamageTag.IsValid())
+	{
+		Spec.Data->AddDynamicAssetTag(DamageTag);
+	}
+	const FActiveGameplayEffectHandle Applied = SourceASC
+		? SourceASC->ApplyGameplayEffectSpecToTarget(*Spec.Data, TargetASC)
+		: TargetASC->ApplyGameplayEffectSpecToSelf(*Spec.Data);
+
+	if (Applied.IsValid() && !bWasActive && Target->GetRootComponent())
+	{
+		BeyondFX::SpawnAttached(TargetFX, Target->GetRootComponent());
+	}
+	return Applied.IsValid();
+}
+
+bool UBeyondCombatLibrary::IsBoss(const AActor* Actor)
+{
+	const ABeyondCharacterBase* Character = Cast<ABeyondCharacterBase>(Actor);
+	return Character && Character->TeamAffiliation == EBeyondTeam::Enemy
+		&& (Character->BossBarWidgetClass || Character->Rank == EBeyondEnemyRank::MiniBoss || Character->Rank == EBeyondEnemyRank::Boss);
 }
 
 float UBeyondCombatLibrary::GetDamageScale(const UAbilitySystemComponent* SourceASC, FGameplayTag DamageType)

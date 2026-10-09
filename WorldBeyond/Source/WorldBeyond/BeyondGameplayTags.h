@@ -19,9 +19,48 @@ namespace BeyondTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Branded);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Dashing);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Aegis);
+	// An enemy walking back home after losing its target: takes no damage, refills when it arrives
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Resetting);
+	// Warded elite: spells barely hurt it until a melee hit breaks the ward
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Warded);
 
 	// Owned while an attack / cast ability runs (blocks other attacks)
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Active);
+	// Asset tag of enemy attacks (hit reactions interrupt them)
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Enemy_Attack);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_HitReact);
+
+	// Cooldown slots for enemy abilities (one per ability on the same enemy)
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Enemy_Primary);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Enemy_Secondary);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Enemy_Special);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Enemy_Ultimate);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Enemy_Mobility);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Enemy_Summon);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Enemy_Beam);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Enemy_Buff);
+
+	// Where an enemy belongs (roster regions)
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Region_Forest);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Region_CorruptedWoods);
+
+	// Elite affixes
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Enemy_Affix);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Enemy_Affix_Molten);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Enemy_Affix_Venomous);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Enemy_Affix_Stormcharged);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Enemy_Affix_Warded);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Enemy_Affix_Juggernaut);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Enemy_Affix_Swift);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Enemy_Affix_Vampiric);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Enemy_Affix_Brood);
+
+	// Boss phases (loose tags on the boss; phase-gated abilities require them)
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Boss_Phase_1);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Boss_Phase_2);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Boss_Phase_3);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Boss_Phase_4);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Boss_Enraged);
 
 	// Gameplay events sent to the damaged character (mirror E_DamageResponse)
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Hit);

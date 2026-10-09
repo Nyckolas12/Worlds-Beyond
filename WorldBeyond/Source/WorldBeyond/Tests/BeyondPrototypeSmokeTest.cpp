@@ -269,6 +269,11 @@ bool FBeyondPrototypeSmokeTest::RunTest(const FString& Parameters)
 	ADD_LATENT_AUTOMATION_COMMAND(FEndPlayMapCommand());
 	ADD_LATENT_AUTOMATION_COMMAND(FBeyondStep([SaveProgressBefore]()
 	{
+		// Only once PIE is gone: the party saves when play ends, and that save must still see saving switched off
+		if (GEditor && GEditor->PlayWorld)
+		{
+			return false;
+		}
 		if (IConsoleVariable* Var = IConsoleManager::Get().FindConsoleVariable(TEXT("Beyond.SaveProgress")))
 		{
 			Var->Set(SaveProgressBefore.IsEmpty() ? TEXT("1") : *SaveProgressBefore, ECVF_SetByCode);

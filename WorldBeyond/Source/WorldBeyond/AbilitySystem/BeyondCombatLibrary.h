@@ -6,6 +6,7 @@
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "GameplayAbilitySpecHandle.h"
 #include "GameplayTagContainer.h"
+#include "AbilitySystem/BeyondFX.h"
 #include "BeyondCombatLibrary.generated.h"
 
 class UAbilitySystemComponent;
@@ -53,6 +54,15 @@ public:
 	static bool ApplyHeal(AActor* Source, AActor* Target, float Amount);
 
 	/**
+	 * Poison / burn: DamagePerSecond every second for Duration seconds (UBeyondGE_DamageOverTime), tagged DamageTag
+	 * (a DamageType.Proc.* tag, so the ticks never set off on-hit effects). A new application from the same Source with
+	 * the same tag refreshes the old one instead of stacking. TargetFX plays when it wasn't already running.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Beyond|Combat", meta = (DefaultToSelf = "Source"))
+	static bool ApplyDamageOverTime(AActor* Source, AActor* Target, float DamagePerSecond, float Duration,
+		UPARAM(meta = (Categories = "DamageType")) FGameplayTag DamageTag, const FBeyondFX& TargetFX);
+
+	/**
 	 * Drop-in for the ability system's Get All Abilities in the ability bar: only abilities on a key slot
 	 * (Q, E, R, in that order), one per ability, without the duo move (it has its own slot by the Bond meter).
 	 */
@@ -65,6 +75,10 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Beyond|Combat", meta = (DefaultToSelf = "Actor"))
 	static bool IsActorDead(const AActor* Actor);
+
+	// A mini-boss or main boss (rank), or a Blueprint enemy with a boss bar: gets the boss bar, isn't launched around
+	UFUNCTION(BlueprintPure, Category = "Beyond|Combat", meta = (DefaultToSelf = "Actor"))
+	static bool IsBoss(const AActor* Actor);
 
 	UFUNCTION(BlueprintPure, Category = "Beyond|Combat", meta = (DefaultToSelf = "Actor"))
 	static float GetActorHealth(const AActor* Actor);

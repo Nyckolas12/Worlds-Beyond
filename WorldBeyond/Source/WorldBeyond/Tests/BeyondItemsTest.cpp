@@ -834,7 +834,7 @@ bool FBeyondItemsTest::RunTest(const FString& Parameters)
 			FRandomStream Stream(3);
 			const FBeyondItemInstance Item = UBeyondItemLibrary::MakeItemFromStream(Saved, EBeyondItemTier::Legendary, 6, Stream);
 			UBeyondSaveGame* Save = Cast<UBeyondSaveGame>(UGameplayStatics::CreateSaveGameObject(UBeyondSaveGame::StaticClass()));
-			T.TestEqual(TEXT("Save version 3"), Save->Version, 3);
+			T.TestTrue(TEXT("Save version 3 or later (4: Plan 3 bosses)"), Save->Version >= 3);
 			Save->Inventory.Add(Item);
 			Save->Members.Add(FName(TEXT("BP_Test_C"))).Equipped.Add(EBeyondItemSlot::Chest, Item);
 			Save->bStarterKitGiven = true;
@@ -870,6 +870,11 @@ bool FBeyondItemsTest::RunTest(const FString& Parameters)
 	ADD_LATENT_AUTOMATION_COMMAND(FEndPlayMapCommand());
 	ADD_LATENT_AUTOMATION_COMMAND(FBeyondItemsStep([State]()
 	{
+		// Only once PIE is gone: the party saves when play ends, and that save must still see saving switched off
+		if (GEditor && GEditor->PlayWorld)
+		{
+			return false;
+		}
 		if (IConsoleVariable* SaveProgress = IConsoleManager::Get().FindConsoleVariable(TEXT("Beyond.SaveProgress")))
 		{
 			SaveProgress->Set(State->SavedSaveProgress.IsEmpty() ? TEXT("1") : *State->SavedSaveProgress, ECVF_SetByCode);

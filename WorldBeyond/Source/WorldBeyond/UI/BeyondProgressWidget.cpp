@@ -99,6 +99,8 @@ void UBeyondProgressWidget::BindToParty()
 
 void UBeyondProgressWidget::HandleMemberLevelUp(ABeyondCharacterBase* Member, int32 NewLevel)
 {
+	// Take the new level now rather than on the next tick
+	ReadLeader();
 	ShowLevelUpBanner(Member, NewLevel);
 }
 

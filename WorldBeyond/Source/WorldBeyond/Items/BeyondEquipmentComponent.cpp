@@ -136,6 +136,7 @@ bool UBeyondEquipmentComponent::Unequip(EBeyondItemSlot Slot)
 		Inventory->ReturnItem(Item);
 	}
 	ApplyEffects();
+	UE_LOG(LogBeyond, Log, TEXT("%s takes off %s"), *GetNameSafe(GetOwner()), *UBeyondItemLibrary::GetItemName(Item).ToString());
 	OnEquipmentChanged.Broadcast(this);
 	return true;
 }
@@ -277,7 +278,7 @@ bool UBeyondEquipmentComponent::StartInfusion()
 	}
 
 	EndInfusion();
-	const float Now = World->GetTimeSeconds();
+	const double Now = World->GetTimeSeconds();
 	InfusedUntil = Now + Venom->Effect.InfusionDuration;
 	NextInfusionTime = Now + Venom->Effect.InfusionCooldown;
 	USceneComponent* AttachTo = Character->GetCombatMesh() ? static_cast<USceneComponent*>(Character->GetCombatMesh()) : Character->GetRootComponent();
@@ -300,8 +301,12 @@ void UBeyondEquipmentComponent::EndInfusion()
 	if (const UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().ClearTimer(InfusionTimer);
-		InfusedUntil = FMath::Min(InfusedUntil, World->GetTimeSeconds());
+		if (IsInfused())
+		{
+			UE_LOG(LogBeyond, Log, TEXT("%s: Venom Infusion ends"), *GetNameSafe(GetOwner()));
+		}
 	}
+	InfusedUntil = -1.0;
 }
 
 void UBeyondEquipmentComponent::HandleAbilityActivated(UGameplayAbility* Ability)
@@ -371,7 +376,7 @@ void UBeyondEquipmentComponent::HandleHitLanded(AActor* DamageInstigator, AActor
 	}
 	if (const UBeyondArmorSet* Storm = FindFullSet(EBeyondSetEffect::ChainLightning))
 	{
-		const float Now = GetWorld()->GetTimeSeconds();
+		const double Now = GetWorld()->GetTimeSeconds();
 		if (Now >= NextChainTime && FMath::FRand() < Storm->Effect.ProcChance)
 		{
 			NextChainTime = Now + Storm->Effect.ProcCooldown;

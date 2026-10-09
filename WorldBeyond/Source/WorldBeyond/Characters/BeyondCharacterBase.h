@@ -168,6 +168,21 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loot")
 	TArray<TSoftObjectPtr<UBeyondItemDefinition>> GuaranteedLoot;
 
+	// Whether a party kill drops loot (summoned adds and boss clones don't)
+	virtual bool CanDropLoot() const { return true; }
+
+	/**
+	 * Damage this character takes after Defense, before it lands (elite affixes: Warded, Juggernaut...).
+	 * DamageTags are the damage spec's tags (DamageType.*, Event.Hit.*).
+	 */
+	virtual float ModifyDamageTaken(float Damage, AActor* DamageInstigator, const FGameplayTagContainer& DamageTags) const { return Damage; }
+
+	// Health a single hit can't take this character below (bosses: the next phase threshold); 0 for none
+	virtual float GetHealthFloor() const { return 0.0f; }
+
+	// Damage this character deals x this (boss clones hit softer)
+	virtual float GetOutgoingDamageScale() const { return 1.0f; }
+
 	// The ability a key slot fires (same rule as player input); null if none
 	const UGameplayAbility* FindAbilityOnInput(const FGameplayTag& InputTag) const;
 
@@ -345,6 +360,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Combat|AI")
 	void ReleaseAttackTokens(int32 Amount);
+
+	UFUNCTION(BlueprintPure, Category = "Combat|AI")
+	int32 GetAvailableAttackTokens() const { return AvailableAttackTokens; }
 
 	// Copy the old BPC_DamageSystem blocking / invincible / interruptible flags onto GAS tags
 	void SyncLegacyDamageState();

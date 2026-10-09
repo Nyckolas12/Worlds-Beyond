@@ -9,8 +9,8 @@ gets its own plan in [Plans/](Plans/), built one at a time in this order:
 | **1A** | [Leveling and stats in GAS](Plans/01_Leveling_SkillTree.md#plan-1a--leveling-and-stats-done) | **Built** (pass 7) | Armor, enemies and loot all build on stats / EXP |
 | **1B** | [Skill tree + duo powers](Plans/01_Leveling_SkillTree.md#plan-1b--skill-tree-and-duo-powers-done) | **Built** (pass 8) | Uses the skill points from 1A and the pushed `SkillTreeSystem` |
 | **2** | [Items, inventory, **armor tiers + set effects**, loot drops](Plans/02_Items_Armor_Loot.md) | **Built** (pass 9) | Uses Plan 1 stats; bosses (3) need loot |
-| 3 | **Enemies, mini-bosses, main bosses** (phases, mechanics, twists, loot) | Next | Uses EXP (1) and loot (2) |
-| 4 | **Dialogue**: NPCs, village chatter, demigod banter | Planned | Villages (5) get populated with it |
+| **3** | [Enemies, mini-bosses, main bosses](Plans/03_Enemies_Bosses.md) (phases, mechanics, twists, loot) | **Built** (passes 10–11) | Uses EXP (1) and loot (2) |
+| 4 | **Dialogue**: NPCs, village chatter, demigod banter | Next | Villages (5) get populated with it |
 | 5 | **Open world**: regions, villages, POIs, boss arenas, map / fast travel | Planned | Biggest and content-heavy; uses all of the above |
 
 ## Free art to collect (Fab)
@@ -53,7 +53,10 @@ Each gets a full write-up in `Plans/` when it starts.
 - **2 · Armor and loot (built):** see [Plans/02_Items_Armor_Loot.md](Plans/02_Items_Armor_Loot.md): tiers Common →
   Legendary, a shared bag, four armor slots + weapon, **Venomweave** / **Stormforged** / **Sunforged** sets, loot per
   rank (bosses always drop a set piece and a weapon), F to pick up, the I screen, saved.
-- **3 · Enemies and bosses:** each boss can list its own drops under *Loot → Guaranteed Loot* (Plan 2). A region roster (forest: wolves, raiders, treants; corrupted woods: hollow wraiths,
+- **3 · Enemies and bosses (built):** see [Plans/03_Enemies_Bosses.md](Plans/03_Enemies_Bosses.md): the regional roster on
+  Paragon stand-ins, 8 elite affixes, telegraphed attacks and a C++ enemy brain; bosses with health-floor phases, twists
+  and arenas: Kael'thar, the Molten Colossus, Hrimgar, the Frost Troll King, mini-bosses Gorehide and Veyla. The
+  original outline: each boss can list its own drops under *Loot → Guaranteed Loot* (Plan 2). A region roster (forest: wolves, raiders, treants; corrupted woods: hollow wraiths,
   cursed knights, corrupted beasts) with elite affixes; a C++ boss framework with health-threshold phases, mechanics, a
   **twist** per boss (arena change, enrage, summons), the existing boss bar and loot; mini-bosses use it scaled down.
   First main bosses: the molten demon colossus and the frost troll king.

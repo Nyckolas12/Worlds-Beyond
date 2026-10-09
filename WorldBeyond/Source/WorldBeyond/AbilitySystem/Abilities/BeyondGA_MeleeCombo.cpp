@@ -55,6 +55,7 @@ UBeyondGA_MeleeCombo::UBeyondGA_MeleeCombo()
 	AIMinRange = 0.0f;
 	AIMaxRange = 220.0f;
 	AIWeight = 2.0f;
+	AIAttackTokenCost = 1;
 }
 
 void UBeyondGA_MeleeCombo::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData)
