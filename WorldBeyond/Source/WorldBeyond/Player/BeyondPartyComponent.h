@@ -18,12 +18,15 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FBeyondMemberLevelUpSignature, ABey
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FBeyondExperienceAwardedSignature, ABeyondCharacterBase*, Victim, float, Experience);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FBeyondBondPointsChangedSignature, int32, BondPoints);
 
+class UBeyondEquipmentComponent;
+class UBeyondInventoryComponent;
 class UBeyondSkillTreeComponent;
 
 /**
  * The two demigods: the player controls the leader, the other is driven by a companion controller.
  * Handles swapping, auto-swap when the leader falls, proximity revives, party wipes, the shared
- * Bond meter that charges the duo super move, shared EXP from kills and saving the party's progress.
+ * Bond meter that charges the duo super move, shared EXP and loot from kills, the starter kit and saving the party's
+ * progress (levels, skill trees, the bag and what everyone wears).
  * Lives on ABeyondPlayerController.
  */
 UCLASS(ClassGroup = (Beyond), meta = (BlueprintSpawnableComponent))
@@ -117,9 +120,37 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Party|Progression")
 	bool LoadProgress();
 
-	// Deletes the save and puts every member back to level 1
+	// Deletes the save and puts every member back to level 1 (bag emptied, starter kit again)
 	UFUNCTION(BlueprintCallable, Category = "Party|Progression")
 	void ResetProgress();
+
+	// Story bosses the party has beaten (saved): their arenas don't bring them back
+	UFUNCTION(BlueprintPure, Category = "Party|Bosses")
+	bool IsBossDefeated(FName BossId) const { return DefeatedBosses.Contains(BossId); }
+
+	UFUNCTION(BlueprintCallable, Category = "Party|Bosses")
+	void MarkBossDefeated(FName BossId);
+
+	// Every story boss back (console Beyond.ResetBosses)
+	UFUNCTION(BlueprintCallable, Category = "Party|Bosses")
+	void ResetDefeatedBosses();
+
+	// Defeated enemies drop loot (UBeyondLootSettings rules plus their Guaranteed Loot)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Party|Items")
+	bool bDropLoot = true;
+
+	// The party's bag (the inventory component on the same player controller)
+	UFUNCTION(BlueprintPure, Category = "Party|Items")
+	UBeyondInventoryComponent* GetInventory() const;
+
+	// Equips the starter items (Project Settings -> Worlds Beyond Loot) on every demigod with that slot free; given
+	// once, the first time the party forms without a save
+	UFUNCTION(BlueprintCallable, Category = "Party|Items")
+	void GiveStarterKit();
+
+	// Rolls Victim's loot and drops it at its feet; returns how many items dropped
+	UFUNCTION(BlueprintCallable, Category = "Party|Items")
+	int32 DropLoot(ABeyondCharacterBase* Victim);
 
 	// bSaveProgress and the Beyond.SaveProgress console variable
 	UFUNCTION(BlueprintPure, Category = "Party|Progression")
@@ -213,9 +244,20 @@ protected:
 	UFUNCTION()
 	void HandleSkillTreeChanged(UBeyondSkillTreeComponent* Tree);
 
+	UFUNCTION()
+	void HandleInventoryChanged();
+
+	UFUNCTION()
+	void HandleEquipmentChanged(UBeyondEquipmentComponent* Equipment);
+
 private:
 	APlayerController* GetPlayerController() const;
 	void AddMember(ABeyondCharacterBase* Member);
+	// Skill tree and equipment exist once a member is possessed; listen to them for saving
+	void BindMemberComponents(ABeyondCharacterBase* Member);
+	// Several changes in one frame (equipping takes from the bag and puts on) write the save once, next frame
+	void QueueSave();
+	void FlushQueuedSave();
 	void GiveToCompanionController(ABeyondCharacterBase* Member, ABeyondCharacterBase* NewLeader);
 	ABeyondCharacterBase* FindNextAliveMember(const ABeyondCharacterBase* After) const;
 	bool SwapTo(ABeyondCharacterBase* NewLeader, bool bIgnoreCooldown);
@@ -250,6 +292,9 @@ private:
 
 	int32 BondPoints = 0;
 	int32 BondPointsLevel = 0;
+	bool bStarterKitGiven = false;
+	TSet<FName> DefeatedBosses;
+	bool bSaveQueued = false;
 	float BondGainMultiplier = 1.0f;
 	float BondEchoFraction = 0.0f;
 	FTimerHandle AutoSwapTimer;

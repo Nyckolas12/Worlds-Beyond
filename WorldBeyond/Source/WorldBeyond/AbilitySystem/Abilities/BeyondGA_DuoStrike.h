@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "AbilitySystem/BeyondFX.h"
 #include "AbilitySystem/BeyondGameplayAbility.h"
+#include "Characters/BeyondRushComponent.h"
 #include "Game/BeyondCombatSubsystem.h"
 #include "BeyondGA_DuoStrike.generated.h"
 
@@ -17,9 +18,14 @@ class UFXSystemComponent;
  * The demigods' duo super move, "Heaven's Judgment" (Storm Judgment + Heaven & Earth).
  * Needs a full party Bond meter and both demigods alive and close together; works whichever of them the player controls.
  *
- * 1. Heaven   - the Conduit (Angel) channels; flashes of blue/purple lightning strike and lift nearby enemies.
+ * The move locks onto an enemy when it starts (the crosshair target, else a boss, else the buddy's target, else the
+ * nearest one within Target Search Radius of the leader).
+ *
+ * 1. Heaven   - the Conduit (Angel) channels; flashes of blue/purple lightning strike and lift the enemies around it.
  * 2. Absorb   - the lightning arcs into the Striker (Ji-Woong), whose gold mixes with it.
- * 3. Judgment - the Striker slams down, releasing a shockwave that falls off from the centre.
+ *    Approach - charged, the Striker rushes to the enemy (dash animation, blinks the rest if blocked or far).
+ * 3. Judgment - the Striker slams down, releasing a shockwave that falls off from the centre; the locked enemy always
+ *              takes its full force, so the final blow lands wherever the Striker started.
  *
  * Both demigods are invincible and uninterruptible throughout; the companion AI waits (State.Duo).
  *
@@ -40,6 +46,10 @@ public:
 	// The partner must be at least this close
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Duo", meta = (ClampMin = "0"))
 	float PartnerRange = 1500.0f;
+
+	// The enemy the move is aimed at is picked within this distance of the leader
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Duo", meta = (ClampMin = "0"))
+	float TargetSearchRadius = 2500.0f;
 
 	// ---- Heaven: lightning flashes around the Striker
 
@@ -88,6 +98,16 @@ public:
 	// Attached to the Striker while charged (gold + storm)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Duo|2 Absorb")
 	TArray<FBeyondFX> ChargedAuraFX;
+
+	// ---- Approach: the charged Striker rushes to the locked enemy
+
+	// Closer than this to the enemy, the Striker slams from where he stands
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Duo|2b Approach", meta = (ClampMin = "0"))
+	float DashAnimationDistance = 450.0f;
+
+	// Speed, dash animation, trail and blink effects (empty animation / trail: the Striker's own dash ability's)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Duo|2b Approach")
+	FBeyondRushSettings Approach;
 
 	// ---- Judgment: the shockwave
 
@@ -149,6 +169,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Duo")
 	bool FindDuo(ABeyondCharacterBase*& OutConduit, ABeyondCharacterBase*& OutStriker) const;
 
+	// The enemy the running move is aimed at (none: the Striker slams where he stands)
+	UFUNCTION(BlueprintPure, Category = "Duo")
+	AActor* GetLockedTarget() const { return LockedTarget.Get(); }
+
 protected:
 	virtual bool CanActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayTagContainer* SourceTags = nullptr, const FGameplayTagContainer* TargetTags = nullptr, FGameplayTagContainer* OptionalRelevantTags = nullptr) const override;
 	virtual void ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData) override;
@@ -163,8 +187,10 @@ private:
 	bool FindDuoFor(const AActor* Avatar, ABeyondCharacterBase*& OutConduit, ABeyondCharacterBase*& OutStriker) const;
 
 	void SetDuoState(ABeyondCharacterBase* Character, bool bActive);
+	AActor* ChooseTarget(const ABeyondCharacterBase* StrikerCharacter) const;
 	void Flash();
 	void StartAbsorb();
+	void StartApproach();
 	void StartJudgment();
 	void HandleStrikerEvent(const FGameplayEventData* Payload);
 	void Shockwave();
@@ -178,6 +204,7 @@ private:
 
 	TWeakObjectPtr<ABeyondCharacterBase> Conduit;
 	TWeakObjectPtr<ABeyondCharacterBase> Striker;
+	TWeakObjectPtr<AActor> LockedTarget;
 	TArray<TWeakObjectPtr<ABeyondCharacterBase>> TaggedCharacters;
 	TArray<TWeakObjectPtr<UFXSystemComponent>> AuraComponents;
 	// Effects on the Conduit (the lightning in Angel's hand); they loop, so they must be removed explicitly

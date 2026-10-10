@@ -7,6 +7,8 @@
 #include "AbilitySystemComponent.h"
 #include "Animation/AnimMontage.h"
 #include "BeyondGameplayTags.h"
+#include "Characters/BeyondCharacterBase.h"
+#include "Items/BeyondEquipmentComponent.h"
 #include "Engine/OverlapResult.h"
 #include "Engine/World.h"
 #include "Particles/ParticleSystemComponent.h"
@@ -148,8 +150,44 @@ bool UBeyondCombatSubsystem::HasAegis(const AActor* Target) const
 	return TargetASC && Aegises.Contains(TargetASC);
 }
 
+void UBeyondCombatSubsystem::NotifyHitLanded(AActor* DamageInstigator, AActor* Target, float Damage, const FGameplayTagContainer& DamageTags)
+{
+	if (!OnHitLanded.IsBound() || Damage <= 0.0f)
+	{
+		return;
+	}
+	// Next tick, outside the attribute callback: listeners apply effects and deal damage of their own
+	TWeakObjectPtr<AActor> WeakInstigator(DamageInstigator);
+	TWeakObjectPtr<AActor> WeakTarget(Target);
+	GetWorld()->GetTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(this, [this, WeakInstigator, WeakTarget, Damage, DamageTags]()
+	{
+		if (AActor* HitTarget = WeakTarget.Get())
+		{
+			OnHitLanded.Broadcast(WeakInstigator.Get(), HitTarget, Damage, DamageTags);
+		}
+	}));
+}
+
 float UBeyondCombatSubsystem::ModifyIncomingDamage(UAbilitySystemComponent& TargetASC, AActor* DamageInstigator, const FGameplayTagContainer& DamageTags, float Damage)
 {
+	// The attacker's own scale (boss clones hit softer)
+	if (const ABeyondCharacterBase* Source = Cast<ABeyondCharacterBase>(DamageInstigator))
+	{
+		Damage *= Source->GetOutgoingDamageScale();
+	}
+
+	// Armor (Sunforged): less damage while healthy
+	if (const ABeyondCharacterBase* Character = Cast<ABeyondCharacterBase>(TargetASC.GetAvatarActor()))
+	{
+		// The character's own rules (elite affixes)
+		Damage = Character->ModifyDamageTaken(Damage, DamageInstigator, DamageTags);
+
+		if (const UBeyondEquipmentComponent* Equipment = Character->GetEquipmentComponent())
+		{
+			Damage *= Equipment->GetDamageTakenMultiplier();
+		}
+	}
+
 	// Storm shield: less damage, and part of the hit thrown back at a hostile attacker (next tick, outside this callback)
 	if (const FAegisState* Aegis = Aegises.Find(&TargetASC))
 	{

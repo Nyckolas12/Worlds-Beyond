@@ -18,6 +18,12 @@ namespace BeyondAI
 
 	bool SelectAbility(UAbilitySystemComponent* ASC, const AActor* Target, const AActor* Ally, FAbilityChoice& OutChoice)
 	{
+		return SelectAbility(ASC, Target, Ally, OutChoice, [](const UBeyondGameplayAbility&) { return true; });
+	}
+
+	bool SelectAbility(UAbilitySystemComponent* ASC, const AActor* Target, const AActor* Ally, FAbilityChoice& OutChoice,
+		TFunctionRef<bool(const UBeyondGameplayAbility&)> Filter)
+	{
 		if (!ASC || !ASC->AbilityActorInfo.IsValid())
 		{
 			return false;
@@ -36,7 +42,7 @@ namespace BeyondAI
 		for (const FGameplayAbilitySpec& Spec : ASC->GetActivatableAbilities())
 		{
 			const UBeyondGameplayAbility* Ability = Cast<UBeyondGameplayAbility>(Spec.Ability);
-			if (!Ability || !Ability->bAIUsable || Ability->bActivateOnGranted || Ability->AIWeight <= 0.0f)
+			if (!Ability || !Ability->bAIUsable || Ability->bActivateOnGranted || Ability->AIWeight <= 0.0f || !Filter(*Ability))
 			{
 				continue;
 			}

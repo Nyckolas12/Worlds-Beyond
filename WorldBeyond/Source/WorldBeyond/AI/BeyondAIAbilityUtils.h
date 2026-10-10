@@ -7,6 +7,7 @@
 
 class AActor;
 class UAbilitySystemComponent;
+class UBeyondGameplayAbility;
 
 namespace BeyondAI
 {
@@ -22,6 +23,10 @@ namespace BeyondAI
 	 * (then only self-targeted abilities qualify). Ally is checked for heal thresholds too.
 	 */
 	bool SelectAbility(UAbilitySystemComponent* ASC, const AActor* Target, const AActor* Ally, FAbilityChoice& OutChoice);
+
+	// Same, skipping abilities the filter rejects (enemies: attacks whose attack tokens they can't get)
+	bool SelectAbility(UAbilitySystemComponent* ASC, const AActor* Target, const AActor* Ally, FAbilityChoice& OutChoice,
+		TFunctionRef<bool(const UBeyondGameplayAbility&)> Filter);
 
 	// Largest AIMaxRange among ready, enemy-targeted abilities (how close the AI should get); 0 if none
 	float GetPreferredEngageRange(const UAbilitySystemComponent* ASC);

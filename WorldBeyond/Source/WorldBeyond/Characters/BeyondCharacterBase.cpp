@@ -24,6 +24,7 @@
 #include "Perception/AISense_Damage.h"
 #include "Progression/BeyondProgressionAttributeSet.h"
 #include "Progression/BeyondSkillTreeComponent.h"
+#include "Items/BeyondEquipmentComponent.h"
 #include "WorldBeyond.h"
 
 // Sets default values
@@ -402,6 +403,7 @@ void ABeyondCharacterBase::InitAbilitySystem()
 	if (!bAbilitySystemBound)
 	{
 		bAbilitySystemBound = true;
+		ResolveAttributeSet();
 
 		if (AttributeSet)
 		{
@@ -436,6 +438,41 @@ void ABeyondCharacterBase::InitAbilitySystem()
 		}
 
 		GrantAbilities(StartingAbilities);
+	}
+}
+
+void ABeyondCharacterBase::ResolveAttributeSet()
+{
+	// GAS reads and writes the first UCharacterAttributeSet the component holds. A Blueprint saved before this class's set
+	// got its current name (BP_Angel) still carries its old copy, and AttributeSet can point at that one: then hits, deaths
+	// and level-ups land on one set while this character listens to and reads the other. Keep exactly one.
+	const UCharacterAttributeSet* Used = AbilitySystemComponent->GetSet<UCharacterAttributeSet>();
+	if (!Used)
+	{
+		if (AttributeSet)
+		{
+			AbilitySystemComponent->AddSpawnedAttribute(AttributeSet);
+		}
+		return;
+	}
+
+	TArray<UAttributeSet*> Extra;
+	for (UAttributeSet* Set : AbilitySystemComponent->GetSpawnedAttributes())
+	{
+		if (Set && Set != Used && Set->IsA<UCharacterAttributeSet>())
+		{
+			Extra.Add(Set);
+		}
+	}
+	for (UAttributeSet* Set : Extra)
+	{
+		AbilitySystemComponent->RemoveSpawnedAttribute(Set);
+	}
+	if (AttributeSet != Used || !Extra.IsEmpty())
+	{
+		UE_LOG(LogBeyond, Log, TEXT("%s: uses attribute set %s (dropped %d stale copy/copies%s)"), *GetName(), *Used->GetName(), Extra.Num(),
+			AttributeSet != Used ? *FString::Printf(TEXT(", Attribute Set pointed at %s"), *GetNameSafe(AttributeSet)) : TEXT(""));
+		AttributeSet = const_cast<UCharacterAttributeSet*>(Used);
 	}
 }
 
@@ -503,6 +540,9 @@ void ABeyondCharacterBase::CreateProgressionSet()
 	SkillTreeComponent = NewObject<UBeyondSkillTreeComponent>(this, TEXT("SkillTree"));
 	SkillTreeComponent->Tree = SkillTree;
 	SkillTreeComponent->RegisterComponent();
+
+	EquipmentComponent = NewObject<UBeyondEquipmentComponent>(this, TEXT("Equipment"));
+	EquipmentComponent->RegisterComponent();
 }
 
 bool ABeyondCharacterBase::SpendSkillPoints(int32 Amount)
@@ -845,6 +885,8 @@ void ABeyondCharacterBase::Revive(float HealthFraction)
 	Capsule->SetCollisionEnabled(CapsuleCollision);
 	GetCharacterMovement()->SetMovementMode(MOVE_Walking);
 	SetLifeSpan(0.0f);
+	// Attackers that died holding tokens never gave them back
+	AvailableAttackTokens = MaxAttackTokens;
 
 	// The old Blueprint death handler disables the pawn's input
 	if (APlayerController* PC = Cast<APlayerController>(GetController()))

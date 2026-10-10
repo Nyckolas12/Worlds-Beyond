@@ -17,6 +17,8 @@ class UFXSystemComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FBeyondDamageDealtSignature, AActor*, DamageInstigator, AActor*, Target, float, Damage);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FBeyondCharacterDiedSignature, ABeyondCharacterBase*, Victim, AActor*, Killer);
+// Instigator, Target, Damage, the damage spec's tags (DamageType.*, Event.Hit.*)
+DECLARE_MULTICAST_DELEGATE_FourParams(FBeyondHitLandedEvent, AActor* /*DamageInstigator*/, AActor* /*Target*/, float /*Damage*/, const FGameplayTagContainer& /*DamageTags*/);
 
 /** What a brand does to the character carrying it (see UBeyondGA_Brand / Sunbrand) */
 USTRUCT(BlueprintType)
@@ -104,6 +106,15 @@ public:
 	// Every Beyond character's death (Killer: whoever dealt the last damage, may be null)
 	UPROPERTY(BlueprintAssignable, Category = "Beyond|Combat")
 	FBeyondCharacterDiedSignature OnCharacterKilled;
+
+	// Every hit that took health, with its damage tags (armor-set effects run on it); broadcast the tick after the hit
+	FBeyondHitLandedEvent OnHitLanded;
+
+	// The whole party went down (enemies go home and reset, boss arenas reset); broadcast by UBeyondPartyComponent
+	FSimpleMulticastDelegate OnPartyWiped;
+
+	// Called by UCharacterAttributeSet when damage landed
+	void NotifyHitLanded(AActor* DamageInstigator, AActor* Target, float Damage, const FGameplayTagContainer& DamageTags);
 
 	static UBeyondCombatSubsystem* Get(const UObject* WorldContext);
 

@@ -8,10 +8,12 @@
 #include "AbilitySystem/BeyondCombatLibrary.h"
 #include "AbilitySystemComponent.h"
 #include "AIController.h"
+#include "Animation/AnimInstance.h"
 #include "BeyondGameplayTags.h"
 #include "BrainComponent.h"
 #include "CharacterAttributeSet.h"
 #include "Characters/BeyondCharacterBase.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Editor.h"
 #include "EngineUtils.h"
 #include "Game/BeyondCombatSubsystem.h"
@@ -54,6 +56,7 @@ namespace BeyondSkillTreeTest
 		TWeakObjectPtr<AController> CompanionController;
 		TMap<FString, float> Numbers;
 		FString SavedSaveProgress;
+		double SettleStartTime = 0.0;
 	};
 
 	UWorld* GetPlayWorld()
@@ -572,9 +575,33 @@ bool FBeyondSkillTreeTest::RunTest(const FString& Parameters)
 		return true;
 	}));
 
+	// Let the legacy enemies' hit reactions play out first: BP_Enemy_Base's montage callbacks call its AI controller,
+	// which PIE teardown has already destroyed (a Blueprint runtime error)
+	ADD_LATENT_AUTOMATION_COMMAND(FBeyondSkillTreeStep([State]()
+	{
+		UWorld* World = GetPlayWorld();
+		const double Now = FPlatformTime::Seconds();
+		if (State->SettleStartTime <= 0.0)
+		{
+			State->SettleStartTime = Now;
+		}
+		bool bMontagePlaying = false;
+		for (TActorIterator<ABeyondCharacterBase> It(World); World && It; ++It)
+		{
+			const USkeletalMeshComponent* Mesh = It->TeamAffiliation == EBeyondTeam::Enemy ? It->GetCombatMesh() : nullptr;
+			const UAnimInstance* Anim = Mesh ? Mesh->GetAnimInstance() : nullptr;
+			bMontagePlaying |= Anim && Anim->IsAnyMontagePlaying();
+		}
+		return !bMontagePlaying || Now - State->SettleStartTime > 3.0;
+	}));
 	ADD_LATENT_AUTOMATION_COMMAND(FEndPlayMapCommand());
 	ADD_LATENT_AUTOMATION_COMMAND(FBeyondSkillTreeStep([State]()
 	{
+		// Only once PIE is gone: the party saves when play ends, and that save must still see saving switched off
+		if (GEditor && GEditor->PlayWorld)
+		{
+			return false;
+		}
 		if (IConsoleVariable* SaveProgress = IConsoleManager::Get().FindConsoleVariable(TEXT("Beyond.SaveProgress")))
 		{
 			SaveProgress->Set(State->SavedSaveProgress.IsEmpty() ? TEXT("1") : *State->SavedSaveProgress, ECVF_SetByCode);

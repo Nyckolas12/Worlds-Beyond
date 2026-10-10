@@ -5,8 +5,12 @@
 #include "Fonts/FontMeasure.h"
 #include "Framework/Application/SlateApplication.h"
 #include "GameFramework/PlayerController.h"
+#include "Items/BeyondInventoryComponent.h"
+#include "Items/BeyondItemLibrary.h"
+#include "Items/BeyondLootDrop.h"
 #include "Kismet/GameplayStatics.h"
 #include "Player/BeyondPartyComponent.h"
+#include "Player/BeyondPlayerController.h"
 #include "Rendering/DrawElements.h"
 #include "Rendering/SlateRenderer.h"
 #include "Styling/CoreStyle.h"
@@ -15,6 +19,8 @@ namespace
 {
 	// Bar fill speed in bar-widths per second while catching up
 	constexpr float ProgressBarFillSpeed = 1.6f;
+	constexpr float ProgressNoticeDuration = 2.8f;
+	constexpr float ProgressToastFade = 0.3f;
 
 	FVector2f MeasureProgressText(const FString& Text, const FSlateFontInfo& Font)
 	{
@@ -62,13 +68,25 @@ void UBeyondProgressWidget::NativeDestruct()
 		Party->OnMemberLevelUp.RemoveDynamic(this, &ThisClass::HandleMemberLevelUp);
 		Party->OnExperienceAwarded.RemoveDynamic(this, &ThisClass::HandleExperienceAwarded);
 	}
+	if (UBeyondInventoryComponent* Inventory = BoundInventory.Get())
+	{
+		Inventory->OnItemAdded.RemoveDynamic(this, &ThisClass::HandleItemAdded);
+	}
 	BoundParty.Reset();
+	BoundInventory.Reset();
 	Super::NativeDestruct();
 }
 
 void UBeyondProgressWidget::BindToParty()
 {
 	const APlayerController* PC = GetOwningPlayer();
+	UBeyondInventoryComponent* Inventory = PC ? PC->FindComponentByClass<UBeyondInventoryComponent>() : nullptr;
+	if (Inventory && Inventory != BoundInventory.Get())
+	{
+		Inventory->OnItemAdded.AddUniqueDynamic(this, &ThisClass::HandleItemAdded);
+		BoundInventory = Inventory;
+	}
+
 	UBeyondPartyComponent* Party = PC ? PC->FindComponentByClass<UBeyondPartyComponent>() : nullptr;
 	if (!Party || Party == BoundParty.Get())
 	{
@@ -81,12 +99,57 @@ void UBeyondProgressWidget::BindToParty()
 
 void UBeyondProgressWidget::HandleMemberLevelUp(ABeyondCharacterBase* Member, int32 NewLevel)
 {
+	// Take the new level now rather than on the next tick
+	ReadLeader();
 	ShowLevelUpBanner(Member, NewLevel);
 }
 
 void UBeyondProgressWidget::HandleExperienceAwarded(ABeyondCharacterBase* Victim, float InExperience)
 {
 	ShowExperienceGain(InExperience);
+}
+
+void UBeyondProgressWidget::HandleItemAdded(const FBeyondItemInstance& Item)
+{
+	ShowLootToast(Item);
+}
+
+void UBeyondProgressWidget::ShowLootToast(const FBeyondItemInstance& Item)
+{
+	FLootToast Toast;
+	Toast.Label = UBeyondItemLibrary::GetItemName(Item).ToString();
+	Toast.Color = UBeyondItemLibrary::GetTierColor(Item.Tier);
+	const UBeyondItemDefinition* Definition = Item.GetDefinition();
+	Toast.Detail = FString::Printf(TEXT("%s  %s"), *UBeyondItemLibrary::GetTierName(Item.Tier).ToString(),
+		Definition ? *UBeyondItemLibrary::GetSlotName(Definition->Slot).ToString() : TEXT(""));
+	if (Definition && Definition->Set)
+	{
+		Toast.Detail += FString::Printf(TEXT("  \u00B7  %s"), *Definition->Set->SetName.ToString());
+	}
+	Toasts.Insert(Toast, 0);
+	if (Toasts.Num() > MaxToasts)
+	{
+		Toasts.SetNum(MaxToasts);
+	}
+}
+
+void UBeyondProgressWidget::ShowNotice(const FText& Text)
+{
+	Notice = Text;
+	NoticeAge = 0.0f;
+}
+
+void UBeyondProgressWidget::ReadPickupTarget()
+{
+	const ABeyondPlayerController* PC = Cast<ABeyondPlayerController>(GetOwningPlayer());
+	const ABeyondLootDrop* Drop = PC ? PC->FindPickupTarget() : nullptr;
+	const FString Label = Drop ? Drop->GetLabel().ToString() : FString();
+	if (Label != PromptLabel)
+	{
+		PromptAge = 0.0f;
+	}
+	PromptLabel = Label;
+	PromptColor = Drop ? UBeyondItemLibrary::GetTierColor(Drop->GetItem().Tier) : FLinearColor::White;
 }
 
 void UBeyondProgressWidget::ShowLevelUpBanner(ABeyondCharacterBase* Member, int32 NewLevel)
@@ -156,6 +219,7 @@ void UBeyondProgressWidget::NativeTick(const FGeometry& MyGeometry, float InDelt
 	Super::NativeTick(MyGeometry, InDeltaTime);
 	BindToParty();
 	ReadLeader();
+	ReadPickupTarget();
 	AdvanceAnimation(InDeltaTime);
 }
 
@@ -198,6 +262,21 @@ void UBeyondProgressWidget::AdvanceAnimation(float DeltaSeconds)
 			GainAge = -1.0f;
 		}
 	}
+
+	PromptAge += DeltaSeconds;
+	for (FLootToast& Toast : Toasts)
+	{
+		Toast.Age += DeltaSeconds;
+	}
+	Toasts.RemoveAll([this](const FLootToast& Toast) { return Toast.Age >= ToastDuration; });
+	if (NoticeAge >= 0.0f)
+	{
+		NoticeAge += DeltaSeconds;
+		if (NoticeAge >= ProgressNoticeDuration)
+		{
+			NoticeAge = -1.0f;
+		}
+	}
 }
 
 int32 UBeyondProgressWidget::NativePaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect,
@@ -207,11 +286,6 @@ int32 UBeyondProgressWidget::NativePaint(const FPaintArgs& Args, const FGeometry
 	const int32 BackLayer = BaseLayer + 1;
 	const int32 FillLayer = BaseLayer + 2;
 	const int32 TextLayer = BaseLayer + 3;
-
-	if (!ShownLeader.IsValid())
-	{
-		return BaseLayer;
-	}
 
 	const FVector2f ScreenSize(AllottedGeometry.GetLocalSize());
 	const FSlateBrush* WhiteBrush = FCoreStyle::Get().GetBrush(TEXT("GenericWhiteBox"));
@@ -237,6 +311,58 @@ int32 UBeyondProgressWidget::NativePaint(const FPaintArgs& Args, const FGeometry
 			Label, LabelFont, ESlateDrawEffect::None, LabelTint);
 		return LabelSize;
 	};
+
+	//~ Loot: pickup prompt, toasts, notices
+	const FSlateFontInfo PromptFont = FCoreStyle::GetDefaultFontStyle("Bold", 14);
+	const FSlateFontInfo ToastFont = FCoreStyle::GetDefaultFontStyle("Bold", 13);
+	const FSlateFontInfo ToastDetailFont = FCoreStyle::GetDefaultFontStyle("Regular", 9);
+	if (!PromptLabel.IsEmpty())
+	{
+		const float Alpha = FMath::Clamp(PromptAge / 0.15f, 0.0f, 1.0f);
+		const FVector2f Centre = ScreenSize * FVector2f(PromptPosition);
+		const FVector2f LabelSize = MeasureProgressText(PromptLabel, PromptFont);
+		const float KeySize = LabelSize.Y + 8.0f;
+		const float Total = KeySize + 12.0f + LabelSize.X;
+		const FVector2f Left(Centre.X - Total * 0.5f, Centre.Y - KeySize * 0.5f);
+		DrawShape(&PillBrush, Left - FVector2f(14.0f, 6.0f), FVector2f(Total + 28.0f, KeySize + 12.0f), ProgressWithAlpha(PanelColor, Alpha), BackLayer);
+		DrawShape(&PillBrush, Left, FVector2f(KeySize, KeySize), ProgressWithAlpha(TextColor, Alpha), FillLayer);
+		const FVector2f KeyTextSize = MeasureProgressText(TEXT("F"), PromptFont);
+		FSlateDrawElement::MakeText(OutDrawElements, TextLayer, AllottedGeometry.ToPaintGeometry(KeyTextSize,
+			FSlateLayoutTransform(Left + (FVector2f(KeySize, KeySize) - KeyTextSize) * 0.5f)), TEXT("F"), PromptFont, ESlateDrawEffect::None,
+			ProgressWithAlpha(FLinearColor(0.03f, 0.03f, 0.05f, 1.0f), Alpha));
+		DrawLabel(PromptLabel, PromptFont, FVector2f(Left.X + KeySize + 12.0f, Centre.Y - LabelSize.Y * 0.5f), ProgressWithAlpha(PromptColor, Alpha), 0.0f, TextLayer);
+	}
+
+	float ToastBottom = ScreenSize.Y * 0.62f;
+	for (const FLootToast& Toast : Toasts)
+	{
+		const float FadeIn = FMath::Clamp(Toast.Age / ProgressToastFade, 0.0f, 1.0f);
+		const float FadeOut = FMath::Clamp((ToastDuration - Toast.Age) / ProgressToastFade, 0.0f, 1.0f);
+		const float Alpha = FMath::Min(FadeIn, FadeOut);
+		const FVector2f LabelSize = MeasureProgressText(Toast.Label, ToastFont);
+		const FVector2f DetailSize = MeasureProgressText(Toast.Detail, ToastDetailFont);
+		const FVector2f BoxSize(FMath::Max(LabelSize.X, DetailSize.X) + 40.0f, LabelSize.Y + DetailSize.Y + 14.0f);
+		// Slides in from the right edge
+		const float Right = ScreenSize.X - 36.0f + (1.0f - FMath::InterpEaseOut(0.0f, 1.0f, FadeIn, 3.0f)) * 60.0f;
+		const FVector2f TopLeft(Right - BoxSize.X, ToastBottom - BoxSize.Y);
+		DrawShape(WhiteBrush, TopLeft, BoxSize, ProgressWithAlpha(PanelColor, Alpha), BackLayer);
+		DrawShape(WhiteBrush, TopLeft, FVector2f(4.0f, BoxSize.Y), ProgressWithAlpha(Toast.Color, Alpha), FillLayer);
+		DrawLabel(Toast.Label, ToastFont, TopLeft + FVector2f(16.0f, 6.0f), ProgressWithAlpha(Toast.Color, Alpha), 0.0f, TextLayer);
+		DrawLabel(Toast.Detail, ToastDetailFont, TopLeft + FVector2f(16.0f, 8.0f + LabelSize.Y), ProgressWithAlpha(TextColor, 0.75f * Alpha), 0.0f, TextLayer);
+		ToastBottom -= BoxSize.Y + 8.0f;
+	}
+
+	if (NoticeAge >= 0.0f && !Notice.IsEmpty())
+	{
+		const float Alpha = NoticeAge < ProgressNoticeDuration - 0.5f ? 1.0f : (ProgressNoticeDuration - NoticeAge) / 0.5f;
+		DrawLabel(Notice.ToString(), PromptFont, FVector2f(ScreenSize.X * 0.5f, ScreenSize.Y * FVector2f(PromptPosition).Y + 34.0f),
+			ProgressWithAlpha(WarningColor, Alpha), 0.5f, TextLayer);
+	}
+
+	if (!ShownLeader.IsValid())
+	{
+		return TextLayer + 1;
+	}
 
 	//~ Badge + bar (bottom left by default)
 	const FVector2f BadgeCentre = ScreenSize * FVector2f(PanelAnchor) + FVector2f(BadgeOffset);

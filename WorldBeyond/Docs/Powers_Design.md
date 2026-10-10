@@ -100,12 +100,16 @@ and brings it down as one shockwave.
 come from **Duo Role** on each character (Angel = Conduit, Ji-Woong = Striker). Both are invincible and can't be
 interrupted for the whole move; the buddy AI waits.
 
+**Target:** the move locks an enemy as it starts: the crosshair target, else the nearest boss / mini-boss, else the
+buddy's target, else the nearest enemy, within 25 m of the leader. Ji-Woong always lands the final blow on it.
+
 | Time | Phase | Angel (Conduit) | Ji-Woong (Striker) | Effect |
 |---|---|---|---|---|
-| 0 – 1.4 s | **1. Heaven** | Telekinesis channel (`AM_Duo_Conduit_Telekinesis`) | holds | 7 flashes of lightning, alternating **blue** / **purple**, strike random enemies within 12 m of Ji-Woong: 15 damage, stun, launched into the air (bosses stay grounded) |
+| 0 – 1.4 s | **1. Heaven** | Telekinesis channel (`AM_Duo_Conduit_Telekinesis`) | holds | 7 flashes of lightning, alternating **blue** / **purple**, strike random enemies within 12 m of the locked enemy: 15 damage, stun, launched into the air (bosses stay grounded) |
 | 1.4 – 2.2 s | **2. Absorb** | lightning leaves his hands | battle cry (`Montage_Axe_Battlecry`) | bolts land in a line from Angel to Ji-Woong; a storm ball and golden flare wrap Ji-Woong |
-| 2.2 – 3.2 s | **3. Judgment** | — | leaping slam (`Montage_Sword_Jump_Attack`) | at impact: gold + blue + purple shockwave, camera shake; **180 damage at the centre → 80 at 9 m**, unblockable, knock-back |
-| 3.2 – 3.8 s | recovery | | | control returns |
+| 2.2 s + travel | **Approach** | — | charged, rushes to the enemy (dash begin / loop, golden trail; blinks the rest if blocked or far); slams in place when already within 4.5 m | the storm aura travels with him |
+| then 1 s | **3. Judgment** | — | leaping slam (`Montage_Sword_Jump_Attack`) | at impact: gold + blue + purple shockwave, camera shake; **180 damage at the centre → 80 at 9 m**, unblockable, knock-back; the locked enemy always takes the centre damage |
+| + 0.6 s | recovery | | | control returns |
 
 All timings, damage, radii, montages and effects are properties on `GA_Duo_HeavensJudgment`. Blueprint hook
 **On Phase Started (Phase, Conduit, Striker)** is there for polish (camera, slow motion, voice lines).

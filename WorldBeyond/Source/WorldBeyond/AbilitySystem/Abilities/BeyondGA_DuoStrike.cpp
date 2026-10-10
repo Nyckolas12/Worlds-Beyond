@@ -1,12 +1,16 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "AbilitySystem/Abilities/BeyondGA_DuoStrike.h"
+#include "WorldBeyond.h"
 #include "AbilitySystem/BeyondCombatLibrary.h"
+#include "AI/BeyondCompanionController.h"
 #include "AbilitySystemComponent.h"
 #include "Animation/AnimInstance.h"
 #include "BeyondGameplayTags.h"
 #include "Blueprint/UserWidget.h"
+#include "Characters/BeyondAimComponent.h"
 #include "Characters/BeyondCharacterBase.h"
+#include "Characters/BeyondRushComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/OverlapResult.h"
 #include "Engine/World.h"
@@ -111,6 +115,9 @@ void UBeyondGA_DuoStrike::ActivateAbility(const FGameplayAbilitySpecHandle Handl
 	Striker = FoundStriker;
 	FlashesDone = 0;
 	bShockwaveDone = false;
+	// Chosen before anyone moves: the enemy the lightning and the final blow are for
+	LockedTarget = ChooseTarget(FoundStriker);
+	UE_LOG(LogBeyond, Log, TEXT("Duo %s: aimed at %s"), *GetClass()->GetName(), *GetNameSafe(LockedTarget.Get()));
 
 	// Both demigods commit to the move: stop what they were doing, can't be hurt or knocked out of it
 	SetDuoState(FoundConduit, true);
@@ -174,6 +181,66 @@ void UBeyondGA_DuoStrike::SetDuoState(ABeyondCharacterBase* Character, bool bAct
 	}
 }
 
+AActor* UBeyondGA_DuoStrike::ChooseTarget(const ABeyondCharacterBase* StrikerCharacter) const
+{
+	const UBeyondPartyComponent* Party = GetParty();
+	const ABeyondCharacterBase* Leader = Party ? Party->GetLeader() : nullptr;
+	if (!Leader || !StrikerCharacter)
+	{
+		return nullptr;
+	}
+	const FVector LeaderLocation = Leader->GetActorLocation();
+	auto IsCandidate = [this, StrikerCharacter, &LeaderLocation](const AActor* Actor)
+	{
+		return Actor && !UBeyondCombatLibrary::IsActorDead(Actor) && UBeyondCombatLibrary::AreHostile(StrikerCharacter, Actor)
+			&& FVector::Dist(Actor->GetActorLocation(), LeaderLocation) <= TargetSearchRadius;
+	};
+
+	// 1. What the player is aiming at (Angel's crosshair)
+	if (const UBeyondAimComponent* Aim = Leader->GetAimComponent(); Aim && IsCandidate(Aim->GetAimTarget()))
+	{
+		return Aim->GetAimTarget();
+	}
+
+	// 2. The nearest boss or mini-boss, 3. the buddy's target, 4. the nearest enemy
+	const TArray<AActor*> Hostiles = FindHostilesInRadius(LeaderLocation, TargetSearchRadius);
+	AActor* NearestBoss = nullptr;
+	AActor* Nearest = nullptr;
+	float NearestBossDistance = TNumericLimits<float>::Max();
+	float NearestDistance = TNumericLimits<float>::Max();
+	for (AActor* Hostile : Hostiles)
+	{
+		if (!IsCandidate(Hostile))
+		{
+			continue;
+		}
+		const float Distance = FVector::Dist(Hostile->GetActorLocation(), LeaderLocation);
+		if (IsBoss(Hostile) && Distance < NearestBossDistance)
+		{
+			NearestBoss = Hostile;
+			NearestBossDistance = Distance;
+		}
+		if (Distance < NearestDistance)
+		{
+			Nearest = Hostile;
+			NearestDistance = Distance;
+		}
+	}
+	if (NearestBoss)
+	{
+		return NearestBoss;
+	}
+	for (const ABeyondCharacterBase* Member : Party->GetMembers())
+	{
+		const ABeyondCompanionController* Companion = Member ? Cast<ABeyondCompanionController>(Member->GetController()) : nullptr;
+		if (Companion && IsCandidate(Companion->GetCombatTarget()))
+		{
+			return Companion->GetCombatTarget();
+		}
+	}
+	return Nearest;
+}
+
 void UBeyondGA_DuoStrike::Flash()
 {
 	ABeyondCharacterBase* StrikerCharacter = Striker.Get();
@@ -183,8 +250,9 @@ void UBeyondGA_DuoStrike::Flash()
 		return;
 	}
 
-	// Strike a random enemy near the Striker; with no enemies around, the sky still cracks for show
-	const FVector Center = StrikerCharacter->GetActorLocation();
+	// Strike a random enemy around the locked one (or the Striker); with no enemies around, the sky still cracks for show
+	const AActor* Locked = LockedTarget.Get();
+	const FVector Center = Locked && !UBeyondCombatLibrary::IsActorDead(Locked) ? Locked->GetActorLocation() : StrikerCharacter->GetActorLocation();
 	const TArray<AActor*> Hostiles = FindHostilesInRadius(Center, FlashRadius);
 	AActor* Target = Hostiles.IsEmpty() ? nullptr : Hostiles[FMath::RandHelper(Hostiles.Num())];
 	const FVector2D Scatter = FMath::RandPointInCircle(FlashRadius * 0.6f);
@@ -263,7 +331,75 @@ void UBeyondGA_DuoStrike::StartAbsorb()
 	}
 
 	PlayMontageOn(StrikerCharacter, StrikerChargeMontage);
-	GetWorld()->GetTimerManager().SetTimer(PhaseTimer, this, &ThisClass::StartJudgment, FMath::Max(AbsorbDuration, 0.01f), false);
+	GetWorld()->GetTimerManager().SetTimer(PhaseTimer, this, &ThisClass::StartApproach, FMath::Max(AbsorbDuration, 0.01f), false);
+}
+
+void UBeyondGA_DuoStrike::StartApproach()
+{
+	ABeyondCharacterBase* StrikerCharacter = Striker.Get();
+	if (!IsActive() || !StrikerCharacter)
+	{
+		Finish();
+		return;
+	}
+
+	// The locked enemy fell during the charge: go for whoever stood nearest to it
+	AActor* Target = LockedTarget.Get();
+	if (Target && UBeyondCombatLibrary::IsActorDead(Target))
+	{
+		const FVector Where = Target->GetActorLocation();
+		Target = nullptr;
+		float Best = TNumericLimits<float>::Max();
+		for (AActor* Hostile : FindHostilesInRadius(Where, 1000.0f))
+		{
+			const float Distance = FVector::Dist(Hostile->GetActorLocation(), Where);
+			if (Distance < Best)
+			{
+				Target = Hostile;
+				Best = Distance;
+			}
+		}
+		LockedTarget = Target;
+	}
+	if (!Target)
+	{
+		StartJudgment();
+		return;
+	}
+
+	const FVector ToTarget = (Target->GetActorLocation() - StrikerCharacter->GetActorLocation()).GetSafeNormal2D();
+	if (FVector::Dist2D(StrikerCharacter->GetActorLocation(), Target->GetActorLocation()) <= DashAnimationDistance)
+	{
+		if (!ToTarget.IsNearlyZero())
+		{
+			StrikerCharacter->SetActorRotation(ToTarget.Rotation());
+		}
+		StartJudgment();
+		return;
+	}
+
+	// Charged up beside the Conduit, the Striker rushes in (the aura goes with him); he slams once he is there
+	StopMontageOn(StrikerCharacter, StrikerChargeMontage);
+	TWeakObjectPtr<UBeyondGA_DuoStrike> WeakThis(this);
+	UBeyondRushComponent::Rush(StrikerCharacter, Target, FVector::ZeroVector, Approach, [WeakThis](bool bArrived)
+	{
+		UBeyondGA_DuoStrike* Self = WeakThis.Get();
+		if (!Self || !Self->IsActive())
+		{
+			return;
+		}
+		ABeyondCharacterBase* Arrived = Self->Striker.Get();
+		const AActor* Aimed = Self->LockedTarget.Get();
+		if (Arrived && Aimed)
+		{
+			const FVector Facing = (Aimed->GetActorLocation() - Arrived->GetActorLocation()).GetSafeNormal2D();
+			if (!Facing.IsNearlyZero())
+			{
+				Arrived->SetActorRotation(Facing.Rotation());
+			}
+		}
+		Self->StartJudgment();
+	});
 }
 
 void UBeyondGA_DuoStrike::StartJudgment()
@@ -316,10 +452,17 @@ void UBeyondGA_DuoStrike::Shockwave()
 		BeyondFX::SpawnAtLocation(this, Wave, Ground);
 	}
 
-	for (AActor* Target : FindHostilesInRadius(Center, ShockwaveRadius))
+	// The locked enemy always takes the blow at full force, wherever the slam landed
+	AActor* Locked = LockedTarget.Get();
+	TArray<AActor*> Targets = FindHostilesInRadius(Center, ShockwaveRadius);
+	if (Locked && !UBeyondCombatLibrary::IsActorDead(Locked))
+	{
+		Targets.AddUnique(Locked);
+	}
+	for (AActor* Target : Targets)
 	{
 		const float Distance = FVector::Dist2D(Center, Target->GetActorLocation());
-		const float Alpha = FMath::Clamp(Distance / ShockwaveRadius, 0.0f, 1.0f);
+		const float Alpha = Target == Locked ? 0.0f : FMath::Clamp(Distance / ShockwaveRadius, 0.0f, 1.0f);
 		const float Damage = FMath::Lerp(ShockwaveDamageCenter, ShockwaveDamageEdge, Alpha) * GetLevelDamageScale();
 		UBeyondCombatLibrary::ApplyDamage(StrikerCharacter, Target, Damage, BeyondTags::DamageType_Explosion, ShockwaveHitResponse, true, StrikerCharacter, true);
 
@@ -460,8 +603,8 @@ void UBeyondGA_DuoStrike::RemoveEffects(TArray<TWeakObjectPtr<UFXSystemComponent
 
 bool UBeyondGA_DuoStrike::IsBoss(const AActor* Actor)
 {
-	const ABeyondCharacterBase* Character = Cast<ABeyondCharacterBase>(Actor);
-	return Character && Character->BossBarWidgetClass;
+	// Mini-bosses and bosses by rank too (Plan 3), not only Blueprint enemies with a boss bar
+	return UBeyondCombatLibrary::IsBoss(Actor);
 }
 
 void UBeyondGA_DuoStrike::EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled)
@@ -474,6 +617,12 @@ void UBeyondGA_DuoStrike::EndAbility(const FGameplayAbilitySpecHandle Handle, co
 		Timers.ClearTimer(ImpactTimer);
 	}
 	UnbindStrikerEvent();
+
+	// Cut short mid-rush: the Striker stops where he is and gets his collision back
+	if (UBeyondRushComponent* Rush = UBeyondRushComponent::FindRush(Striker.Get()))
+	{
+		Rush->Cancel();
+	}
 
 	RemoveEffects(AuraComponents, false);
 	RemoveEffects(ConduitComponents, false);
@@ -500,5 +649,6 @@ void UBeyondGA_DuoStrike::EndAbility(const FGameplayAbilitySpecHandle Handle, co
 
 	Conduit.Reset();
 	Striker.Reset();
+	LockedTarget.Reset();
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }

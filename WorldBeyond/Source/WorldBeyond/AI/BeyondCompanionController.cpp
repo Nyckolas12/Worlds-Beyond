@@ -7,7 +7,11 @@
 #include "AbilitySystemComponent.h"
 #include "BeyondGameplayTags.h"
 #include "Characters/BeyondCharacterBase.h"
+#include "Characters/BeyondRushComponent.h"
+#include "Components/CapsuleComponent.h"
+#include "Enemies/BeyondEnemySubsystem.h"
 #include "EngineUtils.h"
+#include "Game/BeyondBossArena.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Navigation/PathFollowingComponent.h"
 #include "TimerManager.h"
@@ -100,10 +104,31 @@ void ABeyondCompanionController::HandleSelfHitTaken(ABeyondCharacterBase* HitCha
 bool ABeyondCompanionController::IsValidTarget(const AActor* Target) const
 {
 	const ABeyondCharacterBase* LeaderCharacter = Leader.Get();
-	return Target && LeaderCharacter
-		&& !UBeyondCombatLibrary::IsActorDead(Target)
-		&& UBeyondCombatLibrary::AreHostile(GetPawn(), Target)
-		&& FVector::Dist(Target->GetActorLocation(), LeaderCharacter->GetActorLocation()) <= DisengageRadius;
+	if (!Target || !LeaderCharacter || UBeyondCombatLibrary::IsActorDead(Target) || !UBeyondCombatLibrary::AreHostile(GetPawn(), Target)
+		|| FVector::Dist(Target->GetActorLocation(), LeaderCharacter->GetActorLocation()) > DisengageRadius)
+	{
+		return false;
+	}
+	// Sealed in a boss arena with the leader: nothing on the other side of the wall
+	const ABeyondBossArena* Arena = ABeyondBossArena::FindSealedArenaAt(GetWorld(), LeaderCharacter->GetActorLocation());
+	return !Arena || Arena->IsInside(Target->GetActorLocation());
+}
+
+FVector ABeyondCompanionController::KeepInLeadersArena(const FVector& Point) const
+{
+	const ABeyondCharacterBase* LeaderCharacter = Leader.Get();
+	const ABeyondBossArena* Arena = LeaderCharacter ? ABeyondBossArena::FindSealedArenaAt(GetWorld(), LeaderCharacter->GetActorLocation()) : nullptr;
+	const ACharacter* SelfCharacter = Cast<ACharacter>(GetPawn());
+	return Arena ? Arena->ClampInside(Point, (SelfCharacter ? SelfCharacter->GetCapsuleComponent()->GetScaledCapsuleRadius() : 50.0f) + 100.0f) : Point;
+}
+
+void ABeyondCompanionController::ResetEngagement()
+{
+	StopMovement();
+	ClearFocus(EAIFocusPriority::Gameplay);
+	CombatTarget.Reset();
+	LeaderAttacker.Reset();
+	SelfAttacker.Reset();
 }
 
 AActor* ABeyondCompanionController::PickTarget() const
@@ -174,22 +199,34 @@ void ABeyondCompanionController::Think()
 	}
 	bHoldingForCutscene = false;
 
-	// Fell far behind or got stuck: pop back next to the leader
-	if (FVector::Dist(Self->GetActorLocation(), LeaderCharacter->GetActorLocation()) > RegroupDistance)
+	// Being rushed somewhere (duo move, boss arena): let it get there
+	if (UBeyondRushComponent::FindRush(Self))
 	{
-		const FVector Offset = -LeaderCharacter->GetActorForwardVector() * FollowDistance + LeaderCharacter->GetActorRightVector() * FollowDistance * 0.5f * FollowSide;
-		Self->TeleportTo(LeaderCharacter->GetActorLocation() + Offset, LeaderCharacter->GetActorRotation());
-		StopMovement();
-		CombatTarget.Reset();
 		return;
 	}
 
 	UAbilitySystemComponent* ASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(Self);
 
-	// The duo super move drives both demigods itself
+	// The duo super move drives both demigods itself (it may send this one far from the leader)
 	if (ASC && ASC->HasMatchingGameplayTag(BeyondTags::State_Duo))
 	{
 		StopMovement();
+		return;
+	}
+
+	// Fell far behind or got stuck: pop back next to the leader (inside the leader's boss arena while it is sealed)
+	if (FVector::Dist(Self->GetActorLocation(), LeaderCharacter->GetActorLocation()) > RegroupDistance)
+	{
+		const FVector Offset = -LeaderCharacter->GetActorForwardVector() * FollowDistance + LeaderCharacter->GetActorRightVector() * FollowDistance * 0.5f * FollowSide;
+		FVector Destination = KeepInLeadersArena(LeaderCharacter->GetActorLocation() + Offset);
+		FVector Ground;
+		if (const ACharacter* SelfCharacter = Cast<ACharacter>(Self); SelfCharacter && UBeyondEnemySubsystem::FindGroundPoint(GetWorld(), Destination, Ground))
+		{
+			Destination = Ground + FVector(0.0f, 0.0f, SelfCharacter->GetCapsuleComponent()->GetScaledCapsuleHalfHeight() + 5.0f);
+		}
+		Self->TeleportTo(Destination, LeaderCharacter->GetActorRotation());
+		StopMovement();
+		CombatTarget.Reset();
 		return;
 	}
 
@@ -241,9 +278,9 @@ void ABeyondCompanionController::FollowLeader()
 	const APawn* Self = GetPawn();
 	const ABeyondCharacterBase* LeaderCharacter = Leader.Get();
 
-	const FVector FollowPoint = LeaderCharacter->GetActorLocation()
+	const FVector FollowPoint = KeepInLeadersArena(LeaderCharacter->GetActorLocation()
 		- LeaderCharacter->GetActorForwardVector() * FollowDistance * 0.7f
-		+ LeaderCharacter->GetActorRightVector() * FollowDistance * 0.7f * FollowSide;
+		+ LeaderCharacter->GetActorRightVector() * FollowDistance * 0.7f * FollowSide);
 
 	if (FVector::Dist2D(Self->GetActorLocation(), FollowPoint) > FollowAcceptanceRadius * 1.5f)
 	{

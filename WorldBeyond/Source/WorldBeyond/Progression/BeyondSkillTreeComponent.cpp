@@ -1,6 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "Progression/BeyondSkillTreeComponent.h"
+#include "Progression/BeyondStatEffects.h"
 #include "AbilitySystem/Abilities/BeyondGA_DuoStrike.h"
 #include "AbilitySystem/BeyondGameplayEffects.h"
 #include "AbilitySystemComponent.h"
@@ -12,22 +13,6 @@
 #include "WorldBeyond.h"
 
 #define LOCTEXT_NAMESPACE "BeyondSkillTree"
-
-namespace
-{
-	FGameplayTag SkillStatTag(EBeyondSkillStat Stat)
-	{
-		switch (Stat)
-		{
-		case EBeyondSkillStat::MaxHealth: return BeyondTags::SetByCaller_MaxHealth;
-		case EBeyondSkillStat::MaxStamina: return BeyondTags::SetByCaller_MaxStamina;
-		case EBeyondSkillStat::Strength: return BeyondTags::SetByCaller_Strength;
-		case EBeyondSkillStat::Arcana: return BeyondTags::SetByCaller_Arcana;
-		case EBeyondSkillStat::Defense: return BeyondTags::SetByCaller_Defense;
-		}
-		return FGameplayTag();
-	}
-}
 
 UBeyondSkillTreeComponent::UBeyondSkillTreeComponent()
 {
@@ -340,59 +325,13 @@ void UBeyondSkillTreeComponent::ApplyEffects()
 
 void UBeyondSkillTreeComponent::ApplyStats(ABeyondCharacterBase* Character)
 {
-	UAbilitySystemComponent* ASC = Character->GetAbilitySystemComponent();
-	if (!ASC)
+	TMap<EBeyondSkillStat, float> Bonuses;
+	for (const EBeyondSkillStat Stat : { EBeyondSkillStat::MaxHealth, EBeyondSkillStat::MaxStamina, EBeyondSkillStat::Strength,
+		EBeyondSkillStat::Arcana, EBeyondSkillStat::Defense })
 	{
-		return;
+		Bonuses.Add(Stat, GetStatBonus(Stat));
 	}
-
-	const float OldMaxHealth = ASC->GetNumericAttribute(UCharacterAttributeSet::GetMaxHealthAttribute());
-	const float OldMaxStamina = ASC->GetNumericAttribute(UCharacterAttributeSet::GetMaxStaminaAttribute());
-
-	// The new effect goes on before the old one comes off, so a max never dips and cuts the current value
-	const FActiveGameplayEffectHandle OldHandle = StatsHandle;
-	StatsHandle.Invalidate();
-
-	static const EBeyondSkillStat AllStats[] = { EBeyondSkillStat::MaxHealth, EBeyondSkillStat::MaxStamina, EBeyondSkillStat::Strength,
-		EBeyondSkillStat::Arcana, EBeyondSkillStat::Defense };
-	bool bAnyStat = false;
-	for (const EBeyondSkillStat Stat : AllStats)
-	{
-		bAnyStat |= !FMath::IsNearlyZero(GetStatBonus(Stat));
-	}
-	if (bAnyStat)
-	{
-		const FGameplayEffectSpecHandle Spec = ASC->MakeOutgoingSpec(UBeyondGE_SkillStats::StaticClass(), 1.0f, ASC->MakeEffectContext());
-		if (Spec.IsValid())
-		{
-			for (const EBeyondSkillStat Stat : AllStats)
-			{
-				Spec.Data->SetSetByCallerMagnitude(SkillStatTag(Stat), GetStatBonus(Stat));
-			}
-			StatsHandle = ASC->ApplyGameplayEffectSpecToSelf(*Spec.Data);
-		}
-	}
-	if (OldHandle.IsValid())
-	{
-		ASC->RemoveActiveGameplayEffect(OldHandle);
-	}
-
-	// A bigger maximum comes with the extra health / stamina (taking it back is the clamp's job)
-	if (!ASC->HasMatchingGameplayTag(BeyondTags::State_Dead))
-	{
-		const float HealthGain = ASC->GetNumericAttribute(UCharacterAttributeSet::GetMaxHealthAttribute()) - OldMaxHealth;
-		if (HealthGain > 0.0f)
-		{
-			ASC->SetNumericAttributeBase(UCharacterAttributeSet::GetCurrentHealthAttribute(),
-				ASC->GetNumericAttributeBase(UCharacterAttributeSet::GetCurrentHealthAttribute()) + HealthGain);
-		}
-		const float StaminaGain = ASC->GetNumericAttribute(UCharacterAttributeSet::GetMaxStaminaAttribute()) - OldMaxStamina;
-		if (StaminaGain > 0.0f)
-		{
-			ASC->SetNumericAttributeBase(UCharacterAttributeSet::GetCurrentStaminaAttribute(),
-				ASC->GetNumericAttributeBase(UCharacterAttributeSet::GetCurrentStaminaAttribute()) + StaminaGain);
-		}
-	}
+	StatsHandle = BeyondStats::ApplyStatBonuses(Character->GetAbilitySystemComponent(), UBeyondGE_SkillStats::StaticClass(), Bonuses, StatsHandle);
 }
 
 bool UBeyondSkillTreeComponent::ApplyGrantedAbilities(ABeyondCharacterBase* Character)

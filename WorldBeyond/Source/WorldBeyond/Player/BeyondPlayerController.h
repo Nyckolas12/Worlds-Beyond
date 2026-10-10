@@ -8,14 +8,18 @@
 #include "BeyondPlayerController.generated.h"
 
 class ABeyondCharacterBase;
+class UBeyondBossBarWidget;
+class ABeyondLootDrop;
 class UBeyondBondMeterWidget;
 class UBeyondDuoSkillTreeComponent;
+class UBeyondInventoryComponent;
 class UBeyondPartyComponent;
 class UBeyondSkillTreeAsset;
 class UBeyondSkillTreeComponent;
 struct FOnAttributeChangeData;
 class UInputAction;
 class UInputMappingContext;
+class USoundBase;
 class UUserWidget;
 
 /**
@@ -24,6 +28,8 @@ class UUserWidget;
  * GetOwningPlayerPawn on construct always show the current leader.
  * Also shows the Bond meter, the level / EXP display and the health bar of a nearby boss (characters with a Boss Bar
  * Widget Class). The Bond meter and the level display go into W_PlayerHud's canvas (see AttachToHUD).
+ * Holds the party's bag (Inventory Component), picks loot up with F and opens the menus: the skill tree (K) and the
+ * equipment & inventory screen (I), one at a time, game paused.
  */
 UCLASS()
 class WORLDBEYOND_API ABeyondPlayerController : public APlayerController
@@ -39,6 +45,10 @@ public:
 	// The duo skill tree (Bond Points, duo powers, duo loadout)
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Party")
 	TObjectPtr<UBeyondDuoSkillTreeComponent> DuoSkillTree;
+
+	// The party's shared bag
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Party")
+	TObjectPtr<UBeyondInventoryComponent> InventoryComponent;
 
 	// Given to Duo Skill Tree on BeginPlay
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Party|Skill Tree")
@@ -71,6 +81,52 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "UI|Skill Tree")
 	UUserWidget* GetSkillTreeWidget() const { return SkillTreeWidget; }
+
+	// Picks up the nearest loot (F)
+	UPROPERTY(EditDefaultsOnly, Category = "Input")
+	TObjectPtr<UInputAction> InteractAction;
+
+	// Opens / closes the equipment & inventory screen (I)
+	UPROPERTY(EditDefaultsOnly, Category = "Input")
+	TObjectPtr<UInputAction> InventoryAction;
+
+	// The equipment & inventory screen; leave empty to disable it
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Inventory")
+	TSubclassOf<UUserWidget> InventoryWidgetClass;
+
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Inventory")
+	bool bPauseWhileInventoryOpen = true;
+
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Inventory")
+	TSoftObjectPtr<USoundBase> PickupSound;
+
+	// Opens the screen on a demigod's tab (-1: the leader)
+	UFUNCTION(BlueprintCallable, Category = "UI|Inventory")
+	void OpenInventory(int32 Tab = -1);
+
+	UFUNCTION(BlueprintCallable, Category = "UI|Inventory")
+	void CloseInventory();
+
+	UFUNCTION(BlueprintCallable, Category = "UI|Inventory")
+	void ToggleInventory();
+
+	UFUNCTION(BlueprintPure, Category = "UI|Inventory")
+	bool IsInventoryOpen() const;
+
+	UFUNCTION(BlueprintPure, Category = "UI|Inventory")
+	UUserWidget* GetInventoryWidget() const { return InventoryWidget; }
+
+	// The drop F would pick up: the nearest one within the pickup range of the leader (Project Settings -> Worlds Beyond Loot)
+	UFUNCTION(BlueprintPure, Category = "Loot")
+	ABeyondLootDrop* FindPickupTarget() const;
+
+	// Puts the nearest drop in the bag; false if there is none in range or the bag is full (the HUD says so)
+	UFUNCTION(BlueprintCallable, Category = "Loot")
+	bool PickUpNearestLoot();
+
+	// A short line on the HUD ("Bag is full")
+	UFUNCTION(BlueprintCallable, Category = "UI")
+	void ShowNotice(const FText& Text);
 
 	UPROPERTY(EditDefaultsOnly, Category = "Input")
 	TArray<TObjectPtr<UInputMappingContext>> DefaultMappingContexts;
@@ -114,15 +170,28 @@ public:
 	UFUNCTION(BlueprintPure, Category = "UI|Crosshair")
 	UUserWidget* GetCrosshairWidget() const { return CrosshairWidget; }
 
+	// Health plates over enemies in a fight (Plan 3); leave empty to hide them
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Enemies")
+	TSubclassOf<UUserWidget> EnemyPlatesWidgetClass;
+
+	UFUNCTION(BlueprintPure, Category = "UI|Enemies")
+	UUserWidget* GetEnemyPlatesWidget() const { return EnemyPlatesWidget; }
+
 	// Seconds the boss bar stays up after the boss dies
 	UPROPERTY(EditDefaultsOnly, Category = "UI|Boss", meta = (ClampMin = "0"))
 	float BossBarLingerAfterDeath = 2.0f;
 
-	UFUNCTION(BlueprintPure, Category = "UI|Boss")
-	UUserWidget* GetBossBarWidget() const { return BossBarWidget; }
+	// Bar for mini-bosses and bosses by rank (Plan 3); a Blueprint enemy's own Boss Bar Widget Class still wins for it
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Boss")
+	TSubclassOf<UBeyondBossBarWidget> RankedBossBarClass;
 
+	// The boss bar on screen (a Blueprint boss's widget or the C++ bar); null when none shows
 	UFUNCTION(BlueprintPure, Category = "UI|Boss")
-	ABeyondCharacterBase* GetShownBoss() const { return ShownBoss.Get(); }
+	UUserWidget* GetBossBarWidget() const;
+
+	// The (nearest) boss whose bar shows
+	UFUNCTION(BlueprintPure, Category = "UI|Boss")
+	ABeyondCharacterBase* GetShownBoss() const;
 
 protected:
 	virtual void BeginPlay() override;
@@ -163,6 +232,11 @@ private:
 	void AddMappingContexts();
 	void RefreshHUD();
 	void Input_Swap();
+	void Input_Interact();
+
+	// Shows a menu screen (creating it the first time), closes any other menu, UI-only input, optional pause
+	UUserWidget* OpenMenuWidget(TObjectPtr<UUserWidget>& Widget, const TSubclassOf<UUserWidget>& WidgetClass, bool bPause);
+	void CloseMenuWidget(UUserWidget* Widget);
 
 	void CreateBondMeter();
 	// Puts the Bond meter in the HUD (or the viewport when there is no HUD canvas); called again whenever the HUD is rebuilt
@@ -173,6 +247,7 @@ private:
 	void UpdateCrosshair();
 	void RefreshDuoIcon();
 	void UpdateBossBar();
+	void UpdateRankedBossBars();
 	void ShowBossBar(ABeyondCharacterBase* Boss);
 	void HideBossBar();
 	void RefreshBossHealth();
@@ -209,13 +284,26 @@ private:
 	TObjectPtr<UUserWidget> CrosshairWidget;
 
 	UPROPERTY(Transient)
+	TObjectPtr<UUserWidget> EnemyPlatesWidget;
+
+	UPROPERTY(Transient)
 	TObjectPtr<UUserWidget> SkillTreeWidget;
 
-	bool bPausedBySkillTree = false;
+	UPROPERTY(Transient)
+	TObjectPtr<UUserWidget> InventoryWidget;
+
+	// A menu paused the game (and unpauses it when it closes)
+	bool bPausedByMenu = false;
 
 	FTimerHandle CrosshairTimer;
 
 	TWeakObjectPtr<ABeyondCharacterBase> ShownBoss;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UBeyondBossBarWidget> RankedBossBar;
+
+	TArray<TWeakObjectPtr<ABeyondCharacterBase>> RankedBosses;
+	TMap<TWeakObjectPtr<ABeyondCharacterBase>, float> BossDeathTimes;
 	FDelegateHandle BossHealthHandle;
 	FDelegateHandle BossMaxHealthHandle;
 	FTimerHandle BossBarTimer;

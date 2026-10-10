@@ -18,6 +18,8 @@
 #include "BeyondCharacterBase.generated.h"
 
 class UBeyondAbilitySet;
+class UBeyondEquipmentComponent;
+class UBeyondItemDefinition;
 class UBeyondSkillTreeAsset;
 class UBeyondSkillTreeComponent;
 class UInputAction;
@@ -94,6 +96,9 @@ public:
 
 	void InitializeAttributeSet();
 
+	// Leaves the ability system exactly one UCharacterAttributeSet and points AttributeSet at it (see the .cpp)
+	void ResolveAttributeSet();
+
 	// Name shown on the HUD (level-up banner); empty uses the class name without "BP_"
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Character")
 	FText DisplayName;
@@ -157,6 +162,29 @@ public:
 	// This demigod's skill tree (Player team only; created from Skill Tree)
 	UFUNCTION(BlueprintPure, Category = "Progression")
 	UBeyondSkillTreeComponent* GetSkillTreeComponent() const { return SkillTreeComponent; }
+
+	// What this demigod wears (Player team only)
+	UFUNCTION(BlueprintPure, Category = "Equipment")
+	UBeyondEquipmentComponent* GetEquipmentComponent() const { return EquipmentComponent; }
+
+	// Always dropped when this enemy is defeated by the party, on top of its rank's random loot (boss drops)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loot")
+	TArray<TSoftObjectPtr<UBeyondItemDefinition>> GuaranteedLoot;
+
+	// Whether a party kill drops loot (summoned adds and boss clones don't)
+	virtual bool CanDropLoot() const { return true; }
+
+	/**
+	 * Damage this character takes after Defense, before it lands (elite affixes: Warded, Juggernaut...).
+	 * DamageTags are the damage spec's tags (DamageType.*, Event.Hit.*).
+	 */
+	virtual float ModifyDamageTaken(float Damage, AActor* DamageInstigator, const FGameplayTagContainer& DamageTags) const { return Damage; }
+
+	// Health a single hit can't take this character below (bosses: the next phase threshold); 0 for none
+	virtual float GetHealthFloor() const { return 0.0f; }
+
+	// Damage this character deals x this (boss clones hit softer)
+	virtual float GetOutgoingDamageScale() const { return 1.0f; }
 
 	// The ability a key slot fires (same rule as player input); null if none
 	const UGameplayAbility* FindAbilityOnInput(const FGameplayTag& InputTag) const;
@@ -336,6 +364,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Combat|AI")
 	void ReleaseAttackTokens(int32 Amount);
 
+	UFUNCTION(BlueprintPure, Category = "Combat|AI")
+	int32 GetAvailableAttackTokens() const { return AvailableAttackTokens; }
+
 	// Copy the old BPC_DamageSystem blocking / invincible / interruptible flags onto GAS tags
 	void SyncLegacyDamageState();
 
@@ -432,6 +463,9 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UBeyondSkillTreeComponent> SkillTreeComponent;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UBeyondEquipmentComponent> EquipmentComponent;
 
 	FActiveGameplayEffectHandle LevelStatsHandle;
 
