@@ -12,6 +12,13 @@
 #include "CharacterAttributeSet.h"
 #include "Characters/BeyondAimComponent.h"
 #include "Characters/BeyondCharacterBase.h"
+#include "AI/BeyondEnemyController.h"
+#include "Dialogue/BeyondBanterComponent.h"
+#include "Dialogue/BeyondDialogueSettings.h"
+#include "Dialogue/BeyondDialogueSubsystem.h"
+#include "Dialogue/BeyondNPCCharacter.h"
+#include "Enemies/BeyondEnemyCharacter.h"
+#include "Enemies/BeyondEnemySubsystem.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "EngineUtils.h"
@@ -35,6 +42,7 @@
 #include "UI/BeyondEnemyPlatesWidget.h"
 #include "Enemies/BeyondBossCharacter.h"
 #include "Enemies/BeyondBossDefinition.h"
+#include "UI/BeyondInteractPromptWidget.h"
 #include "UI/BeyondInventoryWidget.h"
 #include "UI/BeyondProgressWidget.h"
 #include "UI/BeyondSkillTreeWidget.h"
@@ -96,6 +104,8 @@ ABeyondPlayerController::ABeyondPlayerController()
 	PartyComponent = CreateDefaultSubobject<UBeyondPartyComponent>(TEXT("PartyComponent"));
 	DuoSkillTree = CreateDefaultSubobject<UBeyondDuoSkillTreeComponent>(TEXT("DuoSkillTree"));
 	InventoryComponent = CreateDefaultSubobject<UBeyondInventoryComponent>(TEXT("Inventory"));
+	BanterComponent = CreateDefaultSubobject<UBeyondBanterComponent>(TEXT("Banter"));
+	InteractPromptWidgetClass = UBeyondInteractPromptWidget::StaticClass();
 	SkillTreeWidgetClass = UBeyondSkillTreeWidget::StaticClass();
 	InventoryWidgetClass = UBeyondInventoryWidget::StaticClass();
 	PickupSound = TSoftObjectPtr<USoundBase>(FSoftObjectPath(TEXT("/Game/Audio/energy-charge-up.energy-charge-up")));
@@ -145,6 +155,22 @@ void ABeyondPlayerController::BeginPlay()
 			}
 		}
 		GetWorldTimerManager().SetTimer(BossBarTimer, this, &ThisClass::UpdateBossBar, 0.25f, true, 0.5f);
+
+		if (InteractPromptWidgetClass)
+		{
+			InteractPromptWidget = CreateWidget<UUserWidget>(this, InteractPromptWidgetClass);
+			if (InteractPromptWidget)
+			{
+				// Full screen; the prompt draws itself low in the middle
+				InteractPromptWidget->AddToViewport(3);
+			}
+			GetWorldTimerManager().SetTimer(PromptTimer, this, &ThisClass::UpdateInteractPrompt, 0.15f, true, 0.3f);
+		}
+		if (UBeyondDialogueSubsystem* Dialogue = UBeyondDialogueSubsystem::Get(this))
+		{
+			Dialogue->OnConversationStarted.AddUniqueDynamic(this, &ThisClass::HandleConversationStarted);
+			Dialogue->OnConversationEnded.AddUniqueDynamic(this, &ThisClass::HandleConversationEnded);
+		}
 	}
 
 	if (bDisableLevelScriptInput)
@@ -212,7 +238,149 @@ void ABeyondPlayerController::Input_Swap()
 
 void ABeyondPlayerController::Input_Interact()
 {
-	PickUpNearestLoot();
+	// Talking wins over loot at the NPC's feet
+	if (!TalkTo())
+	{
+		PickUpNearestLoot();
+	}
+	UpdateInteractPrompt();
+}
+
+bool ABeyondPlayerController::IsFightNearby() const
+{
+	const APawn* Leader = GetPawn();
+	const UBeyondEnemySubsystem* Enemies = UBeyondEnemySubsystem::Get(this);
+	if (!Leader || !Enemies)
+	{
+		return false;
+	}
+	const float RadiusSq = FMath::Square(GetDefault<UBeyondDialogueSettings>()->CombatRadius);
+	for (const ABeyondEnemyCharacter* Enemy : Enemies->GetLiveEnemies())
+	{
+		const ABeyondEnemyController* Brain = Enemy ? Cast<ABeyondEnemyController>(Enemy->GetController()) : nullptr;
+		if (Brain && Brain->GetAIState() == EBeyondEnemyAIState::Combat
+			&& FVector::DistSquared(Enemy->GetActorLocation(), Leader->GetActorLocation()) <= RadiusSq)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+ABeyondNPCCharacter* ABeyondPlayerController::FindTalkTarget() const
+{
+	const APawn* Leader = GetPawn();
+	const UBeyondDialogueSubsystem* Dialogue = UBeyondDialogueSubsystem::Get(this);
+	if (!Leader || !Dialogue || Dialogue->IsTalking() || UBeyondCombatLibrary::IsActorDead(Leader) || IsFightNearby())
+	{
+		return nullptr;
+	}
+
+	const UBeyondDialogueSettings* Settings = GetDefault<UBeyondDialogueSettings>();
+	const FVector From = Leader->GetActorLocation();
+	const FVector Facing = Leader->GetActorForwardVector().GetSafeNormal2D();
+	const float MinDot = FMath::Cos(FMath::DegreesToRadians(Settings->TalkAngle));
+	const float LeaderRadius = Leader->GetSimpleCollisionRadius();
+
+	ABeyondNPCCharacter* Best = nullptr;
+	float BestDistance = TNumericLimits<float>::Max();
+	for (TActorIterator<ABeyondNPCCharacter> It(GetWorld()); It; ++It)
+	{
+		ABeyondNPCCharacter* NPC = *It;
+		const FVector ToNPC = (NPC->GetActorLocation() - From) * FVector(1.0f, 1.0f, 0.0f);
+		const float Distance = ToNPC.Size() - LeaderRadius - NPC->GetSimpleCollisionRadius();
+		if (Distance > Settings->TalkRange || FMath::Abs(NPC->GetActorLocation().Z - From.Z) > 200.0f)
+		{
+			continue;
+		}
+		// Right next to it, any side will do
+		if (Distance > 40.0f && FVector::DotProduct(Facing, ToNPC.GetSafeNormal()) < MinDot)
+		{
+			continue;
+		}
+		if (Distance < BestDistance && NPC->CanTalkNow())
+		{
+			Best = NPC;
+			BestDistance = Distance;
+		}
+	}
+	return Best;
+}
+
+bool ABeyondPlayerController::TalkTo(ABeyondNPCCharacter* NPC)
+{
+	if (!NPC)
+	{
+		NPC = FindTalkTarget();
+	}
+	ACharacter* Leader = Cast<ACharacter>(GetPawn());
+	if (!NPC || !Leader || IsSkillTreeOpen() || IsInventoryOpen())
+	{
+		return false;
+	}
+	return NPC->TalkTo(Leader);
+}
+
+void ABeyondPlayerController::HandleConversationStarted(AActor* Speaker, AActor* Partner, FName StartRow)
+{
+	const UBeyondDialogueSubsystem* Dialogue = UBeyondDialogueSubsystem::Get(this);
+	if (!bHideHUDWhileTalking || !Dialogue || !Dialogue->IsTalking())
+	{
+		return;
+	}
+	UpdateInteractPrompt();
+	for (UUserWidget* Widget : { HUDWidget.Get(), BondWidget.Get(), ProgressWidget.Get(), CrosshairWidget.Get(), EnemyPlatesWidget.Get(), BossBarWidget.Get() })
+	{
+		const bool bAlreadyHidden = HiddenForTalk.ContainsByPredicate([Widget](const TPair<TWeakObjectPtr<UUserWidget>, ESlateVisibility>& Entry)
+		{
+			return Entry.Key.Get() == Widget;
+		});
+		if (Widget && !bAlreadyHidden && Widget->GetVisibility() != ESlateVisibility::Collapsed && Widget->GetVisibility() != ESlateVisibility::Hidden)
+		{
+			HiddenForTalk.Emplace(Widget, Widget->GetVisibility());
+			Widget->SetVisibility(ESlateVisibility::Collapsed);
+		}
+	}
+}
+
+void ABeyondPlayerController::HandleConversationEnded(AActor* Speaker, AActor* Partner, FName StartRow)
+{
+	for (const TPair<TWeakObjectPtr<UUserWidget>, ESlateVisibility>& Entry : HiddenForTalk)
+	{
+		if (UUserWidget* Widget = Entry.Key.Get())
+		{
+			Widget->SetVisibility(Entry.Value);
+		}
+	}
+	HiddenForTalk.Reset();
+	UpdateCrosshair();
+}
+
+void ABeyondPlayerController::UpdateInteractPrompt()
+{
+	UBeyondInteractPromptWidget* Prompt = Cast<UBeyondInteractPromptWidget>(InteractPromptWidget);
+	if (!Prompt)
+	{
+		return;
+	}
+
+	const UBeyondDialogueSubsystem* Dialogue = UBeyondDialogueSubsystem::Get(this);
+	if ((Dialogue && Dialogue->IsTalking()) || IsSkillTreeOpen() || IsInventoryOpen())
+	{
+		Prompt->SetPrompt(FText::GetEmpty(), FText::GetEmpty());
+		return;
+	}
+	if (const ABeyondNPCCharacter* NPC = FindTalkTarget())
+	{
+		Prompt->SetPrompt(LOCTEXT("PromptTalk", "Talk"), NPC->GetNPCName());
+		return;
+	}
+	if (FindPickupTarget())
+	{
+		Prompt->SetPrompt(LOCTEXT("PromptPickUp", "Pick up"), FText::GetEmpty());
+		return;
+	}
+	Prompt->SetPrompt(FText::GetEmpty(), FText::GetEmpty());
 }
 
 ABeyondLootDrop* ABeyondPlayerController::FindPickupTarget() const
@@ -631,7 +799,9 @@ void ABeyondPlayerController::UpdateCrosshair()
 
 	const ABeyondCharacterBase* Leader = Cast<ABeyondCharacterBase>(GetPawn());
 	const UBeyondAimComponent* Aim = Leader ? Leader->GetAimComponent() : nullptr;
-	const bool bShow = Aim && Aim->ShouldShowCrosshair();
+	const UBeyondDialogueSubsystem* Dialogue = UBeyondDialogueSubsystem::Get(this);
+	const bool bTalking = bHideHUDWhileTalking && Dialogue && Dialogue->IsTalking();
+	const bool bShow = Aim && Aim->ShouldShowCrosshair() && !bTalking;
 	const ESlateVisibility Wanted = bShow ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed;
 	if (CrosshairWidget->GetVisibility() != Wanted)
 	{

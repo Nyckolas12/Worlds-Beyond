@@ -47,9 +47,9 @@ public:
 	static constexpr int32 UserIndex = 0;
 
 	// 1: levels (Plan 1A); 2: skill trees, Bond Points, duo loadout (Plan 1B); 3: inventory and equipment (Plan 2);
-	// 4: defeated story bosses (Plan 3)
+	// 4: defeated story bosses (Plan 3); 5: story flags (Plan 4)
 	UPROPERTY(SaveGame, BlueprintReadOnly, Category = "Save")
-	int32 Version = 4;
+	int32 Version = 5;
 
 	// Keyed by the demigod's class name (BP_Angel_C, BP_Ji-Woong_C)
 	UPROPERTY(SaveGame, BlueprintReadOnly, Category = "Save")
@@ -81,4 +81,8 @@ public:
 	// Story bosses the party has beaten (UBeyondBossDefinition::BossId)
 	UPROPERTY(SaveGame, BlueprintReadOnly, Category = "Save")
 	TArray<FName> DefeatedBosses;
+
+	// Story flags set by dialogue and boss victories (UBeyondPartyComponent::HasStoryFlag)
+	UPROPERTY(SaveGame, BlueprintReadOnly, Category = "Save")
+	TArray<FName> StoryFlags;
 };

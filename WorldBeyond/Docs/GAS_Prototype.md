@@ -49,7 +49,7 @@ one plan per system under [Plans/](Plans/).
 | **G** | The duo power in the **duo loadout** (Heaven's Judgment until you pick another in the duo tree) when the Bond meter is full | same |
 | Tab | Swap | Swap |
 | **K** | **Skill trees** (pauses the game) | same |
-| **F** | **Pick up** the loot you're standing at | same |
+| **F** | **Talk** to the villager in front of you, else **pick up** the loot you're standing at | same |
 | **I** | **Equipment & inventory** (pauses the game) | same |
 
 The Bond meter fills as the demigods deal and take damage, faster when both hit the same enemy.
@@ -272,6 +272,28 @@ Done earlier: TakeDamage routed into GAS, attack tokens, enemy heal, death handl
 - **The hero Blueprints:** the Paragon `*PlayerCharacter` Blueprints were reparented to `BeyondBossCharacter` (their
   anim Blueprints cast to them); backups are in `Saved/MigrationBackups/`. Boss montages use their **FullBody** slot.
 
+## Dialogue
+
+Plan 4, on the **Advanced Dialogue System** pack (`Content/DialogueSystem`); the full write-up is
+[Plans/04_Dialogue.md](Plans/04_Dialogue.md).
+
+- **Talking:** walk up to a villager and press **F** ("[F] Talk - Elder Maren" shows). Space, F, Enter or the
+  gamepad's A skip / advance; click a choice. No talking while an enemy near you is fighting.
+- **Village life:** villagers greet you when you walk up and chat over their heads while you're around.
+- **Banter:** Angel and Ji-Woong talk at the bottom of the screen while you play: entering a region (banter volumes),
+  low health in a fight, after a boss falls, standing idle, level-ups, revives. Tune it in *Project Settings → Game →
+  Worlds Beyond Dialogue*; `Beyond.Banter Idle` (or a line id) plays one now.
+- **Story flags** (saved): rows set them with *Special Event* `Flag.X` (`Unflag.X` clears); a boss falling sets
+  `Boss.<boss id>`. NPC conversations, chatter and banter check them. `Beyond.Flag X`, `Beyond.ListFlags`,
+  `Beyond.ResetFlags`.
+- **Add an NPC:** make a child of `/Game/WorldsBeyond/NPC/BP_NPC_Base` (or copy `BP_NPC_Elder`), set *NPC Id*, *Display
+  Name*, *NPC Mesh* / *NPC Anim Class*, its *Conversations* (start row + flags) and *Greet Rows*; place it. For chatter,
+  give one of a pair *Chatter* entries and set its *Chatter Partners* on the placed actor.
+- **Add lines:** rows in `DT_Dialogue` (face to face; chains via *Next Row*, choices via *Option*) or `DT_TextOverHead`
+  (over heads), or edit `Scripts/Migration/dialogue_content.py` and re-run pass 13. Banter: a free-movement row chain
+  plus an entry in `/Game/WorldsBeyond/Dialogue/DA_Banter`.
+- **Portraits:** speakers show a see-through placeholder; set real ones in `DT_Speakers`.
+
 ## Level checklist (`MAP_Demo_Main`)
 
 - Place a **BeyondCheckpoint** before each encounter (the arrow is the respawn point).
@@ -332,6 +354,11 @@ UnrealEditor-Cmd.exe WorldBeyond.uproject -ExecCmds="Automation RunTests WorldsB
   switched off again (it had dropped out of *Legacy Keys To Disable*); the duo moves' *Approach* (Ji-Woong's rush to the
   locked enemy: dash animations, golden trail, blink) and the TestArena arenas' *Party Rush* (the dash in before the
   walls rise). Needs the C++ build with `UBeyondRushComponent`. Report: `last_run_pass12.txt`.
+- `migrate_pass13.py` — pass 13 (Plan 4, dialogue): our rows from `dialogue_content.py` into the pack's `DT_Dialogue`,
+  `DT_TextOverHead` and `DT_Speakers` (only missing rows; `BEYOND_REWRITE_DIALOGUE=1` writes them all again), the
+  see-through placeholder portrait, F and Enter as skip keys, `BP_NPC_Base` (the pack's `BP_ExampleCharacter` reparented to
+  `BeyondNPCCharacter`) and seven villagers, `DA_Banter`, and the TestArena village corner with banter volumes (only
+  when the map has no NPCs; `BEYOND_REBUILD_VILLAGE=1` places it again). Report: `last_run_pass13.txt`.
 - `fit_outfits.py` — snug-fits the outfits (see *Clothing fit* below). Needs the **GeometryScripting** plugin, which
   `WorldBeyond.uproject` now enables (editor only).
 - All passes are idempotent and back up every asset they save to `Saved/MigrationBackups/<timestamp>/`; shared helpers live in
@@ -387,6 +414,10 @@ UnrealEditor-Cmd.exe WorldBeyond.uproject -ExecCmds="Automation RunTests WorldsB
   Glacierheart Rod, adds gone), Kael'thar's lava ring and pools (gone with him), Veyla's clones (no bar, 30 % damage),
   Gorehide's pack halving damage, an arena waking and sealing, darkness, the wipe reset, a beaten story boss staying
   beaten.
+- `WorldsBeyond.Prototype.Dialogue` — the pack wired up and the content linked up, F on the elder (face to face, a
+  choice setting `Quest_Gorehide`, follow-ups picked by flags, once-only lines), Ji-Woong talking after a swap,
+  greetings and chatter, banter (village volume, a talk ending it, cooldowns, first looks, idle, a boss falling, low
+  health), story flags in the save, `PlayAnimMontage` on the Body.
 - Every PIE test sets `Beyond.SaveProgress 0` while it runs and switches it back only once PIE has ended (the party
   saves when play ends), so your saved levels are never loaded or overwritten.
 - Also in the editor: *Tools → Test Automation*, filter WorldsBeyond.

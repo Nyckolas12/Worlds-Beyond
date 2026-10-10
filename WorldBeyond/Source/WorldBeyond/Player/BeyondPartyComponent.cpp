@@ -56,6 +56,46 @@ namespace
 			}
 		}));
 
+	FAutoConsoleCommandWithWorldAndArgs FlagCommand(
+		TEXT("Beyond.Flag"),
+		TEXT("Beyond.Flag <Name> [0|1]: set (default) or clear a story flag, e.g. Beyond.Flag Quest_Gorehide."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
+		{
+			UBeyondPartyComponent* Party = FindParty(World);
+			if (Party && !Args.IsEmpty())
+			{
+				Party->SetStoryFlag(FName(*Args[0]), Args.Num() < 2 || FCString::Atoi(*Args[1]) != 0);
+			}
+		}));
+
+	FAutoConsoleCommandWithWorld ListFlagsCommand(
+		TEXT("Beyond.ListFlags"),
+		TEXT("Log the party's story flags."),
+		FConsoleCommandWithWorldDelegate::CreateLambda([](UWorld* World)
+		{
+			if (const UBeyondPartyComponent* Party = FindParty(World))
+			{
+				TArray<FString> Names;
+				for (const FName& Flag : Party->GetStoryFlags())
+				{
+					Names.Add(Flag.ToString());
+				}
+				Names.Sort();
+				UE_LOG(LogBeyond, Display, TEXT("Story flags (%d): %s"), Names.Num(), *FString::Join(Names, TEXT(", ")));
+			}
+		}));
+
+	FAutoConsoleCommandWithWorld ResetFlagsCommand(
+		TEXT("Beyond.ResetFlags"),
+		TEXT("Clear every story flag (NPCs start their first conversations again, once-only banter comes back)."),
+		FConsoleCommandWithWorldDelegate::CreateLambda([](UWorld* World)
+		{
+			if (UBeyondPartyComponent* Party = FindParty(World))
+			{
+				Party->ResetStoryFlags();
+			}
+		}));
+
 	FAutoConsoleCommandWithWorld ResetProgressCommand(
 		TEXT("Beyond.ResetProgress"),
 		TEXT("Delete the saved party progress and put both demigods back to level 1."),
@@ -372,8 +412,9 @@ bool UBeyondPartyComponent::SaveProgress()
 	}
 
 	bSaveQueued = false;
-	Save->Version = 4;
+	Save->Version = 5;
 	Save->DefeatedBosses = DefeatedBosses.Array();
+	Save->StoryFlags = StoryFlags.Array();
 	Save->BondPoints = BondPoints;
 	Save->BondPointsLevel = BondPointsLevel;
 	if (const UBeyondDuoSkillTreeComponent* DuoTree = Cast<UBeyondDuoSkillTreeComponent>(GetDuoTree()))
@@ -448,6 +489,7 @@ bool UBeyondPartyComponent::LoadProgress()
 	bStarterKitGiven = Save->bStarterKitGiven;
 	UE_LOG(LogBeyond, Log, TEXT("Party: bag restored with %d items"), Save->Inventory.Num());
 	DefeatedBosses = TSet<FName>(Save->DefeatedBosses);
+	StoryFlags = TSet<FName>(Save->StoryFlags);
 	return true;
 }
 
@@ -467,10 +509,51 @@ void UBeyondPartyComponent::ResetDefeatedBosses()
 	SaveProgress();
 }
 
+bool UBeyondPartyComponent::HasStoryFlag(FName Flag) const
+{
+	if (Flag.IsNone())
+	{
+		return false;
+	}
+	if (StoryFlags.Contains(Flag))
+	{
+		return true;
+	}
+	// Story bosses beaten before flags existed
+	FString BossId;
+	return Flag.ToString().Split(TEXT("Boss."), nullptr, &BossId, ESearchCase::IgnoreCase) && DefeatedBosses.Contains(FName(*BossId));
+}
+
+void UBeyondPartyComponent::SetStoryFlag(FName Flag, bool bSet)
+{
+	if (Flag.IsNone() || StoryFlags.Contains(Flag) == bSet)
+	{
+		return;
+	}
+	if (bSet)
+	{
+		StoryFlags.Add(Flag);
+	}
+	else
+	{
+		StoryFlags.Remove(Flag);
+	}
+	UE_LOG(LogBeyond, Log, TEXT("Party: story flag %s %s"), *Flag.ToString(), bSet ? TEXT("set") : TEXT("cleared"));
+	OnStoryFlagChanged.Broadcast(Flag, bSet);
+	QueueSave();
+}
+
+void UBeyondPartyComponent::ResetStoryFlags()
+{
+	StoryFlags.Reset();
+	SaveProgress();
+}
+
 void UBeyondPartyComponent::ResetProgress()
 {
 	UGameplayStatics::DeleteGameInSlot(UBeyondSaveGame::SlotName, UBeyondSaveGame::UserIndex);
 	DefeatedBosses.Reset();
+	StoryFlags.Reset();
 	TGuardValue<bool> Restoring(bRestoringProgress, true);
 	for (ABeyondCharacterBase* Member : Members)
 	{

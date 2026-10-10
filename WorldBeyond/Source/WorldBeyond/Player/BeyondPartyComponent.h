@@ -17,6 +17,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FBeyondBondChangedSignature, float,
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FBeyondMemberLevelUpSignature, ABeyondCharacterBase*, Member, int32, NewLevel);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FBeyondExperienceAwardedSignature, ABeyondCharacterBase*, Victim, float, Experience);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FBeyondBondPointsChangedSignature, int32, BondPoints);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FBeyondStoryFlagChangedSignature, FName, Flag, bool, bSet);
 
 class UBeyondEquipmentComponent;
 class UBeyondInventoryComponent;
@@ -134,6 +135,26 @@ public:
 	// Every story boss back (console Beyond.ResetBosses)
 	UFUNCTION(BlueprintCallable, Category = "Party|Bosses")
 	void ResetDefeatedBosses();
+
+	/**
+	 * Story flags (Plan 4, saved): set by dialogue rows (Special Event Flag.X), checked by NPC conversations, chatter and
+	 * banter. Boss.<BossId> is raised when a boss falls and also answers for story bosses beaten in older saves.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Party|Story")
+	bool HasStoryFlag(FName Flag) const;
+
+	UFUNCTION(BlueprintCallable, Category = "Party|Story")
+	void SetStoryFlag(FName Flag, bool bSet = true);
+
+	UFUNCTION(BlueprintPure, Category = "Party|Story")
+	TArray<FName> GetStoryFlags() const { return StoryFlags.Array(); }
+
+	// Clears every flag (console Beyond.ResetFlags)
+	UFUNCTION(BlueprintCallable, Category = "Party|Story")
+	void ResetStoryFlags();
+
+	UPROPERTY(BlueprintAssignable, Category = "Party|Story")
+	FBeyondStoryFlagChangedSignature OnStoryFlagChanged;
 
 	// Defeated enemies drop loot (UBeyondLootSettings rules plus their Guaranteed Loot)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Party|Items")
@@ -294,6 +315,7 @@ private:
 	int32 BondPointsLevel = 0;
 	bool bStarterKitGiven = false;
 	TSet<FName> DefeatedBosses;
+	TSet<FName> StoryFlags;
 	bool bSaveQueued = false;
 	float BondGainMultiplier = 1.0f;
 	float BondEchoFraction = 0.0f;
