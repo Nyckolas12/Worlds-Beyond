@@ -34,6 +34,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Companion")
 	bool IsHoldingForCutscene() const { return bHoldingForCutscene; }
 
+	// Forget targets and attackers and stop (after being moved, e.g. pulled into a boss arena); it picks again next think
+	UFUNCTION(BlueprintCallable, Category = "Companion")
+	void ResetEngagement();
+
 	// Seconds between decisions
 	UPROPERTY(EditDefaultsOnly, Category = "Companion", meta = (ClampMin = "0.05"))
 	float ThinkInterval = 0.2f;
@@ -73,6 +77,8 @@ protected:
 	AActor* PickTarget() const;
 	void FollowLeader();
 	void FaceActor(const AActor* Target) const;
+	// Point, pulled inside the boss arena the leader is sealed in (unchanged outside one)
+	FVector KeepInLeadersArena(const FVector& Point) const;
 
 	UFUNCTION()
 	void HandleLeaderHitTaken(ABeyondCharacterBase* HitCharacter, AActor* DamageInstigator, float Damage, FGameplayTag HitResponse);

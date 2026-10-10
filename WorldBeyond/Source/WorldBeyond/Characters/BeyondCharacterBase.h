@@ -96,6 +96,9 @@ public:
 
 	void InitializeAttributeSet();
 
+	// Leaves the ability system exactly one UCharacterAttributeSet and points AttributeSet at it (see the .cpp)
+	void ResolveAttributeSet();
+
 	// Name shown on the HUD (level-up banner); empty uses the class name without "BP_"
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Character")
 	FText DisplayName;

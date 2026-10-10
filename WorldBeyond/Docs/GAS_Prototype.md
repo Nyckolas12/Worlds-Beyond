@@ -326,10 +326,12 @@ UnrealEditor-Cmd.exe WorldBeyond.uproject -ExecCmds="Automation RunTests WorldsB
   makes `BP_Boss_*`, FullBody boss montages, boss abilities and phase sets, the four boss definitions (added to the
   roster), four signature weapons (added to `DA_ItemDatabase`) and four arenas in the test arena. Data is only created
   when missing (`BEYOND_REBUILD_BOSSES=1` rebuilds it); arenas only when the map has none. Report: `last_run_pass11.txt`.
-- `migrate_pass12.py` — pass 12 (Plan 3 playtest fixes): the demigods' hit voice cues (`Angel_hitReact`,
-  `JI-Woong_HitReact`, played by `BP_Angel` / `BP_Ji-Woong` on every hit) share `SC_Beyond_HitVoice`: one hit line at a
-  time for the party, never cut off, none within 4 s of the last (*Retrigger Time*); Ji-Woong's old Blueprint LMB event
-  is switched off again (it had dropped out of *Legacy Keys To Disable*). Report: `last_run_pass12.txt`.
+- `migrate_pass12.py` — pass 12 (Plan 3 playtest fixes): each demigod's hit voice cue (`Angel_hitReact`,
+  `JI-Woong_HitReact`, played by `BP_Angel` / `BP_Ji-Woong` on every hit) gets its own concurrency: one line at a time,
+  never cut off, none within 4 s of that demigod's last (*Retrigger Time*); Ji-Woong's old Blueprint LMB event is
+  switched off again (it had dropped out of *Legacy Keys To Disable*); the duo moves' *Approach* (Ji-Woong's rush to the
+  locked enemy: dash animations, golden trail, blink) and the TestArena arenas' *Party Rush* (the dash in before the
+  walls rise). Needs the C++ build with `UBeyondRushComponent`. Report: `last_run_pass12.txt`.
 - `fit_outfits.py` — snug-fits the outfits (see *Clothing fit* below). Needs the **GeometryScripting** plugin, which
   `WorldBeyond.uproject` now enables (editor only).
 - All passes are idempotent and back up every asset they save to `Saved/MigrationBackups/<timestamp>/`; shared helpers live in

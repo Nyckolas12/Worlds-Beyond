@@ -93,15 +93,39 @@ Decisions made on the way:
 - All PIE tests now switch saving back on only after PIE has ended (before, the party's end-of-play save could
   write the save slot).
 
-### Playtest fixes (pass 12)
+### Playtest fixes (pass 12 + C++)
 - **Hit voice spam:** `BP_Angel` / `BP_Ji-Woong` play their hit cue (`PlaySound2D`) on every `OnDamageResponse`, and the
-  cues had default concurrency (16 at once, no retrigger), so a wolf pack or a multi-hit attack stacked lines. Both
-  cues now use `/Game/WorldsBeyond/Sounds/SC_Beyond_HitVoice`: 1 voice for the party, *Prevent New* (a line is never cut
-  off), *Retrigger Time* 4 s. No graph edit; tune it in the asset. The Enemies test checks it. Note: new concurrency
-  assets in 5.8 enable *MaxCount platform scaling*, which ignores *Max Count*; the pass turns it off.
+  cues had default concurrency (16 at once, no retrigger), so a wolf pack or a multi-hit attack stacked lines. Each cue
+  now has its **own** concurrency override: 1 voice, *Prevent New* (a line is never cut off), *Retrigger Time* 4 s, so
+  each demigod speaks at most once per 4 s. No graph edit; tune it on the cue (*Concurrency > Override*). The Enemies test
+  checks it. (A first version shared one group between both cues, so the buddy's lines silenced the player's; removed.)
+  New concurrency settings in 5.8 enable *MaxCount platform scaling*, which ignores *Max Count*; the pass turns it off.
+- **Angel had no hit reactions, and her level reset every session:** `BP_Angel` still carried a copy of the character
+  attribute set from before the C++ subobject was renamed (`BasicAttributeSet`). Her ability system held both; GAS used
+  the real one (damage, level-ups), while `AttributeSet`, the set C++ listens to for hits and reads for the level, was
+  the stale copy. So her hits never reached `HandleAttributeHitTaken` (no `OnDamageResponse`: no hit voice, no
+  stagger), and the save wrote level 1. `ABeyondCharacterBase::ResolveAttributeSet` now keeps exactly one set and points
+  `AttributeSet` at it (logged when it fixes something). Her saved level stays 1 until she earns it again. The Bosses
+  test checks each demigod has one set, the one GAS uses, with its hit handler bound.
 - **Ji-Woong's LMB ran two combos:** `BP_Ji-Woong` had lost Left Mouse Button from *Legacy Keys To Disable* (pass 4 set
   it; it was already gone when pass 9 added F), so LMB fired the GAS sword combo *and* the old Blueprint combo with its
   voice line on every press. Pass 12 switches LMB (and F) off again.
+- **The buddy was left outside a boss ring:** the fight started (and the walls rose) as soon as either demigod crossed
+  `EngageRadius`. Now `Engage` first brings every demigod still outside the ring in: they **dash in** (dash animation,
+  `UBeyondRushComponent`), blink if further than 1500 uu or blocked, and a fallen one's body is carried in so it can be
+  revived; the walls rise once they're all in (at most `PullTimeout` 1.2 s). The companion forgets targets outside the
+  sealed ring and its follow / regroup points stay inside it. Tune it on each arena (*Arena > Party*). The Bosses test
+  covers the leader walking in, and the buddy walking in while the leader hangs back.
+- **The duo move missed when Ji-Woong was away from the enemy:** it had no target; the lightning and the shockwave were
+  centred on Ji-Woong wherever he stood. Now it locks an enemy when it starts (crosshair target, else a boss, else the
+  buddy's target, else the nearest within 2500 uu of the leader); the lightning strikes around it; after the charge
+  beside Angel, Ji-Woong **rushes** to it (dash begin / loop animations, golden trail, a blink if blocked) and slams; the
+  locked enemy always takes the full blow. All three duo powers share this. The Bosses test runs it from Angel with
+  Ji-Woong 1800 uu from the enemy.
+
+`UBeyondRushComponent` (`Characters/`) is the shared mover: a root-motion move-to force on the moved character's own
+movement component (an ability task would move the ability's avatar, i.e. Angel), pass-through and invincible like
+`UBeyondGA_Dash`, following a moving target, blinking the rest of the way when stuck or out of time.
 
 ### Test fixes (the suite was red before Plan 3)
 - **Items** (failed only in some runs): `UBeyondEquipmentComponent` kept world times in floats. `GetTimeSeconds()` is a

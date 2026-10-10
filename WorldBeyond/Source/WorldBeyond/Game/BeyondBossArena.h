@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "AbilitySystem/BeyondFX.h"
+#include "Characters/BeyondRushComponent.h"
 #include "BeyondBossArena.generated.h"
 
 class ABeyondBossCharacter;
@@ -31,6 +32,8 @@ enum class EBeyondArenaState : uint8
  * see UBeyondPartyComponent::IsBossDefeated), wakes it and seals the arena when a demigod comes within Engage Radius,
  * gives hazards their centre and radius, darkens for a Darkness twist, and resets everything when the party wipes
  * (boss back at full health in its first phase, adds and hazards gone, unsealed). Place a checkpoint at the entrance.
+ * When the fight starts, every demigod still outside the ring dashes in (blinks if far or blocked; a fallen one is
+ * carried in) and the walls rise once the whole party is inside, whichever demigod the player controls.
  */
 UCLASS()
 class WORLDBEYOND_API ABeyondBossArena : public AActor
@@ -71,6 +74,37 @@ public:
 	// After a party wipe, the boss comes back this long after it was removed
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Arena", meta = (ClampMin = "0"))
 	float RespawnDelay = 3.0f;
+
+	// When the fight starts, demigods outside the ring are brought in before the walls rise
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Arena|Party")
+	bool bPullPartyInside = true;
+
+	// How far inside the wall they end up
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Arena|Party", meta = (ClampMin = "0", EditCondition = "bPullPartyInside"))
+	float PullMargin = 150.0f;
+
+	// The walls rise after this long even if someone hasn't arrived (they blink the rest of the way)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Arena|Party", meta = (ClampMin = "0.1", EditCondition = "bPullPartyInside"))
+	float PullTimeout = 1.2f;
+
+	// The dash in (speed, animation, trail) and the blink used beyond Max Rush Distance
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Arena|Party", meta = (EditCondition = "bPullPartyInside"))
+	FBeyondRushSettings PartyRush;
+
+	// Location (2D) is inside the ring, Margin within the wall
+	UFUNCTION(BlueprintPure, Category = "Arena")
+	bool IsInside(const FVector& Location, float Margin = 0.0f) const;
+
+	// Point moved (2D) to within the ring, Margin within the wall
+	UFUNCTION(BlueprintPure, Category = "Arena")
+	FVector ClampInside(const FVector& Point, float Margin) const;
+
+	// The sealed arena Location is in, if any
+	static ABeyondBossArena* FindSealedArenaAt(const UWorld* World, const FVector& Location);
+
+	// Party members still on their way in (the walls are up once it's empty)
+	UFUNCTION(BlueprintPure, Category = "Arena")
+	int32 GetMembersComingIn() const { return Incoming.Num(); }
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Arena")
 	TObjectPtr<USceneComponent> BossSpawnPoint;
@@ -114,6 +148,15 @@ private:
 	void HandlePartyWiped();
 	bool IsBeaten() const;
 
+	TArray<ABeyondCharacterBase*> GetParty() const;
+	// Starts bringing everyone outside the ring in; false if nobody has to travel (seal right away)
+	bool PullPartyInside(AActor* Trigger);
+	FVector GetEntryPoint(const ABeyondCharacterBase* Member, const ABeyondCharacterBase* Anchor, int32 Index) const;
+	void HandleMemberArrived(ABeyondCharacterBase* Member);
+	// Anyone still on the way blinks in; then the walls rise
+	void FinishPull();
+	void CancelPull();
+
 	UFUNCTION()
 	void HandleBossKilled(ABeyondCharacterBase* Character, AActor* Killer);
 
@@ -132,8 +175,14 @@ private:
 	TWeakObjectPtr<ABeyondBossCharacter> SpawnedBoss;
 	EBeyondArenaState State = EBeyondArenaState::Dormant;
 	bool bSealed = false;
+	// Inside PullPartyInside: arrivals don't raise the walls yet
+	bool bStartingPull = false;
 	float Darkness = 0.0f;
 	FTimerHandle EngageTimer;
 	FTimerHandle RespawnTimer;
+	FTimerHandle PullTimer;
 	FDelegateHandle PartyWipedHandle;
+
+	// Members dashing in, and where to
+	TMap<TWeakObjectPtr<ABeyondCharacterBase>, FVector> Incoming;
 };

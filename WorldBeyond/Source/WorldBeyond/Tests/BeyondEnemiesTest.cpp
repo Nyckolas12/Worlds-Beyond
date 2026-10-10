@@ -248,7 +248,8 @@ bool FBeyondEnemiesTest::RunTest(const FString& Parameters)
 		SaveProgress->Set(TEXT("0"), ECVF_SetByCode);
 	}
 
-	// BP_Angel / BP_Ji-Woong play a hit voice on every hit: one at a time and a pause between lines (migrate_pass12.py)
+	// BP_Angel / BP_Ji-Woong play a hit voice on every hit: one at a time and a pause between lines, per demigod
+	// (migrate_pass12.py). Override settings group per sound, so one demigod's lines never silence the other's.
 	for (const TCHAR* VoicePath : { TEXT("/Game/WorldsBeyond/Sounds/Angel/Angel_hitReact.Angel_hitReact"),
 		TEXT("/Game/WorldsBeyond/Sounds/JI-Woong/JI-Woong_HitReact.JI-Woong_HitReact") })
 	{
@@ -257,13 +258,10 @@ bool FBeyondEnemiesTest::RunTest(const FString& Parameters)
 		{
 			continue;
 		}
-		const FSoundConcurrencySettings* VoiceConcurrency = Voice->bOverrideConcurrency ? &Voice->ConcurrencyOverrides : nullptr;
-		for (const USoundConcurrency* Concurrency : Voice->ConcurrencySet)
-		{
-			VoiceConcurrency = Concurrency ? &Concurrency->Concurrency : VoiceConcurrency;
-		}
+		TestTrue(FString::Printf(TEXT("%s has its own concurrency (not a group shared with the other demigod)"), *Voice->GetName()),
+			Voice->bOverrideConcurrency && Voice->ConcurrencySet.IsEmpty());
 		TestTrue(FString::Printf(TEXT("%s plays one at a time, at most every 2+ s"), *Voice->GetName()),
-			VoiceConcurrency && VoiceConcurrency->GetMaxCount() == 1 && VoiceConcurrency->RetriggerTime >= 2.0f);
+			Voice->ConcurrencyOverrides.GetMaxCount() == 1 && Voice->ConcurrencyOverrides.RetriggerTime >= 2.0f);
 	}
 
 	// The flat test arena from migrate_pass10.py: open ground with a navmesh

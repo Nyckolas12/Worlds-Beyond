@@ -4,6 +4,7 @@
 
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 
+#include "AbilitySystem/Abilities/BeyondGA_DuoStrike.h"
 #include "AbilitySystem/BeyondAreaStrike.h"
 #include "AbilitySystem/BeyondCombatLibrary.h"
 #include "AbilitySystemComponent.h"
@@ -14,6 +15,7 @@
 #include "Camera/CameraComponent.h"
 #include "CharacterAttributeSet.h"
 #include "Characters/BeyondCharacterBase.h"
+#include "Characters/BeyondRushComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Editor.h"
@@ -65,6 +67,7 @@ namespace BeyondBossesTest
 		TMap<FString, float> Numbers;
 		TWeakObjectPtr<ABeyondBossArena> Arena;
 		TWeakObjectPtr<ABeyondBossCharacter> FirstArenaBoss;
+		TWeakObjectPtr<ABeyondCharacterBase> DuoTarget;
 	};
 
 	UWorld* GetBossesPlayWorld()
@@ -522,9 +525,42 @@ bool FBeyondBossesTest::RunTest(const FString& Parameters)
 		const ABeyondEnemyController* AI = Cast<ABeyondEnemyController>(Boss->GetController());
 		T.TestTrue(TEXT("It waits (dormant) for the party"), Arena->GetArenaState() == EBeyondArenaState::Dormant && AI && !AI->IsBrainEnabled());
 		T.TestTrue(TEXT("The boss knows its arena"), Boss->GetArena() == Arena);
+
+		// Both demigods outside the ring: Angel just outside (she dashes in), Ji-Woong far out (he blinks in)
+		const FVector Centre = Arena->GetActorLocation();
+		Angel->SetActorLocation(Centre - State->Forward * (Arena->ArenaRadius + 250.0f) + FVector(0.0f, 0.0f, 5.0f), false, nullptr, ETeleportType::TeleportPhysics);
+		if (ABeyondCharacterBase* JiWoong = State->JiWoong.Get())
+		{
+			JiWoong->SetActorLocation(Centre - State->Forward * (Arena->ArenaRadius + 2000.0f) + FVector(0.0f, 0.0f, 5.0f), false, nullptr, ETeleportType::TeleportPhysics);
+		}
 		Arena->Engage(Angel);
-		T.TestTrue(TEXT("Engaged: fighting and sealed"), Arena->GetArenaState() == EBeyondArenaState::Fighting && Arena->IsSealed());
+		T.TestTrue(TEXT("Engaged: fighting"), Arena->GetArenaState() == EBeyondArenaState::Fighting);
 		T.TestTrue(TEXT("Engaged: the boss's brain is on"), AI && AI->IsBrainEnabled());
+		T.TestTrue(TEXT("The walls wait while Angel dashes in (Ji-Woong blinked)"), !Arena->IsSealed() && Arena->GetMembersComingIn() == 1
+			&& UBeyondRushComponent::FindRush(Angel) != nullptr);
+		return true;
+	}));
+	ADD_LATENT_AUTOMATION_COMMAND(FWaitLatentCommand(1.5f));
+	ADD_LATENT_AUTOMATION_COMMAND(FBeyondBossesStep([State]()
+	{
+		FAutomationTestBase& T = *State->Test;
+		ABeyondBossArena* Arena = State->Arena.Get();
+		ABeyondCharacterBase* Angel = State->Angel.Get();
+		ABeyondCharacterBase* JiWoong = State->JiWoong.Get();
+		if (!Arena || !Angel || !JiWoong)
+		{
+			return true;
+		}
+		T.TestTrue(TEXT("Sealed once everyone was in"), Arena->IsSealed() && Arena->GetMembersComingIn() == 0);
+		for (const ABeyondCharacterBase* Member : { Angel, JiWoong })
+		{
+			const float Radius = Member->GetCapsuleComponent()->GetScaledCapsuleRadius();
+			T.TestTrue(*FString::Printf(TEXT("%s is inside the ring (%.0f from the centre, ring %.0f)"), *Member->GetName(),
+				FVector::Dist2D(Member->GetActorLocation(), Arena->GetActorLocation()), Arena->ArenaRadius), Arena->IsInside(Member->GetActorLocation(), Radius));
+			T.TestTrue(*FString::Printf(TEXT("%s is back to normal after the dash in"), *Member->GetName()), !UBeyondRushComponent::FindRush(Member)
+				&& !HasBossTag(Member, BeyondTags::State_Dashing) && !Member->GetCharacterMovement()->HasRootMotionSources()
+				&& Member->GetCapsuleComponent()->GetCollisionResponseToChannel(ECC_Pawn) == ECR_Block);
+		}
 
 		// Darkness: Veyla's last phase darkens the arena she fights in
 		if (ABeyondBossCharacter* Veyla = SpawnTestBoss(*State, TEXT("boss_veyla"), 900.0f, 800.0f, 2))
@@ -536,7 +572,9 @@ bool FBeyondBossesTest::RunTest(const FString& Parameters)
 			T.TestEqual(TEXT("Darkness lifts when its boss is gone"), Arena->GetDarkness(), 0.0f);
 		}
 
-		// The party wipes
+		// The party wipes (and respawns back at the start, out of the arena)
+		Angel->SetActorLocation(State->Anchor, false, nullptr, ETeleportType::TeleportPhysics);
+		JiWoong->SetActorLocation(State->Anchor - State->Forward * 500.0f, false, nullptr, ETeleportType::TeleportPhysics);
 		if (UBeyondCombatSubsystem* Combat = UBeyondCombatSubsystem::Get(GetBossesPlayWorld()))
 		{
 			Combat->OnPartyWiped.Broadcast();
@@ -558,6 +596,33 @@ bool FBeyondBossesTest::RunTest(const FString& Parameters)
 		T.TestTrue(TEXT("Fresh: a new boss, full health, first phase"), Boss != State->FirstArenaBoss.Get()
 			&& FMath::IsNearlyEqual(UBeyondCombatLibrary::GetActorHealthPercent(Boss), 1.0f) && Boss->GetPhaseIndex() == 0);
 		State->Cleanup.Add(Boss);
+
+		// The buddy walks in first while the leader hangs back outside: the fight starts and the leader is brought in
+		ABeyondCharacterBase* Angel = State->Angel.Get();
+		ABeyondCharacterBase* JiWoong = State->JiWoong.Get();
+		if (Angel && JiWoong)
+		{
+			const FVector Centre = Arena->GetActorLocation();
+			JiWoong->SetActorLocation(Centre - State->Forward * (Arena->EngageRadius - 150.0f) + FVector(0.0f, 0.0f, 5.0f), false, nullptr, ETeleportType::TeleportPhysics);
+			Angel->SetActorLocation(Centre - State->Forward * (Arena->ArenaRadius + 300.0f) + FVector(0.0f, 0.0f, 5.0f), false, nullptr, ETeleportType::TeleportPhysics);
+		}
+		return true;
+	}));
+	ADD_LATENT_AUTOMATION_COMMAND(FWaitLatentCommand(1.8f));
+	ADD_LATENT_AUTOMATION_COMMAND(FBeyondBossesStep([State]()
+	{
+		FAutomationTestBase& T = *State->Test;
+		ABeyondBossArena* Arena = State->Arena.Get();
+		ABeyondBossCharacter* Boss = Arena ? Arena->GetBoss() : nullptr;
+		const ABeyondCharacterBase* Angel = State->Angel.Get();
+		if (!Arena || !Boss || !Angel)
+		{
+			return true;
+		}
+		T.TestTrue(TEXT("Ji-Woong walking in started the fight"), Arena->GetArenaState() == EBeyondArenaState::Fighting && Arena->IsSealed());
+		T.TestTrue(*FString::Printf(TEXT("The leader (Angel) was brought inside too (%.0f from the centre)"),
+			FVector::Dist2D(Angel->GetActorLocation(), Arena->GetActorLocation())),
+			Arena->IsInside(Angel->GetActorLocation(), Angel->GetCapsuleComponent()->GetScaledCapsuleRadius()));
 		// Down to the last phase, then the kill
 		Boss->ForcePhase(Boss->GetPhaseCount() - 1);
 		return true;
@@ -622,6 +687,146 @@ bool FBeyondBossesTest::RunTest(const FString& Parameters)
 		if (AController* Companion = State->CompanionController.Get(); Companion && JiWoong)
 		{
 			Companion->Possess(JiWoong);
+		}
+		return true;
+	}));
+
+	// The duo move with Ji-Woong (back on his companion AI) far from the enemy: Angel starts it, it locks onto the enemy,
+	// Ji-Woong charges beside her, rushes over and his slam lands on it
+	ADD_LATENT_AUTOMATION_COMMAND(FBeyondBossesStep([State]()
+	{
+		FAutomationTestBase& T = *State->Test;
+		ABeyondCharacterBase* Angel = State->Angel.Get();
+		ABeyondCharacterBase* JiWoong = State->JiWoong.Get();
+		const ABeyondPlayerController* PC = State->PC.Get();
+		UBeyondEnemySubsystem* Enemies = UBeyondEnemySubsystem::Get(GetBossesPlayWorld());
+		const UBeyondEnemyRoster* Roster = UBeyondEnemySettings::GetRoster();
+		UBeyondEnemyDefinition* Raider = Roster ? Roster->FindEnemy(TEXT("forest_raider")) : nullptr;
+		if (!Angel || !JiWoong || !PC || !Enemies || !T.TestNotNull(TEXT("Duo: a Raider in the roster"), Raider))
+		{
+			return true;
+		}
+		const FVector Right = FVector::CrossProduct(FVector::UpVector, State->Forward);
+		Angel->SetActorLocation(State->Anchor, false, nullptr, ETeleportType::TeleportPhysics);
+		JiWoong->SetActorLocation(State->Anchor + Right * 400.0f, false, nullptr, ETeleportType::TeleportPhysics);
+		ABeyondEnemyCharacter* Target = Enemies->SpawnEnemy(Raider, FTransform((-State->Forward).Rotation(), State->Anchor + State->Forward * 1800.0f),
+			FBeyondEnemySpawnParams());
+		if (!T.TestNotNull(TEXT("Duo: the target enemy spawned"), Target))
+		{
+			return true;
+		}
+		State->Cleanup.Add(Target);
+		State->DuoTarget = Target;
+		if (ABeyondEnemyController* AI = Cast<ABeyondEnemyController>(Target->GetController()))
+		{
+			AI->SetBrainEnabled(false);
+		}
+		if (UAbilitySystemComponent* TargetASC = Target->GetAbilitySystemComponent())
+		{
+			TargetASC->SetNumericAttributeBase(UCharacterAttributeSet::GetMaxHealthAttribute(), 100000.0f);
+			TargetASC->SetNumericAttributeBase(UCharacterAttributeSet::GetCurrentHealthAttribute(), 100000.0f);
+		}
+		T.TestTrue(TEXT("Duo: Ji-Woong starts far out of the shockwave's reach"), FVector::Dist2D(JiWoong->GetActorLocation(), Target->GetActorLocation()) > 1200.0f);
+
+		PC->PartyComponent->AddBond(1000.0f);
+		T.TestTrue(TEXT("Duo: Angel (the leader) starts it"), Angel->TryActivateAbilityByInputTag(BeyondTags::Ability_Input_Duo));
+		const UBeyondGA_DuoStrike* Duo = nullptr;
+		for (const FGameplayAbilitySpec& Spec : Angel->GetAbilitySystemComponent()->GetActivatableAbilities())
+		{
+			for (const UGameplayAbility* Instance : Spec.GetAbilityInstances())
+			{
+				if (const UBeyondGA_DuoStrike* Running = Cast<UBeyondGA_DuoStrike>(Instance); Running && Running->IsActive())
+				{
+					Duo = Running;
+				}
+			}
+		}
+		T.TestTrue(TEXT("Duo: it locks onto the enemy"), Duo && Duo->GetLockedTarget() == Target);
+		State->Numbers.Add(TEXT("DuoStart"), GetBossesPlayWorld()->GetTimeSeconds());
+		State->Numbers.Add(TEXT("DuoClosest"), TNumericLimits<float>::Max());
+		return true;
+	}));
+	// Until the move is over (afterwards his AI walks him back to Angel): how close did Ji-Woong get?
+	ADD_LATENT_AUTOMATION_COMMAND(FBeyondBossesStep([State]()
+	{
+		const ABeyondCharacterBase* JiWoong = State->JiWoong.Get();
+		const ABeyondCharacterBase* Target = State->DuoTarget.Get();
+		const UWorld* World = GetBossesPlayWorld();
+		if (!JiWoong || !Target || !World)
+		{
+			return true;
+		}
+		float& Closest = State->Numbers.FindOrAdd(TEXT("DuoClosest"));
+		Closest = FMath::Min(Closest, static_cast<float>(FVector::Dist2D(JiWoong->GetActorLocation(), Target->GetActorLocation())));
+		const float Elapsed = World->GetTimeSeconds() - State->Numbers.FindRef(TEXT("DuoStart"));
+		return (Elapsed > 1.0f && !HasBossTag(JiWoong, BeyondTags::State_Duo)) || Elapsed > 9.0f;
+	}));
+	ADD_LATENT_AUTOMATION_COMMAND(FBeyondBossesStep([State]()
+	{
+		FAutomationTestBase& T = *State->Test;
+		const ABeyondCharacterBase* Angel = State->Angel.Get();
+		const ABeyondCharacterBase* JiWoong = State->JiWoong.Get();
+		ABeyondCharacterBase* Target = State->DuoTarget.Get();
+		if (!Angel || !JiWoong || !Target)
+		{
+			return true;
+		}
+		T.TestTrue(*FString::Printf(TEXT("Duo: the final blow landed (%.0f damage)"), 100000.0f - UBeyondCombatLibrary::GetActorHealth(Target)),
+			UBeyondCombatLibrary::GetActorHealth(Target) < 100000.0f - 50.0f);
+		const float Reach = JiWoong->GetCapsuleComponent()->GetScaledCapsuleRadius() + Target->GetCapsuleComponent()->GetScaledCapsuleRadius() + 400.0f;
+		const float Closest = State->Numbers.FindRef(TEXT("DuoClosest"));
+		T.TestTrue(*FString::Printf(TEXT("Duo: Ji-Woong rushed to the enemy (closest %.0f, reach %.0f)"), Closest, Reach), Closest <= Reach);
+		for (const ABeyondCharacterBase* Member : { Angel, JiWoong })
+		{
+			T.TestTrue(*FString::Printf(TEXT("Duo: %s is back to normal"), *Member->GetName()),
+				!HasBossTag(Member, BeyondTags::State_Duo) && !HasBossTag(Member, BeyondTags::State_Invincible) && !HasBossTag(Member, BeyondTags::State_Dashing)
+				&& !UBeyondRushComponent::FindRush(Member) && !Member->GetCharacterMovement()->HasRootMotionSources()
+				&& Member->GetCapsuleComponent()->GetCollisionResponseToChannel(ECC_Pawn) == ECR_Block);
+		}
+		ClearBossesTest(*State);
+		return true;
+	}));
+
+	// Each demigod has one character attribute set, the one GAS uses, so the level it shows (and saves) is its Level
+	// attribute and its hits reach its handlers (BP_Angel carried a stale second set: level stuck at 1, no hit reactions)
+	ADD_LATENT_AUTOMATION_COMMAND(FBeyondBossesStep([State]()
+	{
+		FAutomationTestBase& T = *State->Test;
+		const ABeyondPlayerController* PC = State->PC.Get();
+		if (!PC)
+		{
+			return true;
+		}
+		const ABeyondCharacterBase* Leader = PC->PartyComponent->GetLeader();
+		PC->PartyComponent->AwardExperience(Leader ? Leader->GetExperienceToNextLevel() + 1.0f : 1000.0f);
+		for (const ABeyondCharacterBase* Member : PC->PartyComponent->GetMembers())
+		{
+			const UAbilitySystemComponent* ASC = Member ? Member->GetAbilitySystemComponent() : nullptr;
+			if (!ASC)
+			{
+				continue;
+			}
+			int32 CharacterSets = 0;
+			TArray<FString> SetInfo;
+			for (const UAttributeSet* Set : ASC->GetSpawnedAttributes())
+			{
+				if (const UCharacterAttributeSet* CharacterSet = Cast<UCharacterAttributeSet>(Set))
+				{
+					++CharacterSets;
+					SetInfo.Add(FString::Printf(TEXT("%s level %.0f health %.0f hit-bound %d%s"), *CharacterSet->GetName(), CharacterSet->GetLevel(),
+						CharacterSet->GetCurrentHealth(), CharacterSet->OnHitTaken.IsBound(), CharacterSet == ASC->GetSet<UCharacterAttributeSet>() ? TEXT(" [ASC]") : TEXT("")));
+				}
+			}
+			const float Base = ASC->GetNumericAttributeBase(UCharacterAttributeSet::GetLevelAttribute());
+			const float Current = ASC->GetNumericAttribute(UCharacterAttributeSet::GetLevelAttribute());
+			const FString Sets = FString::Printf(TEXT("%d set(s): %s; Attribute Set %s"), CharacterSets, *FString::Join(SetInfo, TEXT(" | ")),
+				*GetNameSafe(Member->AttributeSet));
+			const UCharacterAttributeSet* Used = ASC->GetSet<UCharacterAttributeSet>();
+			T.TestTrue(*FString::Printf(TEXT("%s: one character attribute set, the one GAS uses, with its hit handler bound (%s)"), *Member->GetName(), *Sets),
+				CharacterSets == 1 && Used && Member->AttributeSet == Used && Used->OnHitTaken.IsBound());
+			T.TestEqual(*FString::Printf(TEXT("%s: its level is its Level attribute (base %.0f, current %.0f)"), *Member->GetName(), Base, Current),
+				Member->GetCharacterLevel(), FMath::RoundToInt(Base));
+			T.TestTrue(*FString::Printf(TEXT("%s: levelled up past 1"), *Member->GetName()), Base > 1.0f);
 		}
 		return true;
 	}));
