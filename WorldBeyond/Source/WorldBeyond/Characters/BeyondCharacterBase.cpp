@@ -25,6 +25,8 @@
 #include "Progression/BeyondProgressionAttributeSet.h"
 #include "Progression/BeyondSkillTreeComponent.h"
 #include "Items/BeyondEquipmentComponent.h"
+#include "Dialogue/BeyondDialogueBridge.h"
+#include "Dialogue/BeyondDialogueSettings.h"
 #include "WorldBeyond.h"
 
 // Sets default values
@@ -58,6 +60,12 @@ void ABeyondCharacterBase::BeginPlay()
 	// Before Super so Blueprint BeginPlay already sees attributes and abilities
 	InitAbilitySystem();
 	CreateAimComponent();
+
+	// The dialogue pack's parts (over-head text, focus camera, conversations); their BeginPlay runs with ours
+	if (TeamAffiliation == EBeyondTeam::Player && GetDefault<UBeyondDialogueSettings>()->bGivePartyDialogueComponents)
+	{
+		BeyondDialogue::EnsureParticipant(this, true);
+	}
 	Super::BeginPlay();
 
 	// Blueprint BeginPlay may have granted abilities this character has replaced
@@ -131,6 +139,23 @@ void ABeyondCharacterBase::StopAnimMontage(UAnimMontage* AnimMontage)
 	{
 		AnimInstance->Montage_Stop(AnimMontage->BlendOut.GetBlendTime(), AnimMontage);
 	}
+}
+
+float ABeyondCharacterBase::PlayAnimMontage(UAnimMontage* AnimMontage, float InPlayRate, FName StartSectionName)
+{
+	const USkeletalMeshComponent* CombatMesh = GetCombatMesh();
+	UAnimInstance* AnimInstance = CombatMesh ? CombatMesh->GetAnimInstance() : nullptr;
+	if (!AnimMontage || !AnimInstance)
+	{
+		return Super::PlayAnimMontage(AnimMontage, InPlayRate, StartSectionName);
+	}
+
+	const float Duration = AnimInstance->Montage_Play(AnimMontage, InPlayRate);
+	if (Duration > 0.0f && StartSectionName != NAME_None)
+	{
+		AnimInstance->Montage_JumpToSection(StartSectionName, AnimMontage);
+	}
+	return Duration;
 }
 
 void ABeyondCharacterBase::UseCombatMeshForAbilities()

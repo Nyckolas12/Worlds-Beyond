@@ -11,6 +11,6 @@ public class WorldBeyondEditorTarget : TargetRules
 		DefaultBuildSettings = BuildSettingsVersion.Latest;
 		IncludeOrderVersion = EngineIncludeOrderVersion.Latest;
 
-		ExtraModuleNames.AddRange( new string[] { "WorldBeyond" } );
+		ExtraModuleNames.AddRange( new string[] { "WorldBeyond", "WorldBeyondEditor" } );
 	}
 }

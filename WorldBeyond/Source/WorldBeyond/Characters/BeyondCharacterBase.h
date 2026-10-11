@@ -206,6 +206,10 @@ public:
 	 */
 	virtual void StopAnimMontage(UAnimMontage* AnimMontage = nullptr) override;
 
+	// Same for playing: the engine version plays on the empty CharacterMesh0 of the MetaHumans (the dialogue pack's
+	// DialogueAnim rows use it)
+	virtual float PlayAnimMontage(UAnimMontage* AnimMontage, float InPlayRate = 1.0f, FName StartSectionName = NAME_None) override;
+
 	/**
 	 * Montage this character plays when one of these (Blueprint) abilities activates, e.g. Angel: GA_HealSpell -> AM_Heal.
 	 * Lets a shared ability look and sound different per demigod; abilities with their own montage ignore it.

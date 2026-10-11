@@ -636,6 +636,15 @@ FReply UBeyondInventoryWidget::NativeOnKeyDown(const FGeometry& InGeometry, cons
 		}
 		return FReply::Handled();
 	}
+	if (Key == EKeys::M)
+	{
+		// ...or the world map
+		if (ABeyondPlayerController* PC = Cast<ABeyondPlayerController>(GetOwningPlayer()))
+		{
+			PC->OpenWorldMap();
+		}
+		return FReply::Handled();
+	}
 	if (Key == EKeys::Q || Key == EKeys::Left || Key == EKeys::Gamepad_LeftShoulder)
 	{
 		CycleTab(-1);

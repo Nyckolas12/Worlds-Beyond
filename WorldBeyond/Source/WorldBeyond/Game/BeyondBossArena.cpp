@@ -21,6 +21,7 @@
 #include "Player/BeyondPartyComponent.h"
 #include "Player/BeyondPlayerController.h"
 #include "TimerManager.h"
+#include "World/BeyondWorldSubsystem.h"
 
 namespace
 {
@@ -36,6 +37,7 @@ namespace
 ABeyondBossArena::ABeyondBossArena()
 {
 	PrimaryActorTick.bCanEverTick = false;
+	bIsSpatiallyLoaded = false;
 	SetRootComponent(CreateDefaultSubobject<USceneComponent>(TEXT("Root")));
 
 	PartyRush.Speed = 2400.0f;
@@ -77,9 +79,17 @@ void ABeyondBossArena::BeginPlay()
 		PartyWipedHandle = Combat->OnPartyWiped.AddUObject(this, &ThisClass::HandlePartyWiped);
 	}
 
+	if (UBeyondWorldSubsystem* WorldSubsystem = UBeyondWorldSubsystem::Get(this))
+	{
+		WorldSubsystem->RegisterArena(this);
+	}
+
 	// After the party has formed and loaded its save (which says whether this boss is already beaten)
-	FTimerHandle Start;
-	GetWorldTimerManager().SetTimer(Start, this, &ThisClass::SpawnBoss, 0.5f, false);
+	if (BossSpawnRadius <= 0.0f)
+	{
+		FTimerHandle Start;
+		GetWorldTimerManager().SetTimer(Start, this, &ThisClass::SpawnBoss, 0.5f, false);
+	}
 	GetWorldTimerManager().SetTimer(EngageTimer, this, &ThisClass::CheckEngage, 0.25f, true, 0.75f);
 }
 
@@ -89,7 +99,17 @@ void ABeyondBossArena::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	{
 		Combat->OnPartyWiped.Remove(PartyWipedHandle);
 	}
+	if (UBeyondWorldSubsystem* WorldSubsystem = UBeyondWorldSubsystem::Get(this))
+	{
+		WorldSubsystem->UnregisterArena(this);
+	}
 	CancelPull();
+	// A boss nobody is fighting doesn't outlive its arena (it would be spawned twice if the arena came back)
+	if (ABeyondBossCharacter* BossCharacter = SpawnedBoss.Get(); BossCharacter && State == EBeyondArenaState::Dormant)
+	{
+		BossCharacter->Destroy();
+		SpawnedBoss.Reset();
+	}
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -347,7 +367,54 @@ void ABeyondBossArena::CancelPull()
 bool ABeyondBossArena::IsBeaten() const
 {
 	const ABeyondPlayerController* PC = Cast<ABeyondPlayerController>(GetWorld()->GetFirstPlayerController());
-	return Boss && Boss->bStoryBoss && PC && PC->PartyComponent && PC->PartyComponent->IsBossDefeated(Boss->BossId);
+	if (!Boss || !PC || !PC->PartyComponent)
+	{
+		return false;
+	}
+	if (Boss->bStoryBoss && PC->PartyComponent->IsBossDefeated(Boss->BossId))
+	{
+		return true;
+	}
+	return bRememberDefeat && PC->PartyComponent->HasStoryFlag(FName(*FString::Printf(TEXT("Boss.%s"), *Boss->BossId.ToString())));
+}
+
+bool ABeyondBossArena::IsDefeated() const
+{
+	return State == EBeyondArenaState::Defeated || IsBeaten();
+}
+
+void ABeyondBossArena::UpdateBossPresence(const TArray<ABeyondCharacterBase*>& Party)
+{
+	if (BossSpawnRadius <= 0.0f || !Boss || State != EBeyondArenaState::Dormant)
+	{
+		return;
+	}
+	float Nearest = TNumericLimits<float>::Max();
+	for (const ABeyondCharacterBase* Member : Party)
+	{
+		if (Member && !UBeyondCombatLibrary::IsActorDead(Member))
+		{
+			Nearest = FMath::Min(Nearest, static_cast<float>(FVector::Dist2D(Member->GetActorLocation(), GetActorLocation())));
+		}
+	}
+
+	ABeyondBossCharacter* BossCharacter = SpawnedBoss.Get();
+	const bool bBossHere = BossCharacter && !UBeyondCombatLibrary::IsActorDead(BossCharacter);
+	if (!bBossHere && Nearest <= BossSpawnRadius && !GetWorldTimerManager().IsTimerActive(RespawnTimer))
+	{
+		// Only once the ground under the spawn point has streamed in
+		FVector Ground;
+		if (UBeyondEnemySubsystem::FindGroundPoint(GetWorld(), BossSpawnPoint->GetComponentLocation(), Ground))
+		{
+			SpawnBoss();
+		}
+	}
+	else if (bBossHere && BossDespawnRadius > 0.0f && Nearest > FMath::Max(BossDespawnRadius, BossSpawnRadius))
+	{
+		UE_LOG(LogBeyond, Log, TEXT("Arena %s: the party is far; %s goes away until it returns"), *GetName(), *GetNameSafe(Boss));
+		BossCharacter->Destroy();
+		SpawnedBoss.Reset();
+	}
 }
 
 void ABeyondBossArena::SpawnBoss()
@@ -394,18 +461,20 @@ void ABeyondBossArena::SpawnBoss()
 
 void ABeyondBossArena::CheckEngage()
 {
+	const TArray<ABeyondCharacterBase*> Party = GetParty();
+	UpdateBossPresence(Party);
+
 	ABeyondBossCharacter* BossCharacter = SpawnedBoss.Get();
 	if (State != EBeyondArenaState::Dormant || !BossCharacter || UBeyondCombatLibrary::IsActorDead(BossCharacter))
 	{
 		return;
 	}
 
-	for (TActorIterator<ABeyondCharacterBase> It(GetWorld()); It; ++It)
+	for (ABeyondCharacterBase* Member : Party)
 	{
-		if (It->TeamAffiliation == EBeyondTeam::Player && !UBeyondCombatLibrary::IsActorDead(*It)
-			&& FVector::Dist2D(It->GetActorLocation(), GetActorLocation()) <= EngageRadius)
+		if (Member && !UBeyondCombatLibrary::IsActorDead(Member) && FVector::Dist2D(Member->GetActorLocation(), GetActorLocation()) <= EngageRadius)
 		{
-			Engage(*It);
+			Engage(Member);
 			return;
 		}
 	}

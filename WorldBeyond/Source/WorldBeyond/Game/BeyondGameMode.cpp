@@ -5,6 +5,7 @@
 #include "Player/BeyondPlayerController.h"
 #include "Player/BeyondPartyComponent.h"
 #include "TimerManager.h"
+#include "World/BeyondWorldSubsystem.h"
 
 void ABeyondGameMode::SetCheckpoint(const FTransform& SpawnTransform)
 {
@@ -37,6 +38,11 @@ void ABeyondGameMode::RespawnParty(TWeakObjectPtr<APlayerController> PlayerContr
 		}
 	}
 
-	BeyondPC->PartyComponent->RespawnPartyAt(SpawnTransform);
+	// The open world waits for the ground at the respawn point first (it may have streamed out)
+	UBeyondWorldSubsystem* WorldSubsystem = UBeyondWorldSubsystem::Get(this);
+	if (!WorldSubsystem || !WorldSubsystem->ShouldHoldOnTravel() || !WorldSubsystem->TravelPartyTo(SpawnTransform, EBeyondTravelReason::Respawn, true))
+	{
+		BeyondPC->PartyComponent->RespawnPartyAt(SpawnTransform);
+	}
 	OnPartyRespawned();
 }

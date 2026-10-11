@@ -34,6 +34,10 @@ one plan per system under [Plans/](Plans/).
 | Enemies (Plan 3A) | `Enemies/`, `AI/BeyondEnemyController.*` | `ABeyondEnemyCharacter` set up from a `UBeyondEnemyDefinition` (roster entry), its C++ brain, elite affixes, `UBeyondEnemySubsystem` (spawning, `Beyond.Spawn`), spawners, the C++ anim instance for creatures without an anim Blueprint. See *Enemies* below |
 | Telegraphs | `AbilitySystem/BeyondAreaStrike.*`, `Abilities/BeyondGA_AreaAttack.*` | Ground markers that fill, then hit (circle, ring, cone, line; meteors, lingering lava / poison); the enemies' attack ability |
 | Bosses (Plan 3B) | `Enemies/BeyondBoss*`, `Game/BeyondBossArena.*`, `UI/BeyondBossBarWidget.*` | Phases with a health floor, twists, arenas, the C++ boss bar, `BeyondGA_Leap` / `_Beam` / `_Summon` / `_Teleport` / `_Pull`. See *Bosses* below |
+| Dialogue (Plan 4) | `Dialogue/` | The dialogue pack driven from C++, NPCs, chatter, banter, story flags. See *Dialogue* below |
+| Open world (Plan 5) | `World/`, `UI/BeyondRegionBannerWidget.*`, `UI/BeyondWorldMapWidget.*` | Regions and villages (banner, discovery, weather, music, level band), waystones, places, hazards, fast travel through the streaming hold, the world map. See *Open world* below |
+| World builder (Plan 5B) | `Source/WorldBeyondEditor/` (editor-only module) | The terrain generator, the World Partition landscape, its greybox material and layers, the painted world map; used by passes 15–16 to build `/Game/WorldsBeyond/Maps/Dominion` |
+| Village builder (Plan 5C) | `Source/WorldBeyondEditor/World/BeyondVillageBuilderLibrary.*`, `Scripts/Migration/village_kit.py` | House prefabs assembled from the modular kit and packed into Packed Level Actors, placing them, a camera capture to PNG for headless passes; used by pass 17 |
 
 ## Controls
 
@@ -49,8 +53,9 @@ one plan per system under [Plans/](Plans/).
 | **G** | The duo power in the **duo loadout** (Heaven's Judgment until you pick another in the duo tree) when the Bond meter is full | same |
 | Tab | Swap | Swap |
 | **K** | **Skill trees** (pauses the game) | same |
-| **F** | **Pick up** the loot you're standing at | same |
+| **F** | **Talk** to the villager in front of you, else **attune / rest** at a waystone, else **pick up** the loot you're standing at | same |
 | **I** | **Equipment & inventory** (pauses the game) | same |
+| **M** | **World map** (pauses the game): pick an attuned waystone, F / click twice to travel | same |
 
 The Bond meter fills as the demigods deal and take damage, faster when both hit the same enemy.
 Heaven's Judgment needs a full meter and both demigods alive within 15 m of each other; you can't Tab-swap while it plays.
@@ -272,6 +277,56 @@ Done earlier: TakeDamage routed into GAS, attack tokens, enemy heal, death handl
 - **The hero Blueprints:** the Paragon `*PlayerCharacter` Blueprints were reparented to `BeyondBossCharacter` (their
   anim Blueprints cast to them); backups are in `Saved/MigrationBackups/`. Boss montages use their **FullBody** slot.
 
+## Dialogue
+
+Plan 4, on the **Advanced Dialogue System** pack (`Content/DialogueSystem`); the full write-up is
+[Plans/04_Dialogue.md](Plans/04_Dialogue.md).
+
+- **Talking:** walk up to a villager and press **F** ("[F] Talk - Elder Maren" shows). Space, F, Enter or the
+  gamepad's A skip / advance; click a choice. No talking while an enemy near you is fighting.
+- **Village life:** villagers greet you when you walk up and chat over their heads while you're around.
+- **Banter:** Angel and Ji-Woong talk at the bottom of the screen while you play: entering a region (banter volumes),
+  low health in a fight, after a boss falls, standing idle, level-ups, revives. Tune it in *Project Settings → Game →
+  Worlds Beyond Dialogue*; `Beyond.Banter Idle` (or a line id) plays one now.
+- **Story flags** (saved): rows set them with *Special Event* `Flag.X` (`Unflag.X` clears); a boss falling sets
+  `Boss.<boss id>`. NPC conversations, chatter and banter check them. `Beyond.Flag X`, `Beyond.ListFlags`,
+  `Beyond.ResetFlags`.
+- **Add an NPC:** make a child of `/Game/WorldsBeyond/NPC/BP_NPC_Base` (or copy `BP_NPC_Elder`), set *NPC Id*, *Display
+  Name*, *NPC Mesh* / *NPC Anim Class*, its *Conversations* (start row + flags) and *Greet Rows*; place it. For chatter,
+  give one of a pair *Chatter* entries and set its *Chatter Partners* on the placed actor.
+- **Add lines:** rows in `DT_Dialogue` (face to face; chains via *Next Row*, choices via *Option*) or `DT_TextOverHead`
+  (over heads), or edit `Scripts/Migration/dialogue_content.py` and re-run pass 13. Banter: a free-movement row chain
+  plus an entry in `/Game/WorldsBeyond/Dialogue/DA_Banter`.
+- **Portraits:** speakers show a see-through placeholder; set real ones in `DT_Speakers`.
+
+## Open world
+
+Plan 5; the full write-up is [Plans/05_Open_World.md](Plans/05_Open_World.md). The open world is
+**`/Game/WorldsBeyond/Maps/Dominion`** (terrain, regions, waystones, camps, arenas, the painted map, 14 villages and
+Kingsfork with their people; open it and press Play). Try the systems in any other map with **`Beyond.WorldDemo`**, which puts a small setup next to you.
+
+- **Regions and villages:** walking into one shows its name (and *Discovered · +EXP* the first time), starts its
+  banter, blends its weather and plays its music. The enemies of camps set to *Level 0* match its level band.
+  Region data: `/Game/WorldsBeyond/World/Regions/DA_Region_*` (name, band, music, ambience, weather, map colour);
+  where they are: **Region Volume** actors (draw the outline with the spline, or leave it empty and set *Radius*).
+- **Waystones:** walk up and press **F** to attune one; F again rests (heal, respawn point, save, *On Rest* camps
+  refill). A save resumes at the last waystone used.
+- **The map (M):** regions you haven't found are fogged; pick an attuned waystone (arrows / click) and confirm twice
+  to travel. No fast travel in a fight, a conversation, with a demigod down or sealed in a boss arena.
+- **Places:** caves, shrines and vistas are discovered when you come close (toast, EXP, on the map).
+- **Hazards:** lava burns while you stand in it; deep water sends you back to dry ground, a little hurt.
+- **Villages:** each house is a Packed Level Actor of a prefab in `/Game/WorldsBeyond/World/Prefabs/`; select one →
+  *Level Instance → Edit*, change it, *Commit*, and every copy follows. Villagers are `BP_NPC_Base` actors (`WB_NPC_*`)
+  with their own name, look and rows.
+- **Building a map:** place one **Beyond World Info** (lights and the map's picture), region volumes, waystones (one with
+  *Start Attuned*), places, spawners (*Activation* / *Deactivation Radius*, *Level 0*) and arenas (*Boss Spawn Radius*,
+  *Remember Defeat*). Set the World Settings' *Navigation System Class* to `BeyondOpenWorldNavigationSystem` and its
+  RecastNavMesh to *Dynamic* for navigation around the demigods.
+- **Cheats:** `Beyond.Travel <waystone id>`, `Beyond.Discover all`, `Beyond.ResetWorld`, `Beyond.Region`, `Beyond.Map`,
+  `Beyond.Weather <region id>`.
+- **Tuning:** *Project Settings → Game → Worlds Beyond World* (discovery EXP, banner time, fast-travel rules, fades,
+  streaming timeout, navigation radius, blend times).
+
 ## Level checklist (`MAP_Demo_Main`)
 
 - Place a **BeyondCheckpoint** before each encounter (the arrow is the respawn point).
@@ -332,6 +387,30 @@ UnrealEditor-Cmd.exe WorldBeyond.uproject -ExecCmds="Automation RunTests WorldsB
   switched off again (it had dropped out of *Legacy Keys To Disable*); the duo moves' *Approach* (Ji-Woong's rush to the
   locked enemy: dash animations, golden trail, blink) and the TestArena arenas' *Party Rush* (the dash in before the
   walls rise). Needs the C++ build with `UBeyondRushComponent`. Report: `last_run_pass12.txt`.
+- `migrate_pass13.py` — pass 13 (Plan 4, dialogue): our rows from `dialogue_content.py` into the pack's `DT_Dialogue`,
+  `DT_TextOverHead` and `DT_Speakers` (only missing rows; `BEYOND_REWRITE_DIALOGUE=1` writes them all again), the
+  see-through placeholder portrait, F and Enter as skip keys, `BP_NPC_Base` (the pack's `BP_ExampleCharacter` reparented to
+  `BeyondNPCCharacter`) and seven villagers, `DA_Banter`, and the TestArena village corner with banter volumes (only
+  when the map has no NPCs; `BEYOND_REBUILD_VILLAGE=1` places it again). Report: `last_run_pass13.txt`.
+- `migrate_pass14.py` — pass 14 (Plan 5A, the open world's systems): `IA_WorldMap` on M (and the gamepad's View
+  button) on `BP_PC`, *Party Classes* = Angel and Ji-Woong, the region definitions from `world_content.py` in
+  `/Game/WorldsBeyond/World/Regions/` (4 regions, 14 villages, Kingsfork; only missing ones, `BEYOND_REBUILD_REGIONS=1`
+  rewrites them), *Looping* on the sample music they use, eight frost / molten enemies in `DA_EnemyRoster`
+  (`BEYOND_REBUILD_ROSTER=1` remakes them), Kael'thar / Hrimgar's region tags. Report: `last_run_pass14.txt`.
+- `migrate_pass15.py` — pass 15 (Plan 5B, the terrain; run **with rendering**: `-AllowCommandletRendering`, no
+  `-NullRHI`): `DA_WorldLayout` from `world_content.py` (`BEYOND_REBUILD_LAYOUT=1` rewrites it), a terrain preview in
+  `Saved/WorldBuilder/`, the greybox landscape material and layer infos (`BEYOND_REBUILD_LANDSCAPE_MATERIAL=1`), the
+  World Partition map `Dominion` with its landscape (never touched again unless `BEYOND_REBUILD_TERRAIN=1`, which
+  loses sculpting), sky and open-world navigation. Report: `last_run_pass15.txt`.
+- `migrate_pass16.py` — pass 16 (Plan 5B, what goes in the world; same command): the world info, region volumes,
+  waystones, places, arenas with checkpoints, camps, the player start, greybox village blocks, the painted world map.
+  Missing actors are added and all are put back on the ground (`BEYOND_REBUILD_GAMEPLAY=1` replaces them,
+  `BEYOND_REBUILD_VILLAGES=1` the village blocks, `BEYOND_KEEP_MAP=1` skips the map). Report: `last_run_pass16.txt`.
+- `migrate_pass17.py` — pass 17 (Plan 5C, the villages; same command): house prefabs assembled by `village_kit.py`
+  and packed (only missing ones; `BEYOND_REBUILD_PREFABS=1` assembles them again), the villages in Dominion from
+  `village_content.py` (only villages without houses; `BEYOND_REBUILD_VILLAGES=1` or `=mossbrook,frostholm`), the
+  villagers and their dialogue rows and banter (missing rows only; `BEYOND_REWRITE_DIALOGUE=1`). Pictures of the prefabs
+  and villages in `Saved/WorldBuilder/`. Report: `last_run_pass17.txt`.
 - `fit_outfits.py` — snug-fits the outfits (see *Clothing fit* below). Needs the **GeometryScripting** plugin, which
   `WorldBeyond.uproject` now enables (editor only).
 - All passes are idempotent and back up every asset they save to `Saved/MigrationBackups/<timestamp>/`; shared helpers live in
@@ -387,6 +466,26 @@ UnrealEditor-Cmd.exe WorldBeyond.uproject -ExecCmds="Automation RunTests WorldsB
   Glacierheart Rod, adds gone), Kael'thar's lava ring and pools (gone with him), Veyla's clones (no bar, 30 % damage),
   Gorehide's pack halving damage, an arena waking and sealing, darkness, the wipe reset, a beaten story boss staying
   beaten.
+- `WorldsBeyond.Prototype.Dialogue` — the pack wired up and the content linked up, F on the elder (face to face, a
+  choice setting `Quest_Gorehide`, follow-ups picked by flags, once-only lines), Ji-Woong talking after a swap,
+  greetings and chatter, banter (village volume, a talk ending it, cooldowns, first looks, idle, a boss falling, low
+  health), story flags in the save, `PlayAnimMontage` on the Body.
+- `WorldsBeyond.Prototype.World` (in the test arena, on a setup spawned at runtime) — save v6, the registry, level bands
+  (a village's own wins), entering a region (banner, discovery saved with EXP once, region banter, weather, music) and a
+  village, the place toast, a waystone found / attuned with F's logic (prompt Attune → Rest) / rested at, fast travel
+  refused (not attuned, a demigod down, an enemy fighting nearby, sealed in an arena), the map (opens paused, closes the
+  inventory, markers, select + confirm twice travels), both demigods landing on the ground, an arena's boss only near
+  the party and a remembered defeat, a Level 0 camp at the region band (+2) put away when the party leaves and coming
+  back without duplicates, a fallen enemy staying down (Never), lava, deep water, `Beyond.Travel`, `Beyond.ResetWorld`.
+- `WorldsBeyond.Prototype.WorldBuilder` (no map) — the terrain generator on a small layout: the same seed gives the same
+  terrain, pads are flat, roads keep to the grade, lakes sit under their water, layer weights add up to 255, ridges rise
+  and passes cut through, the crater is lower than the rim, heights convert to the landscape and back.
+- `WorldsBeyond.Prototype.OpenWorld` (in `Dominion`; only warns when the map isn't built) — the start hold landing the
+  party at Mossbrook's player start, 4 regions / 14 villages / 22 waystones / 10 arenas (4 bosses), the leader in the
+  Elderwood at Mossbrook, the map's picture, Mossbrook's houses and its seven people on the ground (pass 17),
+  `Beyond.Travel frostholm` landing in the Rimewood Reach, a camp putting its
+  enemies away when the party leaves and exactly as many coming back, Gorehide only near the party and exactly one after
+  leaving and coming back.
 - Every PIE test sets `Beyond.SaveProgress 0` while it runs and switches it back only once PIE has ended (the party
   saves when play ends), so your saved levels are never loaded or overwritten.
 - Also in the editor: *Tools → Test Automation*, filter WorldsBeyond.

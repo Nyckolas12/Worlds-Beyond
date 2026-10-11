@@ -43,6 +43,8 @@ namespace BeyondTags
 	// Where an enemy belongs (roster regions)
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Region_Forest);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Region_CorruptedWoods);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Region_Frost);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Region_Molten);
 
 	// Elite affixes
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Enemy_Affix);

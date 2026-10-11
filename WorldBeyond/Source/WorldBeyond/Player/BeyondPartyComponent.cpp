@@ -20,7 +20,9 @@
 #include "Items/BeyondLootSettings.h"
 #include "Kismet/GameplayStatics.h"
 #include "Progression/BeyondSkillTreeComponent.h"
+#include "Characters/BeyondRushComponent.h"
 #include "TimerManager.h"
+#include "World/BeyondWorldSubsystem.h"
 
 namespace
 {
@@ -53,6 +55,46 @@ namespace
 			if (UBeyondPartyComponent* Party = FindParty(World))
 			{
 				Party->ResetDefeatedBosses();
+			}
+		}));
+
+	FAutoConsoleCommandWithWorldAndArgs FlagCommand(
+		TEXT("Beyond.Flag"),
+		TEXT("Beyond.Flag <Name> [0|1]: set (default) or clear a story flag, e.g. Beyond.Flag Quest_Gorehide."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
+		{
+			UBeyondPartyComponent* Party = FindParty(World);
+			if (Party && !Args.IsEmpty())
+			{
+				Party->SetStoryFlag(FName(*Args[0]), Args.Num() < 2 || FCString::Atoi(*Args[1]) != 0);
+			}
+		}));
+
+	FAutoConsoleCommandWithWorld ListFlagsCommand(
+		TEXT("Beyond.ListFlags"),
+		TEXT("Log the party's story flags."),
+		FConsoleCommandWithWorldDelegate::CreateLambda([](UWorld* World)
+		{
+			if (const UBeyondPartyComponent* Party = FindParty(World))
+			{
+				TArray<FString> Names;
+				for (const FName& Flag : Party->GetStoryFlags())
+				{
+					Names.Add(Flag.ToString());
+				}
+				Names.Sort();
+				UE_LOG(LogBeyond, Display, TEXT("Story flags (%d): %s"), Names.Num(), *FString::Join(Names, TEXT(", ")));
+			}
+		}));
+
+	FAutoConsoleCommandWithWorld ResetFlagsCommand(
+		TEXT("Beyond.ResetFlags"),
+		TEXT("Clear every story flag (NPCs start their first conversations again, once-only banter comes back)."),
+		FConsoleCommandWithWorldDelegate::CreateLambda([](UWorld* World)
+		{
+			if (UBeyondPartyComponent* Party = FindParty(World))
+			{
+				Party->ResetStoryFlags();
 			}
 		}));
 
@@ -372,8 +414,13 @@ bool UBeyondPartyComponent::SaveProgress()
 	}
 
 	bSaveQueued = false;
-	Save->Version = 4;
+	Save->Version = 6;
 	Save->DefeatedBosses = DefeatedBosses.Array();
+	Save->StoryFlags = StoryFlags.Array();
+	Save->DiscoveredRegions = DiscoveredRegions.Array();
+	Save->DiscoveredPlaces = DiscoveredPlaces.Array();
+	Save->AttunedWaystones = AttunedWaystones.Array();
+	Save->LastWaystone = LastWaystone;
 	Save->BondPoints = BondPoints;
 	Save->BondPointsLevel = BondPointsLevel;
 	if (const UBeyondDuoSkillTreeComponent* DuoTree = Cast<UBeyondDuoSkillTreeComponent>(GetDuoTree()))
@@ -448,6 +495,12 @@ bool UBeyondPartyComponent::LoadProgress()
 	bStarterKitGiven = Save->bStarterKitGiven;
 	UE_LOG(LogBeyond, Log, TEXT("Party: bag restored with %d items"), Save->Inventory.Num());
 	DefeatedBosses = TSet<FName>(Save->DefeatedBosses);
+	StoryFlags = TSet<FName>(Save->StoryFlags);
+	// Saves from before the open world (version 5) start with nothing found
+	DiscoveredRegions = TSet<FName>(Save->DiscoveredRegions);
+	DiscoveredPlaces = TSet<FName>(Save->DiscoveredPlaces);
+	AttunedWaystones = TSet<FName>(Save->AttunedWaystones);
+	LastWaystone = Save->LastWaystone;
 	return true;
 }
 
@@ -467,10 +520,118 @@ void UBeyondPartyComponent::ResetDefeatedBosses()
 	SaveProgress();
 }
 
+bool UBeyondPartyComponent::HasStoryFlag(FName Flag) const
+{
+	if (Flag.IsNone())
+	{
+		return false;
+	}
+	if (StoryFlags.Contains(Flag))
+	{
+		return true;
+	}
+	const FString Name = Flag.ToString();
+	FString Id;
+	// The open world: Discovered.<region / place / waystone id>, Waystone.<id> (attuned)
+	if (Name.Split(TEXT("Discovered."), nullptr, &Id, ESearchCase::IgnoreCase) && Name.StartsWith(TEXT("Discovered."), ESearchCase::IgnoreCase))
+	{
+		const FName IdName(*Id);
+		return DiscoveredRegions.Contains(IdName) || DiscoveredPlaces.Contains(IdName) || AttunedWaystones.Contains(IdName);
+	}
+	if (Name.StartsWith(TEXT("Waystone."), ESearchCase::IgnoreCase))
+	{
+		return AttunedWaystones.Contains(FName(*Name.RightChop(9)));
+	}
+	// Story bosses beaten before flags existed
+	return Name.Split(TEXT("Boss."), nullptr, &Id, ESearchCase::IgnoreCase) && DefeatedBosses.Contains(FName(*Id));
+}
+
+bool UBeyondPartyComponent::DiscoverRegion(FName RegionId)
+{
+	if (RegionId.IsNone() || DiscoveredRegions.Contains(RegionId))
+	{
+		return false;
+	}
+	DiscoveredRegions.Add(RegionId);
+	QueueSave();
+	return true;
+}
+
+bool UBeyondPartyComponent::DiscoverPlace(FName PlaceId)
+{
+	if (PlaceId.IsNone() || DiscoveredPlaces.Contains(PlaceId))
+	{
+		return false;
+	}
+	DiscoveredPlaces.Add(PlaceId);
+	QueueSave();
+	return true;
+}
+
+bool UBeyondPartyComponent::AttuneWaystone(FName WaystoneId)
+{
+	if (WaystoneId.IsNone() || AttunedWaystones.Contains(WaystoneId))
+	{
+		return false;
+	}
+	AttunedWaystones.Add(WaystoneId);
+	DiscoveredPlaces.Add(WaystoneId);
+	QueueSave();
+	return true;
+}
+
+void UBeyondPartyComponent::SetLastWaystone(FName WaystoneId)
+{
+	if (LastWaystone != WaystoneId)
+	{
+		LastWaystone = WaystoneId;
+		QueueSave();
+	}
+}
+
+void UBeyondPartyComponent::ResetWorldProgress()
+{
+	DiscoveredRegions.Reset();
+	DiscoveredPlaces.Reset();
+	AttunedWaystones.Reset();
+	LastWaystone = NAME_None;
+	SaveProgress();
+}
+
+void UBeyondPartyComponent::SetStoryFlag(FName Flag, bool bSet)
+{
+	if (Flag.IsNone() || StoryFlags.Contains(Flag) == bSet)
+	{
+		return;
+	}
+	if (bSet)
+	{
+		StoryFlags.Add(Flag);
+	}
+	else
+	{
+		StoryFlags.Remove(Flag);
+	}
+	UE_LOG(LogBeyond, Log, TEXT("Party: story flag %s %s"), *Flag.ToString(), bSet ? TEXT("set") : TEXT("cleared"));
+	OnStoryFlagChanged.Broadcast(Flag, bSet);
+	QueueSave();
+}
+
+void UBeyondPartyComponent::ResetStoryFlags()
+{
+	StoryFlags.Reset();
+	SaveProgress();
+}
+
 void UBeyondPartyComponent::ResetProgress()
 {
 	UGameplayStatics::DeleteGameInSlot(UBeyondSaveGame::SlotName, UBeyondSaveGame::UserIndex);
 	DefeatedBosses.Reset();
+	StoryFlags.Reset();
+	DiscoveredRegions.Reset();
+	DiscoveredPlaces.Reset();
+	AttunedWaystones.Reset();
+	LastWaystone = NAME_None;
 	TGuardValue<bool> Restoring(bRestoringProgress, true);
 	for (ABeyondCharacterBase* Member : Members)
 	{
@@ -674,6 +835,13 @@ void UBeyondPartyComponent::InitializeParty(APawn* InitialLeader)
 		GiveStarterKit();
 	}
 	OnLeaderChanged.Broadcast(Leader, nullptr);
+
+	// The open world decides where the party starts (resume at the last waystone, wait for the ground)
+	if (UBeyondWorldSubsystem* WorldSubsystem = UBeyondWorldSubsystem::Get(this))
+	{
+		WorldSubsystem->HandlePartyFormed(this);
+	}
+	OnPartyFormed.Broadcast();
 }
 
 void UBeyondPartyComponent::AddMember(ABeyondCharacterBase* Member)
@@ -881,16 +1049,17 @@ void UBeyondPartyComponent::AutoSwapAfterDeath()
 
 void UBeyondPartyComponent::RespawnPartyAt(const FTransform& Transform)
 {
-	GetWorld()->GetTimerManager().ClearTimer(AutoSwapTimer);
+	TeleportPartyTo(Transform, true);
+}
 
-	int32 Index = 0;
+void UBeyondPartyComponent::HealParty()
+{
 	for (ABeyondCharacterBase* Member : Members)
 	{
 		if (!Member)
 		{
 			continue;
 		}
-
 		if (UBeyondCombatLibrary::IsActorDead(Member))
 		{
 			Member->Revive(1.0f);
@@ -899,10 +1068,46 @@ void UBeyondPartyComponent::RespawnPartyAt(const FTransform& Transform)
 		{
 			UBeyondCombatLibrary::ApplyHeal(Member, Member, UBeyondCombatLibrary::GetActorMaxHealth(Member));
 		}
+	}
+	ReviveTarget.Reset();
+	ReviveProgress = 0.0f;
+}
 
-		// Line members up side by side at the checkpoint
+void UBeyondPartyComponent::TeleportPartyTo(const FTransform& Transform, bool bHeal)
+{
+	GetWorld()->GetTimerManager().ClearTimer(AutoSwapTimer);
+	if (bHeal)
+	{
+		HealParty();
+	}
+
+	int32 Index = 0;
+	for (ABeyondCharacterBase* Member : Members)
+	{
+		if (!Member)
+		{
+			continue;
+		}
+		if (!bHeal)
+		{
+			// Whatever they were doing stops (the duo move, a dash, a cast)
+			if (UAbilitySystemComponent* ASC = Member->GetAbilitySystemComponent())
+			{
+				ASC->CancelAllAbilities();
+			}
+			if (UBeyondRushComponent* Rush = UBeyondRushComponent::FindRush(Member))
+			{
+				Rush->Cancel();
+			}
+		}
+
+		// Line members up side by side
 		const FVector Offset = Transform.GetRotation().GetRightVector() * 150.0f * Index;
 		Member->TeleportTo(Transform.GetLocation() + Offset, Transform.Rotator());
+		if (ABeyondCompanionController* Companion = Cast<ABeyondCompanionController>(Member->GetController()))
+		{
+			Companion->ResetEngagement();
+		}
 		++Index;
 	}
 
