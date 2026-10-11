@@ -262,7 +262,17 @@ void ABeyondPlayerController::Input_Interact()
 	{
 		ABeyondWaystone* Waystone = FindWaystoneTarget();
 		UBeyondWorldSubsystem* WorldSubsystem = UBeyondWorldSubsystem::Get(this);
-		if (!Waystone || !WorldSubsystem || !WorldSubsystem->UseWaystone(Waystone))
+		const double Now = GetWorld()->GetRealTimeSeconds();
+		if (Waystone && WorldSubsystem)
+		{
+			// One use per second at most: a held or hammered F would otherwise attune and rest over and over
+			if (Now - LastWaystoneInteractTime >= 1.0)
+			{
+				LastWaystoneInteractTime = Now;
+				WorldSubsystem->UseWaystone(Waystone);
+			}
+		}
+		else
 		{
 			PickUpNearestLoot();
 		}

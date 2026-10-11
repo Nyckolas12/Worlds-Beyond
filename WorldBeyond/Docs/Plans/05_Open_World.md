@@ -80,13 +80,47 @@ around Hrimgar's Frozen Crown); the **Greyspine** divides fire from frost and th
 Blightwood. Lakes: Mirrormere and Reedpool (Elderwood), Blackmere (Blightwood), Glassmere (frozen). A preview of the
 generated terrain is written to `Saved/WorldBuilder/preview.png` on every pass 15.
 
+## Plan 5C — the villages (built)
+
+Pass 17 (`migrate_pass17.py`) replaces pass 16's grey blocks with real villages, from `village_content.py`.
+
+| Piece | Where | Notes |
+|---|---|---|
+| House assembler | `Scripts/Migration/village_kit.py` | Houses from the modular pieces on hand: Megascans medieval walls, doors and corners round the footprint (a door in the front, windows mixed by a seed), a second storey, Gable4 on the ends, the House07 thatch roof, a stone chimney, a porch awning, a lean-to shed, a stone footing. Built at 1.25 × the kit (2.5 m storeys). Seven types: `cottage_small`, `cottage`, `gable_house`, `town_house` (two storeys), `longhouse`, `workshop` (barn door and shed), `tower_house`; boarded-up copies for the empty villages. Also the stall, lantern post, palisade run, gates, yard clutter and garden fences |
+| Prefabs | `/Game/WorldsBeyond/World/Prefabs/` | `LI_*`: one small level per house type (17 in all, second looks for the three common houses), packed into `BPP_*` Packed Level Actors (one actor of instanced meshes each). Pictures of each in `Saved/WorldBuilder/prefabs/` |
+| Village builder | `Source/WorldBeyondEditor/World/BeyondVillageBuilderLibrary.*` | Prefab levels with external actors, packing them without the editor's dialogs, placing an instance, and `CaptureView` (renders the editor world to a PNG, so a headless pass can be looked at) |
+| Villages | `migrate_pass17.py` | Houses on one or two rings round an open square with their doors to it, clear of the roads, waystones, places, camps and arenas, only where the ground is flat enough; yard clutter by the walls, fenced gardens behind some houses, a well, market stalls and lantern posts (with lights) round the square, a gate with a lantern where each road comes in, palisades round Duskwatch, Frostholm and Cinderhold; the three empty villages boarded up, their fences broken, no lights. Kingsfork gets its inn and stable. Pictures of each village in `Saved/WorldBuilder/villages/` |
+| People | same, `village_content.py` | Mossbrook's seven from Plan 4 on its square; in each other lived-in village a talker (Hunter Garrick, Ferrywoman Hild, Healer Ansel, Sergeant Corvin, Jarl Sigrun, Woodcutter Eskil, Keeper Thora, Forgemaster Brann, Foreman Rusk, Pilgrim Ashka) and a pair who chat; a few lines change once a region's boss falls. Placed as `BP_NPC_Base` with their own settings (no new Blueprints); they wait for the ground to stream in before they stand |
+| Dialogue | DT_Dialogue / DT_TextOverHead / DT_Speakers, DA_Banter | The villagers' conversations, chatter and greetings; the duo's banter on entering the Rimewood, the Cinderlands, Kingsfork and each village (the empty ones share one) |
+
+| Village | Houses | People |
+|---|---|---|
+| Mossbrook | 12, market stalls, the well | Elder Maren, Bram, Captain Ysolde, Tilda and Osk, Pell and Wren |
+| Fernhollow / Brackenford / Willowmere | 6 / 6 / 5 | Garrick (raiders west), Hild (the Old Quarry), Ansel (the blight, Duskwatch) |
+| Duskwatch | 7, palisade | Sergeant Corvin and two privates (the Weeping Grove) |
+| Greyhallow / Marrowfield / Sallow End | 6 / 5 / 4, boarded up | — |
+| Frostholm | 9, palisade | Jarl Sigrun (Hrimgar), Ulf the smith, Runa |
+| Pinecrest / Hearthfall | 5 / 5 | Eskil (frost wolves), Thora (the warm spring) |
+| Cinderhold | 8, palisade | Forgemaster Brann (Kael'thar), Kestra, Dorn |
+| Slagford / Emberrest | 5 / 5 | Rusk (the Slag Mines), Ashka (the Shrine of the Pyre) |
+| Kingsfork Crossroads | the inn and its stable | — |
+
+90 houses, some 800 props and lanterns, 37 people. Houses go on one or two rings, with more rings when roads leave too
+little room.
+
 ## Still to come
 
-1. **Villages:** houses assembled from the modular pieces as packed prefabs (fix one and every village updates), boarded
-   copies for the empty villages, Mossbrook's seven villagers and new placeholder villagers and banter per village.
-3. **Nature:** an 11-layer landscape material (forest ground, moss, grass, dirt, path, cobble, mud, rock, snow, ash,
+1. **Nature:** an 11-layer landscape material (forest ground, moss, grass, dirt, path, cobble, mud, rock, snow, ash,
    corruption), lakes (a frozen one you can walk on), lava channels, caves, trees and rocks per region with PCG.
-4. **Polish:** weather and music per place, map art, HLODs.
+2. **Polish:** weather and music per place, map art, HLODs (houses pop in at the streaming range until then), snow on
+   the Rimewood's roofs, burnt houses in the Cinderlands.
+
+## Playtest fixes
+
+- **M crashed the editor:** the world map drew each region's outline by adding its first point to the end of the point
+  array (`Points.Add(Points[0])`), which asserts when the array grows. The point is copied first now; the World and
+  OpenWorld tests keep the map open for a second so a run with rendering draws it.
+- **F at a waystone** rested again on every press (held or hammered F): one use a second at most.
 
 ## Decisions made on the way
 
@@ -113,6 +147,14 @@ generated terrain is written to `Saved/WorldBuilder/preview.png` on every pass 1
   (more than 30 m apart: the terrain's height), so placing never needs the landscape's GPU merge.
 - **Deleted World Partition actors**: the builder keeps the loading references until the save and removes any file the
   save leaves behind, so rebuilding the terrain never leaves the old landscape on disk.
+- **Houses are prefabs packed into Packed Level Actors**: one actor of instanced meshes per house in the open world (it
+  streams with the land and draws cheaply), and the level behind it is the one place to fix a house type.
+- **Houses aren't entered**: the Megascans walls are one-sided (they're only seen from outside) and the doors are closed
+  panels. Interiors would be their own small levels later.
+- **The prefabs are made without the editor's dialogs**: *Create Level Instance* insists on a Save As window and the
+  packer opens the Content Browser, neither of which a headless pass has, so the village builder makes the level and
+  the Blueprint itself and lets the engine fill them.
+- **Villagers are `BP_NPC_Base` with their own settings** (name, look, lines) rather than a Blueprint each.
 
 ## Left for you
 
@@ -125,6 +167,14 @@ generated terrain is written to `Saved/WorldBuilder/preview.png` on every pass 1
   `BEYOND_REBUILD_GAMEPLAY=1`, or move the actors by hand (pass 16 only puts them back on the ground).
 - Try the systems in any map: `Beyond.WorldDemo` puts a region, a village, two waystones, a shrine, lava and deep water
   next to you (M for the map).
+- **Refine a house type:** select any house in Dominion → *Level Instance → Edit* (or open its `LI_House_*` level in
+  `/Game/WorldsBeyond/World/Prefabs/`), change it, *Commit*: the packed Blueprint is repacked and every copy in every
+  village follows. Re-running pass 17 never touches a prefab that exists (`BEYOND_REBUILD_PREFABS=1` assembles them all
+  again and loses your edits).
+- **Re-lay a village** after editing `village_content.py`: `BEYOND_REBUILD_VILLAGES=mossbrook` (or `=1` for all);
+  anything you placed by hand with that village's `WB_VIL_` label prefix goes with it. Moving houses by hand is fine.
+- Portraits for the new speakers (`DT_Speakers`: Garrick, Hild, Ansel, Corvin, Sigrun, Eskil, Thora, Brann, Rusk,
+  Ashka) and real names and lines where the placeholders don't fit.
 
 ### Later
 - Real music per region and village (*Music* / *Ambience* on each `DA_Region_*`).

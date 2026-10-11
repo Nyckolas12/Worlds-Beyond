@@ -617,7 +617,9 @@ int32 UBeyondWorldMapWidget::NativePaint(const FPaintArgs& Args, const FGeometry
 			{
 				Points.Add(WorldToLocal(FVector(Point.X, Point.Y, 0.0), LocalSize));
 			}
-			Points.Add(Points[0]);
+			// Close the outline (a copy: adding an element of the array to itself is an error)
+			const FVector2f First = Points[0];
+			Points.Add(First);
 			const FLinearColor Tint = Outline.bDiscovered ? WithAlpha(Outline.Colour, 0.8f) : WithAlpha(InkColor, 0.35f);
 			Lines(MoveTemp(Points), Tint, Outline.bDiscovered ? 2.0f : 1.0f, LineLayer);
 		}

@@ -549,6 +549,19 @@ bool FBeyondWorldTest::RunTest(const FString& Parameters)
 		T.TestTrue(TEXT("The map shows the attuned waystone"), Near && Near->bDiscovered && Near->bActive);
 		T.TestTrue(TEXT("...the party"), Leader != nullptr);
 		T.TestTrue(TEXT("...the discovered region"), Region && Region->bDiscovered);
+		return true;
+	}));
+	// Open for a moment, so a run with rendering draws it
+	ADD_LATENT_AUTOMATION_COMMAND(FWaitLatentCommand(1.0f));
+	ADD_LATENT_AUTOMATION_COMMAND(FBeyondWorldStep([State]()
+	{
+		FAutomationTestBase& T = *State->Test;
+		ABeyondPlayerController* PC = State->PC.Get();
+		UBeyondWorldMapWidget* Map = PC ? Cast<UBeyondWorldMapWidget>(PC->GetWorldMapWidget()) : nullptr;
+		if (!T.TestTrue(TEXT("The map stayed open while drawn"), Map && PC->IsWorldMapOpen()))
+		{
+			return true;
+		}
 		T.TestTrue(TEXT("Pick the far waystone"), Map->SelectMarker(TEXT("w2")));
 		T.TestTrue(TEXT("The first confirm asks"), Map->ConfirmSelection() && Map->IsConfirming());
 		T.TestTrue(TEXT("The second travels"), Map->ConfirmSelection());

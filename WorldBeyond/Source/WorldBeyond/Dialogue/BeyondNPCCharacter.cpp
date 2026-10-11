@@ -67,6 +67,15 @@ void ABeyondNPCCharacter::BeginPlay()
 	ApplyAppearance();
 	Super::BeginPlay();
 
+	// In a streamed world the ground can load a moment after the villager: hold still until it is there
+	if (!SnapToGround())
+	{
+		bWaitingForGround = true;
+		if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+		{
+			Movement->DisableMovement();
+		}
+	}
 	Home = GetActorLocation();
 	NextWanderTime = GetWorld()->GetTimeSeconds() + FMath::FRandRange(WanderPause.X, WanderPause.Y);
 	// Spread the NPCs' thinking over the interval
@@ -257,8 +266,43 @@ void ABeyondNPCCharacter::ResetChatter()
 	bLeaderClose = false;
 }
 
+bool ABeyondNPCCharacter::SnapToGround()
+{
+	const UWorld* World = GetWorld();
+	const UCapsuleComponent* Capsule = GetCapsuleComponent();
+	if (!World || !Capsule)
+	{
+		return false;
+	}
+	const float HalfHeight = Capsule->GetScaledCapsuleHalfHeight();
+	const FVector Start = GetActorLocation() + FVector(0.0f, 0.0f, HalfHeight + 50.0f);
+	const FVector End = GetActorLocation() - FVector(0.0f, 0.0f, 1000.0f);
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(BeyondNPCGround), false, this);
+	FHitResult Hit;
+	if (!World->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, Params))
+	{
+		return false;
+	}
+	SetActorLocation(Hit.ImpactPoint + FVector(0.0f, 0.0f, HalfHeight + 2.0f), false, nullptr, ETeleportType::TeleportPhysics);
+	return true;
+}
+
 void ABeyondNPCCharacter::Think()
 {
+	if (bWaitingForGround)
+	{
+		if (!SnapToGround())
+		{
+			return;
+		}
+		bWaitingForGround = false;
+		Home = GetActorLocation();
+		if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+		{
+			Movement->SetMovementMode(MOVE_Walking);
+		}
+	}
+
 	const UWorld* World = GetWorld();
 	const APlayerController* PC = World ? World->GetFirstPlayerController() : nullptr;
 	const APawn* Leader = PC ? PC->GetPawn() : nullptr;

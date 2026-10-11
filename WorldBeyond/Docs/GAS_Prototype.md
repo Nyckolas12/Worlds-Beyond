@@ -37,6 +37,7 @@ one plan per system under [Plans/](Plans/).
 | Dialogue (Plan 4) | `Dialogue/` | The dialogue pack driven from C++, NPCs, chatter, banter, story flags. See *Dialogue* below |
 | Open world (Plan 5) | `World/`, `UI/BeyondRegionBannerWidget.*`, `UI/BeyondWorldMapWidget.*` | Regions and villages (banner, discovery, weather, music, level band), waystones, places, hazards, fast travel through the streaming hold, the world map. See *Open world* below |
 | World builder (Plan 5B) | `Source/WorldBeyondEditor/` (editor-only module) | The terrain generator, the World Partition landscape, its greybox material and layers, the painted world map; used by passes 15–16 to build `/Game/WorldsBeyond/Maps/Dominion` |
+| Village builder (Plan 5C) | `Source/WorldBeyondEditor/World/BeyondVillageBuilderLibrary.*`, `Scripts/Migration/village_kit.py` | House prefabs assembled from the modular kit and packed into Packed Level Actors, placing them, a camera capture to PNG for headless passes; used by pass 17 |
 
 ## Controls
 
@@ -301,8 +302,8 @@ Plan 4, on the **Advanced Dialogue System** pack (`Content/DialogueSystem`); the
 ## Open world
 
 Plan 5; the full write-up is [Plans/05_Open_World.md](Plans/05_Open_World.md). The open world is
-**`/Game/WorldsBeyond/Maps/Dominion`** (greybox: terrain, regions, waystones, camps, arenas, the painted map; open it and
-press Play). Try the systems in any other map with **`Beyond.WorldDemo`**, which puts a small setup next to you.
+**`/Game/WorldsBeyond/Maps/Dominion`** (terrain, regions, waystones, camps, arenas, the painted map, 14 villages and
+Kingsfork with their people; open it and press Play). Try the systems in any other map with **`Beyond.WorldDemo`**, which puts a small setup next to you.
 
 - **Regions and villages:** walking into one shows its name (and *Discovered · +EXP* the first time), starts its
   banter, blends its weather and plays its music. The enemies of camps set to *Level 0* match its level band.
@@ -314,6 +315,9 @@ press Play). Try the systems in any other map with **`Beyond.WorldDemo`**, which
   to travel. No fast travel in a fight, a conversation, with a demigod down or sealed in a boss arena.
 - **Places:** caves, shrines and vistas are discovered when you come close (toast, EXP, on the map).
 - **Hazards:** lava burns while you stand in it; deep water sends you back to dry ground, a little hurt.
+- **Villages:** each house is a Packed Level Actor of a prefab in `/Game/WorldsBeyond/World/Prefabs/`; select one →
+  *Level Instance → Edit*, change it, *Commit*, and every copy follows. Villagers are `BP_NPC_Base` actors (`WB_NPC_*`)
+  with their own name, look and rows.
 - **Building a map:** place one **Beyond World Info** (lights and the map's picture), region volumes, waystones (one with
   *Start Attuned*), places, spawners (*Activation* / *Deactivation Radius*, *Level 0*) and arenas (*Boss Spawn Radius*,
   *Remember Defeat*). Set the World Settings' *Navigation System Class* to `BeyondOpenWorldNavigationSystem` and its
@@ -402,6 +406,11 @@ UnrealEditor-Cmd.exe WorldBeyond.uproject -ExecCmds="Automation RunTests WorldsB
   waystones, places, arenas with checkpoints, camps, the player start, greybox village blocks, the painted world map.
   Missing actors are added and all are put back on the ground (`BEYOND_REBUILD_GAMEPLAY=1` replaces them,
   `BEYOND_REBUILD_VILLAGES=1` the village blocks, `BEYOND_KEEP_MAP=1` skips the map). Report: `last_run_pass16.txt`.
+- `migrate_pass17.py` — pass 17 (Plan 5C, the villages; same command): house prefabs assembled by `village_kit.py`
+  and packed (only missing ones; `BEYOND_REBUILD_PREFABS=1` assembles them again), the villages in Dominion from
+  `village_content.py` (only villages without houses; `BEYOND_REBUILD_VILLAGES=1` or `=mossbrook,frostholm`), the
+  villagers and their dialogue rows and banter (missing rows only; `BEYOND_REWRITE_DIALOGUE=1`). Pictures of the prefabs
+  and villages in `Saved/WorldBuilder/`. Report: `last_run_pass17.txt`.
 - `fit_outfits.py` — snug-fits the outfits (see *Clothing fit* below). Needs the **GeometryScripting** plugin, which
   `WorldBeyond.uproject` now enables (editor only).
 - All passes are idempotent and back up every asset they save to `Saved/MigrationBackups/<timestamp>/`; shared helpers live in
@@ -473,7 +482,8 @@ UnrealEditor-Cmd.exe WorldBeyond.uproject -ExecCmds="Automation RunTests WorldsB
   and passes cut through, the crater is lower than the rim, heights convert to the landscape and back.
 - `WorldsBeyond.Prototype.OpenWorld` (in `Dominion`; only warns when the map isn't built) — the start hold landing the
   party at Mossbrook's player start, 4 regions / 14 villages / 22 waystones / 10 arenas (4 bosses), the leader in the
-  Elderwood at Mossbrook, the map's picture, `Beyond.Travel frostholm` landing in the Rimewood Reach, a camp putting its
+  Elderwood at Mossbrook, the map's picture, Mossbrook's houses and its seven people on the ground (pass 17),
+  `Beyond.Travel frostholm` landing in the Rimewood Reach, a camp putting its
   enemies away when the party leaves and exactly as many coming back, Gorehide only near the party and exactly one after
   leaving and coming back.
 - Every PIE test sets `Beyond.SaveProgress 0` while it runs and switches it back only once PIE has ended (the party

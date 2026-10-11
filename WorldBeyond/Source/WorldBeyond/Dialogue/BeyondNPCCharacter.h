@@ -175,6 +175,8 @@ protected:
 
 private:
 	void ApplyAppearance();
+	// Puts the villager on the ground under it; false while there is none (not streamed in yet)
+	bool SnapToGround();
 	void Think();
 	void Wander();
 	bool ArePartnersFree() const;
@@ -187,4 +189,5 @@ private:
 	double NextWanderTime = 0.0;
 	int32 NextChatterIndex = 0;
 	bool bLeaderClose = false;
+	bool bWaitingForGround = false;
 };

@@ -7,6 +7,7 @@
 #include "AbilitySystem/BeyondCombatLibrary.h"
 #include "AI/BeyondEnemyController.h"
 #include "Characters/BeyondCharacterBase.h"
+#include "Dialogue/BeyondNPCCharacter.h"
 #include "Editor.h"
 #include "Enemies/BeyondBossCharacter.h"
 #include "Enemies/BeyondEnemyCharacter.h"
@@ -33,7 +34,8 @@
  * Plan 5B's open world in Play In Editor (/Game/WorldsBeyond/Maps/Dominion, World Partition; passes only warn when the
  * map isn't built yet): the start hold lands the party on the ground at Mossbrook's player start, the map knows its 4
  * regions, 14 villages, 22 waystones and 10 arenas (4 with bosses), the leader is in the Elderwood at Mossbrook, the
- * world map has its picture, Beyond.Travel to Frostholm lands on the ground in the Rimewood Reach, a camp puts its
+ * world map has its picture, Mossbrook has its houses and its seven people on the ground (pass 17; only a warning before
+ * it), Beyond.Travel to Frostholm lands on the ground in the Rimewood Reach, a camp puts its
  * enemies away when the party leaves and has exactly as many when it comes back, Gorehide's arena has its boss only
  * while the party is near and exactly one after leaving and coming back.
  *
@@ -224,14 +226,55 @@ bool FBeyondOpenWorldTest::RunTest(const FString& Parameters)
 		T.TestTrue(TEXT("The party starts in the Elderwood"), Region && Region->RegionId == TEXT("region_forest"));
 		T.TestTrue(TEXT("...in Mossbrook"), Village && Village->RegionId == TEXT("village_mossbrook"));
 
+		// Pass 17's village round the party: its houses, and its people standing on the ground
+		const FVector Here = State->PC->GetPawn() ? State->PC->GetPawn()->GetActorLocation() : FVector::ZeroVector;
+		int32 Houses = 0;
+		int32 People = 0;
+		int32 Standing = 0;
+		for (TActorIterator<AActor> It(PlayWorld()); It; ++It)
+		{
+			if (FVector::Dist2D(It->GetActorLocation(), Here) > 9000.0f)
+			{
+				continue;
+			}
+			if (It->GetActorLabel().StartsWith(TEXT("WB_VIL_village_mossbrook_Home_")))
+			{
+				++Houses;
+			}
+			if (const ABeyondNPCCharacter* NPC = Cast<ABeyondNPCCharacter>(*It))
+			{
+				++People;
+				Standing += FMath::Abs(NPC->GetActorLocation().Z - Here.Z) < 600.0f ? 1 : 0;
+			}
+		}
+		if (Houses == 0)
+		{
+			T.AddWarning(TEXT("Mossbrook has no houses yet: run migrate_pass17.py"));
+		}
+		else
+		{
+			T.TestTrue(*FString::Printf(TEXT("Mossbrook's houses are there (%d)"), Houses), Houses >= 8);
+			T.TestTrue(*FString::Printf(TEXT("Mossbrook's seven people are there (%d)"), People), People >= 7);
+			T.TestEqual(TEXT("...standing on the ground, none fallen through"), Standing, People);
+		}
+
 		State->PC->OpenWorldMap();
 		const UBeyondWorldMapWidget* Map = Cast<UBeyondWorldMapWidget>(State->PC->GetWorldMapWidget());
-		T.TestTrue(TEXT("The world map has its painted picture"), Map && Map->GetMapTexture() != nullptr);
-		State->PC->CloseWorldMap();
-
+		T.TestTrue(TEXT("The world map has its picture"), Map && Map->GetMapTexture() != nullptr);
+		return true;
+	}));
+	// Open for a moment, so a run with rendering draws it (the region outlines once crashed the paint)
+	ADD_LATENT_AUTOMATION_COMMAND(FWaitLatentCommand(1.0f));
+	ADD_LATENT_AUTOMATION_COMMAND(FBeyondOpenWorldStep([State]()
+	{
+		if (ABeyondPlayerController* PC = State->PC.Get())
+		{
+			State->Test->TestTrue(TEXT("The map stayed open while drawn"), PC->IsWorldMapOpen());
+			PC->CloseWorldMap();
+		}
 		if (GEngine)
 		{
-			GEngine->Exec(W, TEXT("Beyond.Travel frostholm"));
+			GEngine->Exec(PlayWorld(), TEXT("Beyond.Travel frostholm"));
 		}
 		return true;
 	}));

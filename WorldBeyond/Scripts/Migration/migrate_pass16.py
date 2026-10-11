@@ -9,7 +9,7 @@ Into /Game/WorldsBeyond/Maps/Dominion, from world_content.py (labels WB_GP_* for
 - 22 waystones (Mossbrook's starts attuned), 17 places, 10 boss arenas (Gorehide, Veyla, Hrimgar, Kael'thar and six
   empty sites for later bosses) with a checkpoint at each boss's entrance, 30 enemy camps on the region rosters (level 0:
   the region's band, put away when the party is far, back when it rests), the player start in Mossbrook;
-- greybox house blocks in every village until the real houses come (5C);
+- greybox house blocks in every village until pass 17 builds the real one (villages with pass 17 houses are left alone);
 - the painted world map (T_WorldMap, a fog mask per region, DA_WorldMap in /Game/WorldsBeyond/World/Map/), baked again
   every run (BEYOND_KEEP_MAP=1 skips it).
 Missing gameplay actors are added and every one is put back on the ground; BEYOND_REBUILD_GAMEPLAY=1 replaces them all.
@@ -267,6 +267,9 @@ def step_villages(existing):
         prefix = "WB_VIL_%s_" % region_id
         # Every actor with the prefix (copies left by older runs share labels)
         mine = [a for a in ACTORS.get_all_level_actors() if a.get_actor_label().startswith(prefix)]
+        # Pass 17's real village is there: never grey blocks over it
+        if any(a.get_actor_label().startswith(prefix + "Home_") for a in mine):
+            continue
         if mine and not REBUILD_VILLAGES:
             continue
         LIB.destroy_actors(mine)

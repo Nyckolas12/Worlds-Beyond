@@ -387,6 +387,9 @@ private:
 
 	FTimerHandle PromptTimer;
 
+	// Real time of the last F at a waystone (held or hammered F doesn't rest again and again)
+	double LastWaystoneInteractTime = -1000.0;
+
 	// Widgets hidden for a talk and the visibility they get back
 	TArray<TPair<TWeakObjectPtr<UUserWidget>, ESlateVisibility>> HiddenForTalk;
 
