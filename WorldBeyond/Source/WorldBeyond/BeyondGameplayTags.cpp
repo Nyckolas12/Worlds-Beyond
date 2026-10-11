@@ -33,6 +33,8 @@ namespace BeyondTags
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Region_Forest, "Region.Forest", "The starting forest (wolves, raiders, treants)");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Region_CorruptedWoods, "Region.CorruptedWoods", "The dark-magic corrupted woods (wraiths, cursed knights, corrupted beasts)");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Region_Frost, "Region.Frost", "The frozen forest in the north-east (Hrimgar's land)");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Region_Molten, "Region.Molten", "The volcanic land in the north-west (Kael'thar's land)");
 
 	UE_DEFINE_GAMEPLAY_TAG(Enemy_Affix, "Enemy.Affix");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Enemy_Affix_Molten, "Enemy.Affix.Molten", "Hits burn; leaves lava when it dies");

@@ -29,11 +29,15 @@ enum class EBeyondArenaState : uint8
 
 /**
  * Where a boss fight happens (Plan 3B): spawns the boss at Boss Spawn Point (unless a story boss was already beaten,
- * see UBeyondPartyComponent::IsBossDefeated), wakes it and seals the arena when a demigod comes within Engage Radius,
+ * see UBeyondPartyComponent::IsBossDefeated; with Remember Defeat any boss whose Boss.<id> flag is set), wakes it and
+ * seals the arena when a demigod comes within Engage Radius,
  * gives hazards their centre and radius, darkens for a Darkness twist, and resets everything when the party wipes
  * (boss back at full health in its first phase, adds and hazards gone, unsealed). Place a checkpoint at the entrance.
  * When the fight starts, every demigod still outside the ring dashes in (blinks if far or blocked; a fallen one is
  * carried in) and the walls rise once the whole party is inside, whichever demigod the player controls.
+ * In the open world (Plan 5) the boss only exists while the party is within Boss Spawn Radius (and there is ground
+ * under it), and goes away again past Boss Despawn Radius while the fight hasn't started. An arena without a boss is a
+ * marked site for a later one. Always loaded in a World Partition map; the world map shows it.
  */
 UCLASS()
 class WORLDBEYOND_API ABeyondBossArena : public AActor
@@ -48,6 +52,22 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Arena", meta = (ClampMin = "1"))
 	int32 BossLevel = 10;
+
+	// The map marker's id (empty: the boss id)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Arena")
+	FName ArenaId;
+
+	// Also a mini-boss stays beaten once its Boss.<id> story flag is set (every boss kill sets it)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Arena")
+	bool bRememberDefeat = false;
+
+	// 0: the boss spawns when play starts; otherwise when a demigod comes this close
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Arena", meta = (ClampMin = "0"))
+	float BossSpawnRadius = 0.0f;
+
+	// With a Boss Spawn Radius: a boss that hasn't been fought goes away once every demigod is this far (0: never)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Arena", meta = (ClampMin = "0", EditCondition = "BossSpawnRadius > 0"))
+	float BossDespawnRadius = 0.0f;
 
 	// The fighting ground (hazard placement, the seal ring)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Arena", meta = (ClampMin = "500"))
@@ -118,6 +138,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Arena")
 	bool IsSealed() const { return bSealed; }
 
+	// The boss fell here (or was already beaten when the party arrived)
+	UFUNCTION(BlueprintPure, Category = "Arena")
+	bool IsDefeated() const;
+
 	// 0 normal .. 1 very dark (a Darkness twist)
 	UFUNCTION(BlueprintCallable, Category = "Arena")
 	void SetDarkness(float Amount);
@@ -145,6 +169,8 @@ private:
 	void BuildSeal();
 	void SetSealed(bool bNewSealed);
 	void CheckEngage();
+	// Boss Spawn Radius: the boss comes when the party is near and goes when it is far
+	void UpdateBossPresence(const TArray<ABeyondCharacterBase*>& Party);
 	void HandlePartyWiped();
 	bool IsBeaten() const;
 

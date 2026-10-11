@@ -12,6 +12,14 @@
 				"Engine",
 				"GameplayAbilities"
 			]
+		},
+		{
+			"Name": "WorldBeyondEditor",
+			"Type": "Editor",
+			"LoadingPhase": "Default",
+			"AdditionalDependencies": [
+				"Engine"
+			]
 		}
 	],
 	"Plugins": [

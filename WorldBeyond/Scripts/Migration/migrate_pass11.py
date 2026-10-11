@@ -496,7 +496,7 @@ def step_bosses(classes, sets, weapons):
     bosses = {}
     bosses["kaelthar"] = make_boss(
         "DA_Boss_Kaelthar", classes.get("kaelthar"), enemy_id="boss_kaelthar", boss_id="kaelthar",
-        display_name="Kael'thar", title="the Molten Colossus", region="Region.CorruptedWoods",
+        display_name="Kael'thar", title="the Molten Colossus", region="Region.Molten",
         description="A demon of slag and soul-fire, three times a man's height.", rank=unreal.BeyondEnemyRank.BOSS,
         story_boss=True, mesh=SEV + "Skins/Tier_1/Sevarog_Red/Meshes/SevarogBloodred", scale=2.5,
         tint=(1.0, 0.35, 0.05, 0.35), max_health=3000, strength=20, arcana=15, defense=30, walk_speed=430,
@@ -527,7 +527,7 @@ def step_bosses(classes, sets, weapons):
         ])
     bosses["hrimgar"] = make_boss(
         "DA_Boss_Hrimgar", classes.get("hrimgar"), enemy_id="boss_hrimgar", boss_id="hrimgar",
-        display_name="Hrimgar", title="the Frost Troll King", region="Region.Forest",
+        display_name="Hrimgar", title="the Frost Troll King", region="Region.Frost",
         description="The troll king of the snowbound peaks; he throws mountains.", rank=unreal.BeyondEnemyRank.BOSS,
         story_boss=True, mesh=RAM + "Skins/Tier2/Elemental/Meshes/Rampage_Elemental", scale=1.7,
         tint=(0.4, 0.7, 1.0, 0.3), max_health=2600, strength=18, defense=35, walk_speed=430,

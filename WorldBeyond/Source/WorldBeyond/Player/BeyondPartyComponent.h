@@ -18,6 +18,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FBeyondMemberLevelUpSignature, ABey
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FBeyondExperienceAwardedSignature, ABeyondCharacterBase*, Victim, float, Experience);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FBeyondBondPointsChangedSignature, int32, BondPoints);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FBeyondStoryFlagChangedSignature, FName, Flag, bool, bSet);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FBeyondPartyFormedSignature);
 
 class UBeyondEquipmentComponent;
 class UBeyondInventoryComponent;
@@ -27,7 +28,8 @@ class UBeyondSkillTreeComponent;
  * The two demigods: the player controls the leader, the other is driven by a companion controller.
  * Handles swapping, auto-swap when the leader falls, proximity revives, party wipes, the shared
  * Bond meter that charges the duo super move, shared EXP and loot from kills, the starter kit and saving the party's
- * progress (levels, skill trees, the bag and what everyone wears).
+ * progress (levels, skill trees, the bag and what everyone wears) and where the party has been in the open world
+ * (discovered regions and places, attuned waystones, the last waystone used; Plan 5).
  * Lives on ABeyondPlayerController.
  */
 UCLASS(ClassGroup = (Beyond), meta = (BlueprintSpawnableComponent))
@@ -156,6 +158,52 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Party|Story")
 	FBeyondStoryFlagChangedSignature OnStoryFlagChanged;
 
+	/**
+	 * The open world (Plan 5, saved). HasStoryFlag also answers Discovered.<id> (a region, village, place or waystone
+	 * found) and Waystone.<id> (attuned), so conversations and banter can check them.
+	 */
+	// True the first time
+	UFUNCTION(BlueprintCallable, Category = "Party|World")
+	bool DiscoverRegion(FName RegionId);
+
+	UFUNCTION(BlueprintPure, Category = "Party|World")
+	bool IsRegionDiscovered(FName RegionId) const { return DiscoveredRegions.Contains(RegionId); }
+
+	// Places and waystones seen (true the first time)
+	UFUNCTION(BlueprintCallable, Category = "Party|World")
+	bool DiscoverPlace(FName PlaceId);
+
+	UFUNCTION(BlueprintPure, Category = "Party|World")
+	bool IsPlaceDiscovered(FName PlaceId) const { return DiscoveredPlaces.Contains(PlaceId); }
+
+	// Can be travelled to from the map (true the first time)
+	UFUNCTION(BlueprintCallable, Category = "Party|World")
+	bool AttuneWaystone(FName WaystoneId);
+
+	UFUNCTION(BlueprintPure, Category = "Party|World")
+	bool IsWaystoneAttuned(FName WaystoneId) const { return AttunedWaystones.Contains(WaystoneId); }
+
+	// Where a loaded save resumes in the open world (the last waystone attuned, rested at or travelled to)
+	UFUNCTION(BlueprintCallable, Category = "Party|World")
+	void SetLastWaystone(FName WaystoneId);
+
+	UFUNCTION(BlueprintPure, Category = "Party|World")
+	FName GetLastWaystone() const { return LastWaystone; }
+
+	UFUNCTION(BlueprintPure, Category = "Party|World")
+	TArray<FName> GetDiscoveredRegions() const { return DiscoveredRegions.Array(); }
+
+	// Forget every region, place and waystone (console Beyond.ResetWorld)
+	UFUNCTION(BlueprintCallable, Category = "Party|World")
+	void ResetWorldProgress();
+
+	// The party has formed and read its save
+	UPROPERTY(BlueprintAssignable, Category = "Party")
+	FBeyondPartyFormedSignature OnPartyFormed;
+
+	UFUNCTION(BlueprintPure, Category = "Party")
+	bool IsPartyFormed() const { return bInitialized; }
+
 	// Defeated enemies drop loot (UBeyondLootSettings rules plus their Guaranteed Loot)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Party|Items")
 	bool bDropLoot = true;
@@ -244,6 +292,17 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Party")
 	void RespawnPartyAt(const FTransform& Transform);
 
+	/**
+	 * Moves everyone to Transform, side by side (fast travel; the world subsystem's streaming hold uses it): abilities
+	 * and dashes stop, the companion forgets its target. bHeal also revives and heals (a respawn).
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Party")
+	void TeleportPartyTo(const FTransform& Transform, bool bHeal);
+
+	// The downed get up, everyone at full health (resting at a waystone)
+	UFUNCTION(BlueprintCallable, Category = "Party")
+	void HealParty();
+
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
 protected:
@@ -316,6 +375,10 @@ private:
 	bool bStarterKitGiven = false;
 	TSet<FName> DefeatedBosses;
 	TSet<FName> StoryFlags;
+	TSet<FName> DiscoveredRegions;
+	TSet<FName> DiscoveredPlaces;
+	TSet<FName> AttunedWaystones;
+	FName LastWaystone;
 	bool bSaveQueued = false;
 	float BondGainMultiplier = 1.0f;
 	float BondEchoFraction = 0.0f;

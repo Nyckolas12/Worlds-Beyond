@@ -147,7 +147,7 @@ bool UBeyondBanterComponent::CanBanterNow(EBeyondBanterTrigger Trigger, FString&
 		WhyNot = TEXT("a conversation is running");
 		return false;
 	}
-	if (PC && (PC->IsSkillTreeOpen() || PC->IsInventoryOpen()))
+	if (PC && PC->IsAnyMenuOpen())
 	{
 		WhyNot = TEXT("a menu is open");
 		return false;
@@ -318,7 +318,7 @@ void UBeyondBanterComponent::Check()
 
 	// Idle: nobody moving, fighting, talking or in a menu
 	const bool bBusy = Leader->GetVelocity().SizeSquared2D() > FMath::Square(20.0f) || IsInFight() || Dialogue->IsConversationActive()
-		|| (PC && (PC->IsSkillTreeOpen() || PC->IsInventoryOpen()));
+		|| (PC && PC->IsAnyMenuOpen());
 	if (bBusy)
 	{
 		LastActivityTime = Time;

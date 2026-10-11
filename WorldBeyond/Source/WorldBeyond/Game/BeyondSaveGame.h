@@ -47,9 +47,9 @@ public:
 	static constexpr int32 UserIndex = 0;
 
 	// 1: levels (Plan 1A); 2: skill trees, Bond Points, duo loadout (Plan 1B); 3: inventory and equipment (Plan 2);
-	// 4: defeated story bosses (Plan 3); 5: story flags (Plan 4)
+	// 4: defeated story bosses (Plan 3); 5: story flags (Plan 4); 6: the open world (Plan 5)
 	UPROPERTY(SaveGame, BlueprintReadOnly, Category = "Save")
-	int32 Version = 5;
+	int32 Version = 6;
 
 	// Keyed by the demigod's class name (BP_Angel_C, BP_Ji-Woong_C)
 	UPROPERTY(SaveGame, BlueprintReadOnly, Category = "Save")
@@ -85,4 +85,20 @@ public:
 	// Story flags set by dialogue and boss victories (UBeyondPartyComponent::HasStoryFlag)
 	UPROPERTY(SaveGame, BlueprintReadOnly, Category = "Save")
 	TArray<FName> StoryFlags;
+
+	// Regions and villages walked into (UBeyondRegionDefinition::RegionId)
+	UPROPERTY(SaveGame, BlueprintReadOnly, Category = "Save")
+	TArray<FName> DiscoveredRegions;
+
+	// Places (ABeyondPointOfInterest::PoiId) and waystones (ABeyondWaystone::WaystoneId) seen
+	UPROPERTY(SaveGame, BlueprintReadOnly, Category = "Save")
+	TArray<FName> DiscoveredPlaces;
+
+	// Waystones the party can fast-travel to
+	UPROPERTY(SaveGame, BlueprintReadOnly, Category = "Save")
+	TArray<FName> AttunedWaystones;
+
+	// Where the party resumes in the open world
+	UPROPERTY(SaveGame, BlueprintReadOnly, Category = "Save")
+	FName LastWaystone;
 };

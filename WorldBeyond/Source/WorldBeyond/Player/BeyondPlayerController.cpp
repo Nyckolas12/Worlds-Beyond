@@ -45,7 +45,11 @@
 #include "UI/BeyondInteractPromptWidget.h"
 #include "UI/BeyondInventoryWidget.h"
 #include "UI/BeyondProgressWidget.h"
+#include "UI/BeyondRegionBannerWidget.h"
 #include "UI/BeyondSkillTreeWidget.h"
+#include "UI/BeyondWorldMapWidget.h"
+#include "World/BeyondWaystone.h"
+#include "World/BeyondWorldSubsystem.h"
 #include "Sound/SoundBase.h"
 #include "UObject/UnrealType.h"
 
@@ -108,6 +112,8 @@ ABeyondPlayerController::ABeyondPlayerController()
 	InteractPromptWidgetClass = UBeyondInteractPromptWidget::StaticClass();
 	SkillTreeWidgetClass = UBeyondSkillTreeWidget::StaticClass();
 	InventoryWidgetClass = UBeyondInventoryWidget::StaticClass();
+	WorldMapWidgetClass = UBeyondWorldMapWidget::StaticClass();
+	RegionBannerWidgetClass = UBeyondRegionBannerWidget::StaticClass();
 	PickupSound = TSoftObjectPtr<USoundBase>(FSoftObjectPath(TEXT("/Game/Audio/energy-charge-up.energy-charge-up")));
 	BondWidgetClass = UBeyondBondMeterWidget::StaticClass();
 	ProgressWidgetClass = UBeyondProgressWidget::StaticClass();
@@ -166,6 +172,15 @@ void ABeyondPlayerController::BeginPlay()
 			}
 			GetWorldTimerManager().SetTimer(PromptTimer, this, &ThisClass::UpdateInteractPrompt, 0.15f, true, 0.3f);
 		}
+		if (RegionBannerWidgetClass)
+		{
+			RegionBannerWidget = CreateWidget<UUserWidget>(this, RegionBannerWidgetClass);
+			if (RegionBannerWidget)
+			{
+				// Full screen; the banner draws itself high in the middle, toasts on the left
+				RegionBannerWidget->AddToViewport(4);
+			}
+		}
 		if (UBeyondDialogueSubsystem* Dialogue = UBeyondDialogueSubsystem::Get(this))
 		{
 			Dialogue->OnConversationStarted.AddUniqueDynamic(this, &ThisClass::HandleConversationStarted);
@@ -214,6 +229,10 @@ void ABeyondPlayerController::SetupInputComponent()
 		{
 			EnhancedInput->BindAction(InventoryAction.Get(), ETriggerEvent::Started, this, &ThisClass::ToggleInventory);
 		}
+		if (WorldMapAction)
+		{
+			EnhancedInput->BindAction(WorldMapAction.Get(), ETriggerEvent::Started, this, &ThisClass::ToggleWorldMap);
+		}
 	}
 }
 
@@ -238,10 +257,15 @@ void ABeyondPlayerController::Input_Swap()
 
 void ABeyondPlayerController::Input_Interact()
 {
-	// Talking wins over loot at the NPC's feet
+	// Talking wins over a waystone, a waystone over loot at its foot
 	if (!TalkTo())
 	{
-		PickUpNearestLoot();
+		ABeyondWaystone* Waystone = FindWaystoneTarget();
+		UBeyondWorldSubsystem* WorldSubsystem = UBeyondWorldSubsystem::Get(this);
+		if (!Waystone || !WorldSubsystem || !WorldSubsystem->UseWaystone(Waystone))
+		{
+			PickUpNearestLoot();
+		}
 	}
 	UpdateInteractPrompt();
 }
@@ -314,7 +338,7 @@ bool ABeyondPlayerController::TalkTo(ABeyondNPCCharacter* NPC)
 		NPC = FindTalkTarget();
 	}
 	ACharacter* Leader = Cast<ACharacter>(GetPawn());
-	if (!NPC || !Leader || IsSkillTreeOpen() || IsInventoryOpen())
+	if (!NPC || !Leader || IsAnyMenuOpen())
 	{
 		return false;
 	}
@@ -365,7 +389,7 @@ void ABeyondPlayerController::UpdateInteractPrompt()
 	}
 
 	const UBeyondDialogueSubsystem* Dialogue = UBeyondDialogueSubsystem::Get(this);
-	if ((Dialogue && Dialogue->IsTalking()) || IsSkillTreeOpen() || IsInventoryOpen())
+	if ((Dialogue && Dialogue->IsTalking()) || IsAnyMenuOpen())
 	{
 		Prompt->SetPrompt(FText::GetEmpty(), FText::GetEmpty());
 		return;
@@ -373,6 +397,13 @@ void ABeyondPlayerController::UpdateInteractPrompt()
 	if (const ABeyondNPCCharacter* NPC = FindTalkTarget())
 	{
 		Prompt->SetPrompt(LOCTEXT("PromptTalk", "Talk"), NPC->GetNPCName());
+		return;
+	}
+	if (const ABeyondWaystone* Waystone = FindWaystoneTarget())
+	{
+		const UBeyondWorldSubsystem* WorldSubsystem = UBeyondWorldSubsystem::Get(this);
+		const bool bAttuned = WorldSubsystem && WorldSubsystem->IsWaystoneAttuned(Waystone);
+		Prompt->SetPrompt(bAttuned ? LOCTEXT("PromptRest", "Rest") : LOCTEXT("PromptAttune", "Attune"), Waystone->GetDisplayNameOrId());
 		return;
 	}
 	if (FindPickupTarget())
@@ -603,7 +634,7 @@ UUserWidget* ABeyondPlayerController::OpenMenuWidget(TObjectPtr<UUserWidget>& Wi
 	}
 
 	// One menu at a time: the other one just goes away (input mode and pause carry over)
-	for (UUserWidget* Other : { SkillTreeWidget.Get(), InventoryWidget.Get() })
+	for (UUserWidget* Other : { SkillTreeWidget.Get(), InventoryWidget.Get(), WorldMapWidget.Get() })
 	{
 		if (Other && Other != Widget && Other->IsInViewport())
 		{
@@ -710,6 +741,52 @@ void ABeyondPlayerController::ToggleInventory()
 bool ABeyondPlayerController::IsInventoryOpen() const
 {
 	return InventoryWidget && InventoryWidget->IsInViewport();
+}
+
+void ABeyondPlayerController::OpenWorldMap()
+{
+	if (UBeyondWorldMapWidget* Map = Cast<UBeyondWorldMapWidget>(OpenMenuWidget(WorldMapWidget, WorldMapWidgetClass, bPauseWhileWorldMapOpen)))
+	{
+		Map->Refresh();
+	}
+}
+
+void ABeyondPlayerController::CloseWorldMap()
+{
+	CloseMenuWidget(WorldMapWidget);
+}
+
+void ABeyondPlayerController::ToggleWorldMap()
+{
+	if (IsWorldMapOpen())
+	{
+		CloseWorldMap();
+	}
+	else
+	{
+		OpenWorldMap();
+	}
+}
+
+bool ABeyondPlayerController::IsWorldMapOpen() const
+{
+	return WorldMapWidget && WorldMapWidget->IsInViewport();
+}
+
+bool ABeyondPlayerController::IsAnyMenuOpen() const
+{
+	return IsSkillTreeOpen() || IsInventoryOpen() || IsWorldMapOpen();
+}
+
+ABeyondWaystone* ABeyondPlayerController::FindWaystoneTarget() const
+{
+	const UBeyondWorldSubsystem* WorldSubsystem = UBeyondWorldSubsystem::Get(this);
+	const UBeyondDialogueSubsystem* Dialogue = UBeyondDialogueSubsystem::Get(this);
+	if (!WorldSubsystem || (Dialogue && Dialogue->IsTalking()) || IsFightNearby())
+	{
+		return nullptr;
+	}
+	return WorldSubsystem->FindWaystoneInReach();
 }
 
 void ABeyondPlayerController::HandleDuoTreeChanged(UBeyondSkillTreeComponent* Tree)

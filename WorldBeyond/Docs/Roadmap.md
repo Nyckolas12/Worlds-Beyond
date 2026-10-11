@@ -11,7 +11,7 @@ gets its own plan in [Plans/](Plans/), built one at a time in this order:
 | **2** | [Items, inventory, **armor tiers + set effects**, loot drops](Plans/02_Items_Armor_Loot.md) | **Built** (pass 9) | Uses Plan 1 stats; bosses (3) need loot |
 | **3** | [Enemies, mini-bosses, main bosses](Plans/03_Enemies_Bosses.md) (phases, mechanics, twists, loot) | **Built** (passes 10–11) | Uses EXP (1) and loot (2) |
 | **4** | [Dialogue: NPCs, village chatter, demigod banter](Plans/04_Dialogue.md) | **Built** (pass 13) | Villages (5) get populated with it |
-| 5 | **Open world**: regions, villages, POIs, boss arenas, map / fast travel | Next | Biggest and content-heavy; uses all of the above |
+| **5** | [Open world](Plans/05_Open_World.md): regions, villages, POIs, boss arenas, map / fast travel | **5A + 5B built** (passes 14–16: systems, greybox world); villages, nature, polish next | Biggest and content-heavy; uses all of the above |
 
 ## Free art to collect (Fab)
 
@@ -64,7 +64,11 @@ Each gets a full write-up in `Plans/` when it starts.
   Blueprints untouched, driven from C++), `BP_NPC_Base` villagers you talk to with F, greetings and multi-speaker
   over-head chatter, Angel and Ji-Woong's **bottom-subtitle banter** (regions, low health, boss victories, idle,
   level-ups, revives), saved **story flags** set by rows and checked by conversations, starter lines for Mossbrook.
-- **5 · Open world (FF7 Rebirth style):** World Partition map; region volumes (name banner, music, weather, level band,
+- **5 · Open world (5A + 5B built):** see [Plans/05_Open_World.md](Plans/05_Open_World.md): regions with banners,
+  discovery, weather, music and level bands, waystones (attune, rest, fast travel from the M map), places, hazards,
+  streaming-safe camps and arenas, save v6; the greybox world `Dominion` (a 4 km World Partition map, its terrain built
+  by script, 22 waystones, 30 camps, 10 arenas, the painted map). Next: villages, nature, polish. The original
+  outline, FF7 Rebirth style: World Partition map; region volumes (name banner, music, weather, level band,
   discovery); the start **forest** with lakes, caves and the **starting village** in its middle; the **dark-magic
   corrupted woods** with empty villages and roaming monsters; later regions from *The Land of the Wandering Dominion*
   map. Every region: 2–3 small villages and a main village, mini-boss arenas and a story-boss arena; waystones (fast

@@ -12,6 +12,7 @@ class ABeyondNPCCharacter;
 class UBeyondBanterComponent;
 class UBeyondBossBarWidget;
 class ABeyondLootDrop;
+class ABeyondWaystone;
 class UBeyondBondMeterWidget;
 class UBeyondDuoSkillTreeComponent;
 class UBeyondInventoryComponent;
@@ -34,6 +35,8 @@ class UUserWidget;
  * equipment & inventory screen (I), one at a time, game paused.
  * F also talks to the NPC in front of the leader (Plan 4: talking wins over loot); a prompt shows what F would do.
  * The Banter Component makes the demigods talk while you play.
+ * Plan 5: F at a waystone attunes it / rests (after talking, before loot), M opens the world map (the third menu), and
+ * the region banner shows place names and discovery toasts.
  */
 UCLASS()
 class WORLDBEYOND_API ABeyondPlayerController : public APlayerController
@@ -123,6 +126,47 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "UI|Inventory")
 	UUserWidget* GetInventoryWidget() const { return InventoryWidget; }
+
+	// Opens / closes the world map (M)
+	UPROPERTY(EditDefaultsOnly, Category = "Input")
+	TObjectPtr<UInputAction> WorldMapAction;
+
+	// The world map screen; leave empty to disable it
+	UPROPERTY(EditDefaultsOnly, Category = "UI|World Map")
+	TSubclassOf<UUserWidget> WorldMapWidgetClass;
+
+	UPROPERTY(EditDefaultsOnly, Category = "UI|World Map")
+	bool bPauseWhileWorldMapOpen = true;
+
+	UFUNCTION(BlueprintCallable, Category = "UI|World Map")
+	void OpenWorldMap();
+
+	UFUNCTION(BlueprintCallable, Category = "UI|World Map")
+	void CloseWorldMap();
+
+	UFUNCTION(BlueprintCallable, Category = "UI|World Map")
+	void ToggleWorldMap();
+
+	UFUNCTION(BlueprintPure, Category = "UI|World Map")
+	bool IsWorldMapOpen() const;
+
+	UFUNCTION(BlueprintPure, Category = "UI|World Map")
+	UUserWidget* GetWorldMapWidget() const { return WorldMapWidget; }
+
+	// The skill tree, the inventory or the world map is open
+	UFUNCTION(BlueprintPure, Category = "UI")
+	bool IsAnyMenuOpen() const;
+
+	// Region names and discovery toasts (Plan 5); leave empty to hide them
+	UPROPERTY(EditDefaultsOnly, Category = "UI|World Map")
+	TSubclassOf<UUserWidget> RegionBannerWidgetClass;
+
+	UFUNCTION(BlueprintPure, Category = "UI|World Map")
+	UUserWidget* GetRegionBannerWidget() const { return RegionBannerWidget; }
+
+	// The waystone F would use (after an NPC to talk to, before loot)
+	UFUNCTION(BlueprintPure, Category = "World")
+	ABeyondWaystone* FindWaystoneTarget() const;
 
 	// The drop F would pick up: the nearest one within the pickup range of the leader (Project Settings -> Worlds Beyond Loot)
 	UFUNCTION(BlueprintPure, Category = "Loot")
@@ -334,6 +378,12 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UUserWidget> InteractPromptWidget;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UUserWidget> WorldMapWidget;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UUserWidget> RegionBannerWidget;
 
 	FTimerHandle PromptTimer;
 

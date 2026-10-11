@@ -297,7 +297,7 @@ bool FBeyondDialogueTest::RunTest(const FString& Parameters)
 		TArray<uint8> Bytes;
 		const UBeyondSaveGame* Loaded = UGameplayStatics::SaveGameToMemory(Save, Bytes)
 			? Cast<UBeyondSaveGame>(UGameplayStatics::LoadGameFromMemory(Bytes)) : nullptr;
-		TestTrue(TEXT("Save v5 keeps story flags"), Loaded && Loaded->Version == 5 && Loaded->StoryFlags.Num() == 2 && Loaded->StoryFlags.Contains(TEXT("Boss.gorehide")));
+		TestTrue(TEXT("Save v5+ keeps story flags"), Loaded && Loaded->Version >= 5 && Loaded->StoryFlags.Num() == 2 && Loaded->StoryFlags.Contains(TEXT("Boss.gorehide")));
 	}
 
 	ADD_LATENT_AUTOMATION_COMMAND(FEditorLoadMap(TEXT("/Game/WorldsBeyond/Maps/TestArena")));
