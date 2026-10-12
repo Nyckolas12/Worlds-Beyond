@@ -34,6 +34,10 @@ void ABeyondHazardVolume::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 bool ABeyondHazardVolume::ContainsLocation(const FVector& Location) const
 {
+	if (Radius > 0.0f && FVector::DistSquared2D(Location, Box->GetComponentLocation()) > FMath::Square(Radius))
+	{
+		return false;
+	}
 	const FVector Local = Box->GetComponentTransform().InverseTransformPosition(Location);
 	const FVector Extent = Box->GetUnscaledBoxExtent();
 	return FMath::Abs(Local.X) <= Extent.X && FMath::Abs(Local.Y) <= Extent.Y && FMath::Abs(Local.Z) <= Extent.Z;

@@ -25,6 +25,12 @@
 #include "Tests/AutomationCommon.h"
 #include "Tests/AutomationEditorCommon.h"
 #include "UI/BeyondWorldMapWidget.h"
+#include "Components/CapsuleComponent.h"
+#include "Components/InstancedSkinnedMeshComponent.h"
+#include "Components/InstancedStaticMeshComponent.h"
+#include "Materials/MaterialInterface.h"
+#include "World/BeyondFloraTile.h"
+#include "World/BeyondHazardVolume.h"
 #include "World/BeyondRegionDefinition.h"
 #include "World/BeyondRegionVolume.h"
 #include "World/BeyondWaystone.h"
@@ -37,7 +43,11 @@
  * world map has its picture, Mossbrook has its houses and its seven people on the ground (pass 17; only a warning before
  * it), Beyond.Travel to Frostholm lands on the ground in the Rimewood Reach, a camp puts its
  * enemies away when the party leaves and has exactly as many when it comes back, Gorehide's arena has its boss only
- * while the party is near and exactly one after leaving and coming back.
+ * while the party is near and exactly one after leaving and coming back. Pass 18 (only a warning before it): the
+ * landscape wears MI_Beyond_Landscape, the three lakes have water and deep water under their middles (not at their
+ * shores), the caldera's lava burns in its pools but not on Kael'thar's floor or at the Caldera Breach Waystone, and the
+ * party stands on Glassmere's ice. Pass 19 (only a warning before it): trees, shrubs and rocks are loaded round Mossbrook
+ * and nothing that blocks stands at its waystone.
  *
  * UnrealEditor-Cmd.exe WorldBeyond.uproject -ExecCmds="Automation RunTests WorldsBeyond.Prototype.OpenWorld;Quit" -unattended -nullrhi -nosplash
  */
@@ -54,7 +64,165 @@ namespace BeyondOpenWorldTest
 		TWeakObjectPtr<ABeyondBossArena> Arena;
 		int32 CampCount = 0;
 		FString SavedSaveProgress;
+		TWeakObjectPtr<AActor> Ice;
+		float IceTop = 0.0f;
 	};
+
+	UWorld* PlayWorld();
+
+	AActor* FindLabelled(const FString& Label)
+	{
+		for (TActorIterator<AActor> It(PlayWorld()); It; ++It)
+		{
+			if (It->GetActorLabel() == Label)
+			{
+				return *It;
+			}
+		}
+		return nullptr;
+	}
+
+	// The material a landscape actor wears (read by reflection: this module doesn't link the landscape's)
+	const UMaterialInterface* LandscapeMaterialOf(const AActor* Actor)
+	{
+		const FObjectProperty* Property = Actor ? FindFProperty<FObjectProperty>(Actor->GetClass(), TEXT("LandscapeMaterial")) : nullptr;
+		return Property ? Cast<UMaterialInterface>(Property->GetObjectPropertyValue_InContainer(Actor)) : nullptr;
+	}
+
+	// Pass 19's flora round a point (2D): plants and rocks loaded within Radius, and how many that block stand (by their
+	// pivots) within Clear of Centre: the foliage's components and the flora tiles' trunk colliders. The foliage actor's
+	// class is found by name: this module doesn't link the Foliage module
+	void CountFlora(UWorld* World, const FVector& Centre, float Radius, float Clear, int32& OutNear, int32& OutBlocking)
+	{
+		OutNear = 0;
+		OutBlocking = 0;
+		const UClass* FoliageClass = FindObject<UClass>(nullptr, TEXT("/Script/Foliage.InstancedFoliageActor"));
+		for (TActorIterator<AActor> It(World); It; ++It)
+		{
+			ABeyondFloraTile* Tile = Cast<ABeyondFloraTile>(*It);
+			if (!Tile && !(FoliageClass && It->IsA(FoliageClass)))
+			{
+				continue;
+			}
+			TArray<UInstancedStaticMeshComponent*> Meshes;
+			It->GetComponents<UInstancedStaticMeshComponent>(Meshes);
+			for (const UInstancedStaticMeshComponent* Mesh : Meshes)
+			{
+				const bool bColliders = Mesh->ComponentHasTag(ABeyondFloraTile::ColliderTag);
+				const bool bBlocks = Mesh->IsCollisionEnabled();
+				for (int32 Index = 0; Index < Mesh->GetInstanceCount(); ++Index)
+				{
+					FTransform Transform;
+					if (!Mesh->GetInstanceTransform(Index, Transform, true))
+					{
+						continue;
+					}
+					const double Distance = FVector::Dist2D(Transform.GetLocation(), Centre);
+					OutNear += !bColliders && Distance <= Radius ? 1 : 0;
+					OutBlocking += bBlocks && Distance <= Clear ? 1 : 0;
+				}
+			}
+			if (Tile)
+			{
+				TArray<UInstancedSkinnedMeshComponent*> Plants;
+				Tile->GetPlantComponents(Plants);
+				for (const UInstancedSkinnedMeshComponent* Plant : Plants)
+				{
+					for (int32 Index = 0; Index < Plant->GetInstanceCount(); ++Index)
+					{
+						FTransform Transform;
+						if (Plant->GetInstanceTransform(Plant->GetInstanceId(Index), Transform, true) && FVector::Dist2D(Transform.GetLocation(), Centre) <= Radius)
+						{
+							++OutNear;
+						}
+					}
+				}
+			}
+		}
+	}
+
+	void CheckFlora(FAutomationTestBase& T, UBeyondWorldSubsystem& Subsystem, const FVector& Here)
+	{
+		if (!FPackageName::DoesPackageExist(TEXT("/Game/WorldsBeyond/World/Flora/FT_spruce_full_01")))
+		{
+			T.AddWarning(TEXT("The trees and rocks aren't there yet: run migrate_pass19.py"));
+			return;
+		}
+		int32 Near = 0;
+		int32 Blocking = 0;
+		CountFlora(PlayWorld(), Here, 40000.0f, 0.0f, Near, Blocking);
+		T.TestTrue(*FString::Printf(TEXT("Trees, shrubs and rocks are loaded round Mossbrook (%d within 400 m)"), Near), Near >= 50);
+		if (const ABeyondWaystone* Waystone = Subsystem.FindWaystone(TEXT("mossbrook")))
+		{
+			CountFlora(PlayWorld(), Waystone->GetActorLocation(), 0.0f, 1500.0f, Near, Blocking);
+			T.TestEqual(TEXT("Nothing that blocks stands within 15 m of Mossbrook's waystone"), Blocking, 0);
+		}
+	}
+
+	float BoxTop(const ABeyondHazardVolume* Hazard)
+	{
+		FVector Origin;
+		FVector Extent;
+		Hazard->GetActorBounds(false, Origin, Extent);
+		return Origin.Z + Extent.Z;
+	}
+
+	// Pass 18's ground: the landscape's material, the lakes' water and deep water, the caldera's lava
+	void CheckGround(FAutomationTestBase& T, UBeyondWorldSubsystem& Subsystem)
+	{
+		if (!FPackageName::DoesPackageExist(TEXT("/Game/WorldsBeyond/World/Landscape/MI_Beyond_Landscape")))
+		{
+			T.AddWarning(TEXT("The textured ground isn't built yet: run migrate_pass18.py"));
+			return;
+		}
+		int32 Landscapes = 0;
+		int32 Textured = 0;
+		for (TActorIterator<AActor> It(PlayWorld()); It; ++It)
+		{
+			if (FindFProperty<FObjectProperty>(It->GetClass(), TEXT("LandscapeMaterial")))
+			{
+				++Landscapes;
+				const UMaterialInterface* Material = LandscapeMaterialOf(*It);
+				Textured += Material && Material->GetName() == TEXT("MI_Beyond_Landscape") ? 1 : 0;
+			}
+		}
+		T.TestTrue(*FString::Printf(TEXT("The loaded landscape wears MI_Beyond_Landscape (%d of %d)"), Textured, Landscapes), Landscapes > 0 && Textured == Landscapes);
+
+		for (const TCHAR* Lake : { TEXT("mirrormere"), TEXT("reedpool"), TEXT("blackmere") })
+		{
+			T.TestNotNull(*FString::Printf(TEXT("%s has water"), Lake), FindLabelled(FString::Printf(TEXT("WB_Water_%s"), Lake)));
+			const ABeyondHazardVolume* Deep = Cast<ABeyondHazardVolume>(FindLabelled(FString::Printf(TEXT("WB_Hazard_%s"), Lake)));
+			if (T.TestNotNull(*FString::Printf(TEXT("%s has deep water"), Lake), Deep))
+			{
+				const FVector Centre = Deep->GetActorLocation();
+				const float Top = BoxTop(Deep);
+				T.TestTrue(*FString::Printf(TEXT("2 m under %s's middle is deep"), Lake), Deep->ContainsLocation(FVector(Centre.X, Centre.Y, Top - 150.0f)));
+				T.TestFalse(*FString::Printf(TEXT("...%s's shore isn't"), Lake),
+					Deep->ContainsLocation(FVector(Centre.X + Deep->Radius + 200.0f, Centre.Y, Top - 50.0f)));
+			}
+		}
+		T.TestNotNull(TEXT("Glassmere is frozen"), FindLabelled(TEXT("WB_Ice_glassmere")));
+		T.TestNull(TEXT("...with no deep water under it"), FindLabelled(TEXT("WB_Hazard_glassmere")));
+
+		T.TestNotNull(TEXT("The caldera has lava"), FindLabelled(TEXT("WB_Lava_molten_heart")));
+		const ABeyondHazardVolume* Lava = Cast<ABeyondHazardVolume>(FindLabelled(TEXT("WB_Hazard_molten_heart")));
+		if (T.TestNotNull(TEXT("...that burns"), Lava))
+		{
+			const FVector Centre = Lava->GetActorLocation();
+			T.TestTrue(TEXT("Standing in a lava pool burns"), Lava->ContainsLocation(FVector(Centre.X, Centre.Y, BoxTop(Lava) - 40.0f)));
+			for (ABeyondBossArena* Arena : Subsystem.GetArenas())
+			{
+				if (Arena->ArenaId == TEXT("molten_heart"))
+				{
+					T.TestFalse(TEXT("Kael'thar's floor doesn't"), Lava->ContainsLocation(Arena->GetActorLocation() + FVector(0.0f, 0.0f, 90.0f)));
+				}
+			}
+			if (const ABeyondWaystone* Breach = Subsystem.FindWaystone(TEXT("molten_heart")))
+			{
+				T.TestFalse(TEXT("The Caldera Breach Waystone doesn't"), Lava->ContainsLocation(Breach->GetActorLocation() + FVector(0.0f, 0.0f, 90.0f)));
+			}
+		}
+	}
 
 	UWorld* PlayWorld()
 	{
@@ -258,6 +426,9 @@ bool FBeyondOpenWorldTest::RunTest(const FString& Parameters)
 			T.TestEqual(TEXT("...standing on the ground, none fallen through"), Standing, People);
 		}
 
+		CheckGround(T, *Subsystem);
+		CheckFlora(T, *Subsystem, Here);
+
 		State->PC->OpenWorldMap();
 		const UBeyondWorldMapWidget* Map = Cast<UBeyondWorldMapWidget>(State->PC->GetWorldMapWidget());
 		T.TestTrue(TEXT("The world map has its picture"), Map && Map->GetMapTexture() != nullptr);
@@ -409,6 +580,33 @@ bool FBeyondOpenWorldTest::RunTest(const FString& Parameters)
 	ADD_LATENT_AUTOMATION_COMMAND(FBeyondOpenWorldStep([State]()
 	{
 		State->Test->TestEqual(TEXT("Still exactly one Gorehide"), BossesOf(State->Arena.Get()), 1);
+
+		// Pass 18: onto Glassmere's ice
+		AActor* Ice = FindLabelled(TEXT("WB_Ice_glassmere"));
+		UBeyondWorldSubsystem* Subsystem = World();
+		if (Ice && Subsystem)
+		{
+			FVector Origin;
+			FVector Extent;
+			Ice->GetActorBounds(false, Origin, Extent);
+			State->Ice = Ice;
+			State->IceTop = Origin.Z + Extent.Z;
+			Subsystem->TravelPartyTo(FTransform(FVector(Origin.X, Origin.Y, State->IceTop + 300.0f)), EBeyondTravelReason::Cheat);
+		}
+		return true;
+	}));
+	ADD_LATENT_AUTOMATION_COMMAND(FWaitLatentCommand(0.2f));
+	ADD_LATENT_AUTOMATION_COMMAND(FBeyondOpenWorldStep(WaitUntil(State, [State]() { return !State->Ice.IsValid() || PartySettled(*State); }, 40.0f,
+		TEXT("travel onto Glassmere's ice"))));
+	ADD_LATENT_AUTOMATION_COMMAND(FBeyondOpenWorldStep([State]()
+	{
+		const ABeyondCharacterBase* Who = Leader(*State);
+		if (State->Ice.IsValid() && Who)
+		{
+			const float Feet = Who->GetActorLocation().Z - Who->GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+			State->Test->TestTrue(*FString::Printf(TEXT("The party stands on Glassmere's ice (feet %.0f, ice %.0f)"), Feet, State->IceTop),
+				FMath::Abs(Feet - State->IceTop) < 60.0f);
+		}
 		return true;
 	}));
 

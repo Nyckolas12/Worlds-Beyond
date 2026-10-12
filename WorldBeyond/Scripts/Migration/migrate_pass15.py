@@ -33,6 +33,7 @@ WORLD = "/Game/WorldsBeyond/World"
 LAYOUT_ASSET = WORLD + "/DA_WorldLayout"
 LANDSCAPE_DIR = WORLD + "/Landscape"
 GREYBOX = LANDSCAPE_DIR + "/M_Beyond_LandscapeGreybox"
+GROUND_INSTANCE = LANDSCAPE_DIR + "/MI_Beyond_Landscape"  # pass 18
 LAYERS_DIR = LANDSCAPE_DIR + "/Layers"
 MAP = "/Game/WorldsBeyond/Maps/Dominion"
 
@@ -199,6 +200,12 @@ def step_landscape(world, layout, material, infos):
         LIB.load_landscape_proxies(world)
         removed = LIB.delete_landscapes(world)
         log("deleted the old landscape (%d actors)" % removed)
+    # The textured ground (pass 18) when it's there, else the greybox
+    if EAL.does_asset_exist(GROUND_INSTANCE):
+        textured = load(GROUND_INSTANCE)
+        if textured is not None:
+            material = textured
+            log("the new landscape wears %s" % GROUND_INSTANCE)
     landscape = LIB.create_landscape(world, layout, material, infos, 2)
     if landscape is None:
         warn("could not make the landscape: run the pass in the editor or import Saved/WorldBuilder/heightmap.r16 by hand")

@@ -49,11 +49,12 @@ public:
 	/**
 	 * Renders the editor world from Location / Rotation into a Width x Height PNG at FilePath (lit, manual exposure at
 	 * ExposureEV, no dynamic GI; orthographic OrthoWidth wide when above 0). Shaders and textures are finished first, so
-	 * the first capture can take a while. The camera stays for the next capture until ReleaseCapture.
+	 * the first capture can take a while; WarmupFrames frames are rendered before the one kept (more lets streamed and
+	 * virtual textures load). The camera stays for the next capture until ReleaseCapture.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Beyond|Village Builder", meta = (WorldContext = "WorldContext"))
 	static bool CaptureView(UObject* WorldContext, FVector Location, FRotator Rotation, const FString& FilePath, float FOV = 60.0f,
-		int32 Width = 1280, int32 Height = 720, float ExposureEV = 0.0f, float OrthoWidth = 0.0f);
+		int32 Width = 1280, int32 Height = 720, float ExposureEV = 0.0f, float OrthoWidth = 0.0f, int32 WarmupFrames = 4);
 
 	/** Removes the capture camera (call before saving a level that was captured). */
 	UFUNCTION(BlueprintCallable, Category = "Beyond|Village Builder")

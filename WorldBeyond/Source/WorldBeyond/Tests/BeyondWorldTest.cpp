@@ -290,6 +290,17 @@ bool FBeyondWorldTest::RunTest(const FString& Parameters)
 		Demo.Place = BeyondWorldDemo::SpawnPlace(W, TEXT("test_shrine"), FText::FromString(TEXT("Test Shrine")), PlaceSpot, 300.0f);
 		Demo.Lava = BeyondWorldDemo::SpawnHazard(W, EBeyondHazardKind::Burn, LavaSpot + FVector(0.0f, 0.0f, 100.0f), FVector(150.0f, 150.0f, 200.0f));
 		Demo.DeepWater = BeyondWorldDemo::SpawnHazard(W, EBeyondHazardKind::DeepWater, WaterSpot + FVector(0.0f, 0.0f, 100.0f), FVector(150.0f, 150.0f, 200.0f));
+		if (ABeyondHazardVolume* Water = Demo.DeepWater.Get())
+		{
+			// A Radius makes it round (pass 18's lakes and lava): the centre counts, the box's corner doesn't
+			const FVector Centre = Water->GetActorLocation();
+			const FVector Corner = Centre + FVector(140.0f, 140.0f, 0.0f);
+			T.TestTrue(TEXT("Without a radius the box's corner is in the hazard"), Water->ContainsLocation(Corner));
+			Water->Radius = 150.0f;
+			T.TestTrue(TEXT("With a radius its centre is"), Water->ContainsLocation(Centre));
+			T.TestFalse(TEXT("...and its corner isn't"), Water->ContainsLocation(Corner));
+			Water->Radius = 0.0f;
+		}
 		for (const TWeakObjectPtr<AActor>& Actor : Demo.All())
 		{
 			State->Cleanup.Add(Actor);

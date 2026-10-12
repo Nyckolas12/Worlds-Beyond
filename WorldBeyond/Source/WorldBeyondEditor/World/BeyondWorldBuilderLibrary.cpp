@@ -35,8 +35,10 @@
 #include "NavigationSystem.h"
 #include "NavMesh/RecastNavMesh.h"
 #include "UObject/Package.h"
+#include "UObject/UObjectHash.h"
 #include "World/BeyondHeightfieldGenerator.h"
 #include "World/BeyondOpenWorldNavigationSystem.h"
+#include "World/BeyondWorldBuilderInternal.h"
 #include "World/BeyondWorldLayout.h"
 #include "World/BeyondWorldMapData.h"
 #include "WorldPartition/WorldPartition.h"
@@ -73,6 +75,27 @@ namespace BeyondWorldBuilderLocal
 			CachedLayout = Layout;
 		}
 		return CachedField.Get();
+	}
+
+	void KeepLoaded(FWorldPartitionActorDescInstance* Desc)
+	{
+		if (Desc)
+		{
+			LoadedProxies.Emplace(Desc);
+		}
+	}
+
+	void ClearMaterialExpressions(UMaterial* Material)
+	{
+		if (!Material)
+		{
+			return;
+		}
+		const TArray<TObjectPtr<UMaterialExpression>> Expressions(Material->GetExpressions());
+		for (UMaterialExpression* Expression : Expressions)
+		{
+			UMaterialEditingLibrary::DeleteMaterialExpression(Material, Expression);
+		}
 	}
 
 	bool SavePng(const FString& Path, const void* Data, int64 Bytes, int32 Width, int32 Height, ERGBFormat Format, int32 BitDepth)
@@ -238,27 +261,6 @@ namespace BeyondWorldBuilderLocal
 		});
 	}
 
-	template <typename T>
-	T* LoadExisting(const FString& AssetPath)
-	{
-		const FString ObjectPath = AssetPath + TEXT(".") + FPackageName::GetShortName(AssetPath);
-		return LoadObject<T>(nullptr, *ObjectPath, nullptr, LOAD_NoWarn | LOAD_Quiet);
-	}
-
-	template <typename T>
-	T* MakeAsset(const FString& AssetPath, bool& bOutNew)
-	{
-		bOutNew = false;
-		if (T* Existing = LoadExisting<T>(AssetPath))
-		{
-			return Existing;
-		}
-		UPackage* Package = CreatePackage(*AssetPath);
-		T* Asset = NewObject<T>(Package, *FPackageName::GetShortName(AssetPath), RF_Public | RF_Standalone | RF_Transactional);
-		bOutNew = true;
-		return Asset;
-	}
-
 	UTexture2D* MakeTexture(const FString& AssetPath, int32 Resolution, const TArray<FColor>& Pixels)
 	{
 		bool bNew = false;
@@ -317,7 +319,7 @@ UMaterial* UBeyondWorldBuilderLibrary::CreateGreyboxLandscapeMaterial(const FStr
 	{
 		return Material;
 	}
-	UMaterialEditingLibrary::DeleteAllMaterialExpressions(Material);
+	ClearMaterialExpressions(Material);
 
 	UMaterialExpressionLandscapeLayerBlend* Blend = Cast<UMaterialExpressionLandscapeLayerBlend>(
 		UMaterialEditingLibrary::CreateMaterialExpression(Material, UMaterialExpressionLandscapeLayerBlend::StaticClass(), -300, 0));
@@ -722,6 +724,26 @@ bool UBeyondWorldBuilderLibrary::SaveWorld(UObject* WorldContext)
 	int32 Deleted = 0;
 	for (const FString& File : BeyondWorldBuilderLocal::PendingDeletes)
 	{
+		// ...unless the package holds a new actor again: a partition actor (a foliage actor of the same grid cell) made
+		// after the old one was destroyed gets the same name and package, and was just saved there
+		FString PackageName;
+		if (FPackageName::TryConvertFilenameToLongPackageName(File, PackageName))
+		{
+			if (UPackage* Package = FindPackage(nullptr, *PackageName))
+			{
+				bool bLive = false;
+				ForEachObjectWithPackage(Package, [&bLive](UObject* Object)
+				{
+					const AActor* Actor = Cast<AActor>(Object);
+					bLive = Actor && IsValid(Actor);
+					return !bLive;
+				}, EGetObjectsFlags::None);
+				if (bLive)
+				{
+					continue;
+				}
+			}
+		}
 		const FString Full = FPaths::ConvertRelativePathToFull(File);
 		if (IFileManager::Get().FileExists(*Full) && IFileManager::Get().Delete(*Full, false, true))
 		{

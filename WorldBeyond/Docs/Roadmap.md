@@ -11,7 +11,7 @@ gets its own plan in [Plans/](Plans/), built one at a time in this order:
 | **2** | [Items, inventory, **armor tiers + set effects**, loot drops](Plans/02_Items_Armor_Loot.md) | **Built** (pass 9) | Uses Plan 1 stats; bosses (3) need loot |
 | **3** | [Enemies, mini-bosses, main bosses](Plans/03_Enemies_Bosses.md) (phases, mechanics, twists, loot) | **Built** (passes 10–11) | Uses EXP (1) and loot (2) |
 | **4** | [Dialogue: NPCs, village chatter, demigod banter](Plans/04_Dialogue.md) | **Built** (pass 13) | Villages (5) get populated with it |
-| **5** | [Open world](Plans/05_Open_World.md): regions, villages, POIs, boss arenas, map / fast travel | **5A–5C built** (passes 14–17: systems, the world, villages); nature, polish next | Biggest and content-heavy; uses all of the above |
+| **5** | [Open world](Plans/05_Open_World.md): regions, villages, POIs, boss arenas, map / fast travel | **5A–5D built** (passes 14–18: systems, the world, villages, the textured ground with grass, water and lava); trees and rocks, polish next | Biggest and content-heavy; uses all of the above |
 
 ## Free art to collect (Fab)
 
@@ -68,7 +68,9 @@ Each gets a full write-up in `Plans/` when it starts.
   discovery, weather, music and level bands, waystones (attune, rest, fast travel from the M map), places, hazards,
   streaming-safe camps and arenas, save v6; the greybox world `Dominion` (a 4 km World Partition map, its terrain built
   by script, 22 waystones, 30 camps, 10 arenas, the painted map) and its villages (houses assembled from the modular
-  kit as packed prefabs, Mossbrook's people and a talker and a chatting pair per village). Next: nature, polish. The original
+  kit as packed prefabs, Mossbrook's people and a talker and a chatting pair per village) and its ground (11 textured,
+  height-blended layers graded per region, grass cover, water, Glassmere's ice, the caldera's lava). Next: trees and rocks
+  (PCG, the Megaplants), polish. The original
   outline, FF7 Rebirth style: World Partition map; region volumes (name banner, music, weather, level band,
   discovery); the start **forest** with lakes, caves and the **starting village** in its middle; the **dark-magic
   corrupted woods** with empty villages and roaming monsters; later regions from *The Land of the Wandering Dominion*
