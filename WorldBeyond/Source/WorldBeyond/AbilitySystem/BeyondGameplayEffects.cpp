@@ -48,6 +48,13 @@ UBeyondGE_LevelStats::UBeyondGE_LevelStats()
 	Modifiers.Add(MakeSetByCallerModifier(UCharacterAttributeSet::GetStrengthAttribute(), BeyondTags::SetByCaller_Strength));
 	Modifiers.Add(MakeSetByCallerModifier(UCharacterAttributeSet::GetArcanaAttribute(), BeyondTags::SetByCaller_Arcana));
 	Modifiers.Add(MakeSetByCallerModifier(UCharacterAttributeSet::GetDefenseAttribute(), BeyondTags::SetByCaller_Defense));
+	Modifiers.Add(MakeSetByCallerModifier(UCharacterAttributeSet::GetCritRateAttribute(), BeyondTags::SetByCaller_CritRate));
+	Modifiers.Add(MakeSetByCallerModifier(UCharacterAttributeSet::GetCritDamageAttribute(), BeyondTags::SetByCaller_CritDamage));
+	Modifiers.Add(MakeSetByCallerModifier(UCharacterAttributeSet::GetElementalMasteryAttribute(), BeyondTags::SetByCaller_ElementalMastery));
+	Modifiers.Add(MakeSetByCallerModifier(UCharacterAttributeSet::GetVerdantAffinityAttribute(), BeyondTags::SetByCaller_VerdantAffinity));
+	Modifiers.Add(MakeSetByCallerModifier(UCharacterAttributeSet::GetShadowAffinityAttribute(), BeyondTags::SetByCaller_ShadowAffinity));
+	Modifiers.Add(MakeSetByCallerModifier(UCharacterAttributeSet::GetFrostAffinityAttribute(), BeyondTags::SetByCaller_FrostAffinity));
+	Modifiers.Add(MakeSetByCallerModifier(UCharacterAttributeSet::GetFlameAffinityAttribute(), BeyondTags::SetByCaller_FlameAffinity));
 }
 
 namespace
@@ -58,6 +65,12 @@ namespace
 		SetByCaller.DataTag = BeyondTags::SetByCaller_Duration;
 		return FGameplayEffectModifierMagnitude(SetByCaller);
 	}
+}
+
+UBeyondGE_TimedStats::UBeyondGE_TimedStats()
+{
+	DurationPolicy = EGameplayEffectDurationType::HasDuration;
+	DurationMagnitude = SetByCallerDuration();
 }
 
 UBeyondGE_DamageOverTime::UBeyondGE_DamageOverTime()

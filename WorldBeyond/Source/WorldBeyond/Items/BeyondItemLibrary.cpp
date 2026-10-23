@@ -3,6 +3,7 @@
 #include "Items/BeyondItemLibrary.h"
 #include "Characters/BeyondCharacterBase.h"
 #include "Items/BeyondLootSettings.h"
+#include "Progression/BeyondStatEffects.h"
 
 #define LOCTEXT_NAMESPACE "BeyondItems"
 
@@ -131,6 +132,10 @@ FText UBeyondItemLibrary::GetItemName(const FBeyondItemInstance& Item)
 
 FText UBeyondItemLibrary::FormatStat(const FBeyondItemStat& Stat)
 {
+	if (BeyondStats::IsPercentStat(Stat.Stat))
+	{
+		return FText::Format(LOCTEXT("StatPercentLine", "+{0}% {1}"), FText::AsNumber(FMath::RoundToInt(Stat.Value)), UBeyondSkillTreeAsset::GetStatName(Stat.Stat));
+	}
 	return FText::Format(LOCTEXT("StatLine", "+{0} {1}"), FText::AsNumber(FMath::RoundToInt(Stat.Value)), UBeyondSkillTreeAsset::GetStatName(Stat.Stat));
 }
 

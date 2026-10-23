@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/PlayerController.h"
+#include "UI/BeyondUITypes.h"
 #include "Widgets/Layout/Anchors.h"
 #include "BeyondPlayerController.generated.h"
 
@@ -11,6 +12,7 @@ class ABeyondCharacterBase;
 class ABeyondNPCCharacter;
 class UBeyondBanterComponent;
 class UBeyondBossBarWidget;
+class UBeyondCharacterProfile;
 class ABeyondLootDrop;
 class ABeyondWaystone;
 class UBeyondBondMeterWidget;
@@ -156,6 +158,65 @@ public:
 	// The skill tree, the inventory or the world map is open
 	UFUNCTION(BlueprintPure, Category = "UI")
 	bool IsAnyMenuOpen() const;
+
+	// How the menus present the duo (the third character tab, Plan 6)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI")
+	TObjectPtr<UBeyondCharacterProfile> DuoProfile;
+
+	//~ The character menu's other pages and the pause menu (Plan 6)
+
+	// The character overview (C); leave empty to disable it
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Character Menu")
+	TSubclassOf<UUserWidget> OverviewWidgetClass;
+
+	// The quest log (J); leave empty to disable it
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Character Menu")
+	TSubclassOf<UUserWidget> QuestLogWidgetClass;
+
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Character Menu")
+	bool bPauseWhileCharacterMenuOpen = true;
+
+	// The pause menu (P, gamepad Start); leave empty to disable it
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Pause")
+	TSubclassOf<UUserWidget> PauseMenuWidgetClass;
+
+	// Opens a menu page on a header tab (Angel, Ji-Woong, Duo; -1 picks the leader), closing any other menu
+	UFUNCTION(BlueprintCallable, Category = "UI")
+	UUserWidget* OpenMenuPage(EBeyondMenuPage Page, int32 HeaderTab = -1);
+
+	UFUNCTION(BlueprintCallable, Category = "UI")
+	void CloseMenuPage(EBeyondMenuPage Page);
+
+	UFUNCTION(BlueprintPure, Category = "UI")
+	bool IsMenuPageOpen(EBeyondMenuPage Page) const;
+
+	// The page's widget (created the first time it opened); null before
+	UFUNCTION(BlueprintPure, Category = "UI")
+	UUserWidget* GetMenuWidget(EBeyondMenuPage Page) const;
+
+	UFUNCTION(BlueprintCallable, Category = "UI|Character Menu")
+	void ToggleOverview();
+
+	UFUNCTION(BlueprintCallable, Category = "UI|Character Menu")
+	void ToggleQuestLog();
+
+	UFUNCTION(BlueprintCallable, Category = "UI|Pause")
+	void TogglePauseMenu();
+
+	// The character tab (Angel, Ji-Woong, Duo) last shown on a character page; INDEX_NONE before any
+	int32 GetLastMenuCharacterTab() const { return LastMenuCharacterTab; }
+
+	// Opens / closes the character overview (C)
+	UPROPERTY(EditDefaultsOnly, Category = "Input")
+	TObjectPtr<UInputAction> CharacterMenuAction;
+
+	// Opens / closes the quest log (J)
+	UPROPERTY(EditDefaultsOnly, Category = "Input")
+	TObjectPtr<UInputAction> QuestLogAction;
+
+	// Opens / closes the pause menu (P, gamepad Start)
+	UPROPERTY(EditDefaultsOnly, Category = "Input")
+	TObjectPtr<UInputAction> PauseAction;
 
 	// Region names and discovery toasts (Plan 5); leave empty to hide them
 	UPROPERTY(EditDefaultsOnly, Category = "UI|World Map")
@@ -385,6 +446,15 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UUserWidget> RegionBannerWidget;
 
+	UPROPERTY(Transient)
+	TObjectPtr<UUserWidget> OverviewWidget;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UUserWidget> QuestLogWidget;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UUserWidget> PauseMenuWidget;
+
 	FTimerHandle PromptTimer;
 
 	// Real time of the last F at a waystone (held or hammered F doesn't rest again and again)
@@ -395,6 +465,8 @@ private:
 
 	// A menu paused the game (and unpauses it when it closes)
 	bool bPausedByMenu = false;
+
+	int32 LastMenuCharacterTab = INDEX_NONE;
 
 	FTimerHandle CrosshairTimer;
 

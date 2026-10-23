@@ -129,6 +129,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Set")
 	FLinearColor Color = FLinearColor(0.3f, 1.0f, 0.4f);
 
+	// The set's badge on the Armor page (Plan 6; a spark in Color without one)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Set")
+	TSoftObjectPtr<UTexture2D> Emblem;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Set")
 	TArray<FBeyondItemStat> TwoPieceStats;
 

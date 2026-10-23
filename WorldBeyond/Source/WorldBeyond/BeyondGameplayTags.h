@@ -111,6 +111,23 @@ namespace BeyondTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(SetByCaller_Strength);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(SetByCaller_Arcana);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(SetByCaller_Defense);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(SetByCaller_CritRate);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(SetByCaller_CritDamage);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(SetByCaller_ElementalMastery);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(SetByCaller_VerdantAffinity);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(SetByCaller_ShadowAffinity);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(SetByCaller_FrostAffinity);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(SetByCaller_FlameAffinity);
+
+	// Plan 6: a hit that rolled a critical, and the element a hit carries (on the damage spec)
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Damage_Critical);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Element_Storm);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Element_Radiant);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Element_Eclipse);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Element_Verdant);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Element_Shadow);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Element_Frost);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Element_Flame);
 
 	// Gameplay cues fired by the shared damage / heal effects
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayCue_Damage_Burst);

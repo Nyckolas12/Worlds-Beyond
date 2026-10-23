@@ -16,6 +16,8 @@
 #include "AbilitySystem/BeyondGameplayAbility.h"
 #include "AbilitySystem/BeyondGameplayEffects.h"
 #include "BeyondGameplayTags.h"
+#include "Progression/BeyondStatEffects.h"
+#include "UI/BeyondCharacterProfile.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Game/BeyondCombatSubsystem.h"
 #include "Perception/AIPerceptionComponent.h"
@@ -501,6 +503,11 @@ void ABeyondCharacterBase::ResolveAttributeSet()
 	}
 }
 
+EBeyondElement ABeyondCharacterBase::GetNativeElement() const
+{
+	return Profile && Profile->PrimaryElement != EBeyondElement::None ? Profile->PrimaryElement : NativeElement;
+}
+
 void ABeyondCharacterBase::InitializeAttributeSet()
 {
 	if (!AbilitySystemComponent || !AttributeSet)
@@ -532,6 +539,9 @@ void ABeyondCharacterBase::InitializeAttributeSet()
 	AbilitySystemComponent->SetNumericAttributeBase(UCharacterAttributeSet::GetStrengthAttribute(), BaseStrength);
 	AbilitySystemComponent->SetNumericAttributeBase(UCharacterAttributeSet::GetArcanaAttribute(), BaseArcana);
 	AbilitySystemComponent->SetNumericAttributeBase(UCharacterAttributeSet::GetDefenseAttribute(), BaseDefense);
+	AbilitySystemComponent->SetNumericAttributeBase(UCharacterAttributeSet::GetCritRateAttribute(), BaseCritRate);
+	AbilitySystemComponent->SetNumericAttributeBase(UCharacterAttributeSet::GetCritDamageAttribute(), BaseCritDamage);
+	AbilitySystemComponent->SetNumericAttributeBase(UCharacterAttributeSet::GetElementalMasteryAttribute(), BaseElementalMastery);
 	const int32 MaxLevel = GetDefault<UBeyondProgressionSettings>()->MaxLevel;
 	AbilitySystemComponent->SetNumericAttributeBase(UCharacterAttributeSet::GetLevelAttribute(), static_cast<float>(FMath::Clamp(StartingLevel, 1, MaxLevel)));
 	ApplyLevelStats();
@@ -680,6 +690,11 @@ void ABeyondCharacterBase::ApplyLevelStats()
 		const FGameplayEffectSpecHandle Spec = AbilitySystemComponent->MakeOutgoingSpec(UBeyondGE_LevelStats::StaticClass(), 1.0f, AbilitySystemComponent->MakeEffectContext());
 		if (Spec.IsValid())
 		{
+			// Every stat the effect modifies needs a magnitude; growth only raises the first five
+			for (const EBeyondSkillStat Stat : BeyondStats::GetAllStats())
+			{
+				Spec.Data->SetSetByCallerMagnitude(BeyondStats::GetStatTag(Stat), 0.0f);
+			}
 			Spec.Data->SetSetByCallerMagnitude(BeyondTags::SetByCaller_MaxHealth, StatGrowth.MaxHealth * Levels);
 			Spec.Data->SetSetByCallerMagnitude(BeyondTags::SetByCaller_MaxStamina, StatGrowth.MaxStamina * Levels);
 			Spec.Data->SetSetByCallerMagnitude(BeyondTags::SetByCaller_Strength, StatGrowth.Strength * Levels);

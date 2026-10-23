@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Abilities/GameplayAbility.h"
+#include "AbilitySystem/BeyondElement.h"
 #include "BeyondGameplayAbility.generated.h"
 
 class ABeyondCharacterBase;
@@ -40,6 +41,18 @@ public:
 	// Shown by C++ HUD pieces (the duo slot next to the Bond meter)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI")
 	TObjectPtr<UTexture2D> Icon;
+
+	// Name on the menus and the ability bar (Plan 6); empty uses the class name
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI")
+	FText DisplayName;
+
+	// One line for the menus ("Unleashes a spinning storm around you...")
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI", meta = (MultiLine = "true"))
+	FText Description;
+
+	// The element of the hits it makes through ApplyDamageToTarget (None: the caster's own for spells)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Damage")
+	EBeyondElement Element = EBeyondElement::None;
 
 	// Activate as soon as the ability is granted (passives, auras)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Activation")

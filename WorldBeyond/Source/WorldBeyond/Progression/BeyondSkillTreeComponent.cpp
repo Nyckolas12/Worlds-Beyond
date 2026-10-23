@@ -8,6 +8,8 @@
 #include "BeyondGameplayTags.h"
 #include "CharacterAttributeSet.h"
 #include "Characters/BeyondCharacterBase.h"
+#include "AbilitySystem/BeyondCombatLibrary.h"
+#include "Game/BeyondCombatSubsystem.h"
 #include "GameFramework/Controller.h"
 #include "Player/BeyondPartyComponent.h"
 #include "WorldBeyond.h"
@@ -110,7 +112,7 @@ bool UBeyondSkillTreeComponent::CanUnlock(FName NodeId, FText& OutReason) const
 	}
 	if (GetAvailablePoints() < Node->Cost)
 	{
-		OutReason = FText::Format(LOCTEXT("NeedsPoints", "Needs {0} {1}"), FText::AsNumber(Node->Cost), GetCurrencyName());
+		OutReason = FText::Format(LOCTEXT("NeedsPoints", "Not enough {1} ({0} needed)"), FText::AsNumber(Node->Cost), GetCurrencyName());
 		return false;
 	}
 	OutReason = FText::GetEmpty();
@@ -197,6 +199,154 @@ float UBeyondSkillTreeComponent::GetStatBonus(EBeyondSkillStat Stat) const
 		}
 	}
 	return Total;
+}
+
+float UBeyondSkillTreeComponent::GetElementDamageBonus(EBeyondElement Element) const
+{
+	float Total = 0.0f;
+	if (Element == EBeyondElement::None)
+	{
+		return Total;
+	}
+	for (const TPair<FName, int32>& Pair : Ranks)
+	{
+		if (const FBeyondSkillNode* Node = Tree ? Tree->FindNode(Pair.Key) : nullptr)
+		{
+			for (const FBeyondSkillEffect& Effect : Node->Effects)
+			{
+				if (Effect.Type == EBeyondSkillEffectType::ElementDamage && Effect.Element == Element)
+				{
+					Total += Effect.Value * Pair.Value;
+				}
+			}
+		}
+	}
+	return Total;
+}
+
+void UBeyondSkillTreeComponent::BeginPlay()
+{
+	Super::BeginPlay();
+	if (UBeyondCombatSubsystem* Combat = UBeyondCombatSubsystem::Get(this))
+	{
+		HitLandedHandle = Combat->OnHitLanded.AddUObject(this, &ThisClass::HandleHitLanded);
+		Combat->OnCharacterKilled.AddUniqueDynamic(this, &ThisClass::HandleCharacterKilled);
+	}
+}
+
+void UBeyondSkillTreeComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (UBeyondCombatSubsystem* Combat = UBeyondCombatSubsystem::Get(this))
+	{
+		Combat->OnHitLanded.Remove(HitLandedHandle);
+		Combat->OnCharacterKilled.RemoveDynamic(this, &ThisClass::HandleCharacterKilled);
+	}
+	Super::EndPlay(EndPlayReason);
+}
+
+void UBeyondSkillTreeComponent::HandleHitLanded(AActor* DamageInstigator, AActor* Target, float Damage, const FGameplayTagContainer& DamageTags)
+{
+	const ABeyondCharacterBase* Character = GetCharacter();
+	if (!Character || DamageInstigator != Character || Target == Character)
+	{
+		return;
+	}
+	if (DamageTags.HasTagExact(BeyondTags::Damage_Critical))
+	{
+		FirePassives(EBeyondPassiveTrigger::OnCrit, DamageTags);
+	}
+	if (BeyondStats::GetElementFromTags(DamageTags) != EBeyondElement::None)
+	{
+		FirePassives(EBeyondPassiveTrigger::OnElementalHit, DamageTags);
+	}
+}
+
+void UBeyondSkillTreeComponent::HandleCharacterKilled(ABeyondCharacterBase* Victim, AActor* Killer)
+{
+	const ABeyondCharacterBase* Character = GetCharacter();
+	if (Character && Killer == Character && Victim != Character)
+	{
+		FirePassives(EBeyondPassiveTrigger::OnKill, FGameplayTagContainer());
+	}
+}
+
+void UBeyondSkillTreeComponent::FirePassives(EBeyondPassiveTrigger Trigger, const FGameplayTagContainer& DamageTags)
+{
+	const UWorld* World = GetWorld();
+	if (!Tree || !World || !GetCharacter())
+	{
+		return;
+	}
+	const double Now = World->GetTimeSeconds();
+	const EBeyondElement HitElement = BeyondStats::GetElementFromTags(DamageTags);
+	for (const TPair<FName, int32>& Pair : Ranks)
+	{
+		const FBeyondSkillNode* Node = Pair.Value > 0 ? Tree->FindNode(Pair.Key) : nullptr;
+		if (!Node)
+		{
+			continue;
+		}
+		for (int32 Index = 0; Index < Node->Effects.Num(); ++Index)
+		{
+			const FBeyondSkillEffect& Effect = Node->Effects[Index];
+			if (Effect.Type != EBeyondSkillEffectType::Passive || Effect.Trigger != Trigger)
+			{
+				continue;
+			}
+			if (Trigger == EBeyondPassiveTrigger::OnElementalHit && Effect.Element != EBeyondElement::None && Effect.Element != HitElement)
+			{
+				continue;
+			}
+			const FName Key(*FString::Printf(TEXT("%s_%d"), *Node->Id.ToString(), Index));
+			if (const double* ReadyAt = PassiveReadyTimes.Find(Key); ReadyAt && *ReadyAt > Now)
+			{
+				continue;
+			}
+			PassiveReadyTimes.Add(Key, Now + Effect.InternalCooldown);
+			RunPassive(Effect, Pair.Value);
+		}
+	}
+}
+
+void UBeyondSkillTreeComponent::RunPassive(const FBeyondSkillEffect& Effect, int32 Rank)
+{
+	ABeyondCharacterBase* Character = GetCharacter();
+	UAbilitySystemComponent* ASC = Character ? Character->GetAbilitySystemComponent() : nullptr;
+	if (!ASC || ASC->HasMatchingGameplayTag(BeyondTags::State_Dead))
+	{
+		return;
+	}
+	const float Amount = Effect.Value * Rank;
+	switch (Effect.Action)
+	{
+	case EBeyondPassiveAction::BuffStat:
+	{
+		const FGameplayEffectSpecHandle Spec = ASC->MakeOutgoingSpec(UBeyondGE_TimedStats::StaticClass(), 1.0f, ASC->MakeEffectContext());
+		if (Spec.IsValid())
+		{
+			for (const EBeyondSkillStat Stat : BeyondStats::GetAllStats())
+			{
+				Spec.Data->SetSetByCallerMagnitude(BeyondStats::GetStatTag(Stat), Stat == Effect.Stat ? Amount : 0.0f);
+			}
+			Spec.Data->SetSetByCallerMagnitude(BeyondTags::SetByCaller_Duration, FMath::Max(Effect.Duration, 0.1f));
+			ASC->ApplyGameplayEffectSpecToSelf(*Spec.Data);
+		}
+		break;
+	}
+	case EBeyondPassiveAction::ReduceCooldowns:
+	{
+		FGameplayEffectQuery Query;
+		Query.EffectDefinition = UBeyondGE_Cooldown::StaticClass();
+		for (const FActiveGameplayEffectHandle& Handle : ASC->GetActiveEffects(Query))
+		{
+			ASC->ModifyActiveEffectStartTime(Handle, -Amount);
+		}
+		break;
+	}
+	case EBeyondPassiveAction::Heal:
+		UBeyondCombatLibrary::ApplyHeal(Character, Character, ASC->GetNumericAttribute(UCharacterAttributeSet::GetMaxHealthAttribute()) * Amount / 100.0f);
+		break;
+	}
 }
 
 float UBeyondSkillTreeComponent::GetEffectTotal(EBeyondSkillEffectType Type) const
@@ -326,8 +476,7 @@ void UBeyondSkillTreeComponent::ApplyEffects()
 void UBeyondSkillTreeComponent::ApplyStats(ABeyondCharacterBase* Character)
 {
 	TMap<EBeyondSkillStat, float> Bonuses;
-	for (const EBeyondSkillStat Stat : { EBeyondSkillStat::MaxHealth, EBeyondSkillStat::MaxStamina, EBeyondSkillStat::Strength,
-		EBeyondSkillStat::Arcana, EBeyondSkillStat::Defense })
+	for (const EBeyondSkillStat Stat : BeyondStats::GetAllStats())
 	{
 		Bonuses.Add(Stat, GetStatBonus(Stat));
 	}

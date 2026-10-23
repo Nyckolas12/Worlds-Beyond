@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "AbilitySystem/BeyondElement.h"
 #include "Engine/DataAsset.h"
 #include "GameplayTagContainer.h"
 #include "BeyondSkillTree.generated.h"
@@ -21,7 +22,18 @@ enum class EBeyondSkillStat : uint8
 	// Ability / spell damage +1 % per point
 	Arcana,
 	// Damage taken x 100 / (100 + Defense)
-	Defense
+	Defense,
+	// Plan 6 (appended: saves and items keep their values). Critical hit chance, percent
+	CritRate,
+	// Extra damage of a critical hit, percent
+	CritDamage,
+	// Damage of the character's own element and its procs
+	ElementalMastery,
+	// Bonus against / resistance to the regions' elements, percent
+	VerdantAffinity,
+	ShadowAffinity,
+	FrostAffinity,
+	FlameAffinity
 };
 
 UENUM(BlueprintType)
@@ -38,7 +50,45 @@ enum class EBeyondSkillEffectType : uint8
 	// Duo tree: Bond meter fills Value faster per rank (0.15 = +15 %)
 	BondGain,
 	// Duo tree: after a duo move the meter refills to Value of its maximum per rank
-	BondEcho
+	BondEcho,
+	// Plan 6: hits of Element deal Value more per rank (0.2 = +20 %)
+	ElementDamage,
+	// Plan 6: when Trigger happens, Action (Value per rank) at most once per Internal Cooldown
+	Passive
+};
+
+/** What sets off a passive (Plan 6) */
+UENUM(BlueprintType)
+enum class EBeyondPassiveTrigger : uint8
+{
+	// One of the character's hits is critical
+	OnCrit,
+	// One of its hits carries an element (Element, or any when None)
+	OnElementalHit,
+	// It kills a foe
+	OnKill
+};
+
+/** What a passive does */
+UENUM(BlueprintType)
+enum class EBeyondPassiveAction : uint8
+{
+	// +Value of Stat for Duration seconds
+	BuffStat,
+	// Every ability cooldown running ends Value seconds sooner
+	ReduceCooldowns,
+	// Heals Value percent of max health
+	Heal
+};
+
+/** How a node is drawn on the tree screen */
+UENUM(BlueprintType)
+enum class EBeyondSkillNodeShape : uint8
+{
+	// Round, a diamond while locked
+	Auto,
+	// Always a diamond (keystones)
+	Diamond
 };
 
 /** What a tree is paid with */
@@ -86,6 +136,24 @@ struct WORLDBEYOND_API FBeyondSkillEffect
 	// Grant Ability: the key slot (empty: the ability's own Input Tag)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill", meta = (Categories = "Ability.Input", EditCondition = "Type == EBeyondSkillEffectType::GrantAbility", EditConditionHides))
 	FGameplayTag InputTag;
+
+	// Element Damage: the element; Passive On Elemental Hit: the element that sets it off (None: any)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill")
+	EBeyondElement Element = EBeyondElement::None;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Passive", meta = (EditCondition = "Type == EBeyondSkillEffectType::Passive", EditConditionHides))
+	EBeyondPassiveTrigger Trigger = EBeyondPassiveTrigger::OnCrit;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Passive", meta = (EditCondition = "Type == EBeyondSkillEffectType::Passive", EditConditionHides))
+	EBeyondPassiveAction Action = EBeyondPassiveAction::BuffStat;
+
+	// Buff Stat: how long the buff lasts
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Passive", meta = (ClampMin = "0", EditCondition = "Type == EBeyondSkillEffectType::Passive", EditConditionHides))
+	float Duration = 8.0f;
+
+	// Seconds before it can go off again
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Passive", meta = (ClampMin = "0", EditCondition = "Type == EBeyondSkillEffectType::Passive", EditConditionHides))
+	float InternalCooldown = 0.0f;
 };
 
 USTRUCT(BlueprintType)
@@ -103,6 +171,25 @@ struct WORLDBEYOND_API FBeyondSkillNode
 	// Flavour text; the effect lines are written from Effects
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill", meta = (MultiLine = "true"))
 	FText Description;
+
+	// One line for the Overview's Active Passives ("Increases storm damage by 20%")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill")
+	FText Summary;
+
+	// The element pill on the node's card
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill")
+	EBeyondElement Element = EBeyondElement::None;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill")
+	EBeyondSkillNodeShape Shape = EBeyondSkillNodeShape::Auto;
+
+	// Wide picture across the top of the node's card
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill")
+	TSoftObjectPtr<UTexture2D> BannerArt;
+
+	// Duo tree: the Bond level needed for the first rank (0: none)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill", meta = (ClampMin = "0"))
+	int32 RequiredBondLevel = 0;
 
 	// Empty: the ability's icon, or the stat's
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill")

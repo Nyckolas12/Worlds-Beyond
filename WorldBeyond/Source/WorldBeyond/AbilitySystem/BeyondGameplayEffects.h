@@ -71,6 +71,16 @@ class WORLDBEYOND_API UBeyondGE_EquipmentStats : public UBeyondGE_LevelStats
  * Damage over time (armor-set poison and burn): every second deals SetByCaller.Damage through IncomingDamage, for
  * SetByCaller.Duration seconds. The applier adds a DamageType.Proc.* tag so the ticks never trigger set effects.
  */
+/** A passive's stat buff (Plan 6): the stat SetByCallers for SetByCaller.Duration seconds */
+UCLASS()
+class WORLDBEYOND_API UBeyondGE_TimedStats : public UBeyondGE_LevelStats
+{
+	GENERATED_BODY()
+
+public:
+	UBeyondGE_TimedStats();
+};
+
 UCLASS()
 class WORLDBEYOND_API UBeyondGE_DamageOverTime : public UGameplayEffect
 {

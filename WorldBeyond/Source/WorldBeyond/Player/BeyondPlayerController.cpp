@@ -44,6 +44,10 @@
 #include "Enemies/BeyondBossDefinition.h"
 #include "UI/BeyondInteractPromptWidget.h"
 #include "UI/BeyondInventoryWidget.h"
+#include "UI/BeyondMenuWidget.h"
+#include "UI/BeyondOverviewWidget.h"
+#include "UI/BeyondPauseMenuWidget.h"
+#include "UI/BeyondQuestLogWidget.h"
 #include "UI/BeyondProgressWidget.h"
 #include "UI/BeyondRegionBannerWidget.h"
 #include "UI/BeyondSkillTreeWidget.h"
@@ -113,6 +117,9 @@ ABeyondPlayerController::ABeyondPlayerController()
 	SkillTreeWidgetClass = UBeyondSkillTreeWidget::StaticClass();
 	InventoryWidgetClass = UBeyondInventoryWidget::StaticClass();
 	WorldMapWidgetClass = UBeyondWorldMapWidget::StaticClass();
+	OverviewWidgetClass = UBeyondOverviewWidget::StaticClass();
+	QuestLogWidgetClass = UBeyondQuestLogWidget::StaticClass();
+	PauseMenuWidgetClass = UBeyondPauseMenuWidget::StaticClass();
 	RegionBannerWidgetClass = UBeyondRegionBannerWidget::StaticClass();
 	PickupSound = TSoftObjectPtr<USoundBase>(FSoftObjectPath(TEXT("/Game/Audio/energy-charge-up.energy-charge-up")));
 	BondWidgetClass = UBeyondBondMeterWidget::StaticClass();
@@ -232,6 +239,18 @@ void ABeyondPlayerController::SetupInputComponent()
 		if (WorldMapAction)
 		{
 			EnhancedInput->BindAction(WorldMapAction.Get(), ETriggerEvent::Started, this, &ThisClass::ToggleWorldMap);
+		}
+		if (CharacterMenuAction)
+		{
+			EnhancedInput->BindAction(CharacterMenuAction.Get(), ETriggerEvent::Started, this, &ThisClass::ToggleOverview);
+		}
+		if (QuestLogAction)
+		{
+			EnhancedInput->BindAction(QuestLogAction.Get(), ETriggerEvent::Started, this, &ThisClass::ToggleQuestLog);
+		}
+		if (PauseAction)
+		{
+			EnhancedInput->BindAction(PauseAction.Get(), ETriggerEvent::Started, this, &ThisClass::TogglePauseMenu);
 		}
 	}
 }
@@ -644,7 +663,8 @@ UUserWidget* ABeyondPlayerController::OpenMenuWidget(TObjectPtr<UUserWidget>& Wi
 	}
 
 	// One menu at a time: the other one just goes away (input mode and pause carry over)
-	for (UUserWidget* Other : { SkillTreeWidget.Get(), InventoryWidget.Get(), WorldMapWidget.Get() })
+	for (UUserWidget* Other : { SkillTreeWidget.Get(), InventoryWidget.Get(), WorldMapWidget.Get(), OverviewWidget.Get(), QuestLogWidget.Get(),
+		PauseMenuWidget.Get() })
 	{
 		if (Other && Other != Widget && Other->IsInViewport())
 		{
@@ -654,6 +674,10 @@ UUserWidget* ABeyondPlayerController::OpenMenuWidget(TObjectPtr<UUserWidget>& Wi
 	if (!Widget->IsInViewport())
 	{
 		Widget->AddToViewport(50);
+	}
+	if (UBeyondMenuWidget* Menu = Cast<UBeyondMenuWidget>(Widget))
+	{
+		Menu->NotifyOpened();
 	}
 
 	FInputModeUIOnly InputMode;
@@ -785,7 +809,120 @@ bool ABeyondPlayerController::IsWorldMapOpen() const
 
 bool ABeyondPlayerController::IsAnyMenuOpen() const
 {
-	return IsSkillTreeOpen() || IsInventoryOpen() || IsWorldMapOpen();
+	return IsSkillTreeOpen() || IsInventoryOpen() || IsWorldMapOpen() || IsMenuPageOpen(EBeyondMenuPage::Overview)
+		|| IsMenuPageOpen(EBeyondMenuPage::Quests) || IsMenuPageOpen(EBeyondMenuPage::Pause);
+}
+
+UUserWidget* ABeyondPlayerController::GetMenuWidget(EBeyondMenuPage Page) const
+{
+	switch (Page)
+	{
+	case EBeyondMenuPage::SkillTree: return SkillTreeWidget;
+	case EBeyondMenuPage::Armor: return InventoryWidget;
+	case EBeyondMenuPage::Overview: return OverviewWidget;
+	case EBeyondMenuPage::Quests: return QuestLogWidget;
+	case EBeyondMenuPage::WorldMap: return WorldMapWidget;
+	default: return PauseMenuWidget;
+	}
+}
+
+bool ABeyondPlayerController::IsMenuPageOpen(EBeyondMenuPage Page) const
+{
+	const UUserWidget* Widget = GetMenuWidget(Page);
+	return Widget && Widget->IsInViewport();
+}
+
+UUserWidget* ABeyondPlayerController::OpenMenuPage(EBeyondMenuPage Page, int32 HeaderTab)
+{
+	UUserWidget* Widget = nullptr;
+	switch (Page)
+	{
+	case EBeyondMenuPage::SkillTree:
+		OpenSkillTree();
+		Widget = IsSkillTreeOpen() ? SkillTreeWidget.Get() : nullptr;
+		break;
+	case EBeyondMenuPage::Armor:
+		OpenInventory();
+		Widget = IsInventoryOpen() ? InventoryWidget.Get() : nullptr;
+		break;
+	case EBeyondMenuPage::Overview:
+		Widget = OpenMenuWidget(OverviewWidget, OverviewWidgetClass, bPauseWhileCharacterMenuOpen);
+		break;
+	case EBeyondMenuPage::Quests:
+		Widget = OpenMenuWidget(QuestLogWidget, QuestLogWidgetClass, bPauseWhileCharacterMenuOpen);
+		break;
+	case EBeyondMenuPage::WorldMap:
+		OpenWorldMap();
+		return IsWorldMapOpen() ? WorldMapWidget.Get() : nullptr;
+	default:
+		Widget = OpenMenuWidget(PauseMenuWidget, PauseMenuWidgetClass, true);
+		break;
+	}
+
+	// The same demigod (or the duo) stays picked from page to page; -1 picks the leader
+	UBeyondMenuWidget* Menu = Cast<UBeyondMenuWidget>(Widget);
+	if (Menu && Menu->HasCharacterTabs())
+	{
+		const int32 Tab = HeaderTab >= 0 ? HeaderTab : Menu->FindHeaderTabFor(GetPawn());
+		if (Tab >= 0 && Tab != Menu->GetActiveHeaderTab())
+		{
+			Menu->SelectHeaderTab(Tab);
+		}
+		LastMenuCharacterTab = Menu->GetActiveHeaderTab();
+	}
+	else if (HeaderTab >= 0)
+	{
+		// A page with filters (the quest log) passes the tab on to the next character page
+		LastMenuCharacterTab = HeaderTab;
+	}
+	return Widget;
+}
+
+void ABeyondPlayerController::CloseMenuPage(EBeyondMenuPage Page)
+{
+	switch (Page)
+	{
+	case EBeyondMenuPage::SkillTree: CloseSkillTree(); break;
+	case EBeyondMenuPage::Armor: CloseInventory(); break;
+	case EBeyondMenuPage::WorldMap: CloseWorldMap(); break;
+	default: CloseMenuWidget(GetMenuWidget(Page)); break;
+	}
+}
+
+void ABeyondPlayerController::ToggleOverview()
+{
+	if (IsMenuPageOpen(EBeyondMenuPage::Overview))
+	{
+		CloseMenuPage(EBeyondMenuPage::Overview);
+	}
+	else
+	{
+		OpenMenuPage(EBeyondMenuPage::Overview);
+	}
+}
+
+void ABeyondPlayerController::ToggleQuestLog()
+{
+	if (IsMenuPageOpen(EBeyondMenuPage::Quests))
+	{
+		CloseMenuPage(EBeyondMenuPage::Quests);
+	}
+	else
+	{
+		OpenMenuPage(EBeyondMenuPage::Quests);
+	}
+}
+
+void ABeyondPlayerController::TogglePauseMenu()
+{
+	if (IsMenuPageOpen(EBeyondMenuPage::Pause))
+	{
+		CloseMenuPage(EBeyondMenuPage::Pause);
+	}
+	else
+	{
+		OpenMenuPage(EBeyondMenuPage::Pause);
+	}
 }
 
 ABeyondWaystone* ABeyondPlayerController::FindWaystoneTarget() const

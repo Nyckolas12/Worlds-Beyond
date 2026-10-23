@@ -228,8 +228,7 @@ void UBeyondEquipmentComponent::ApplyEffects()
 	}
 
 	TMap<EBeyondSkillStat, float> Bonuses;
-	for (const EBeyondSkillStat Stat : { EBeyondSkillStat::MaxHealth, EBeyondSkillStat::MaxStamina, EBeyondSkillStat::Strength,
-		EBeyondSkillStat::Arcana, EBeyondSkillStat::Defense })
+	for (const EBeyondSkillStat Stat : BeyondStats::GetAllStats())
 	{
 		Bonuses.Add(Stat, GetStatBonus(Stat));
 	}

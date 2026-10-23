@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
+#include "AbilitySystem/BeyondElement.h"
 #include "GameplayAbilitySpecHandle.h"
 #include "GameplayTagContainer.h"
 #include "AbilitySystem/BeyondFX.h"
@@ -26,12 +27,26 @@ public:
 	 * Damage Target through the shared GAS pipeline (UBeyondGE_Damage -> IncomingDamage).
 	 * Source may have no ability system (environment, traps). Returns false if Target has no ability system.
 	 */
-	UFUNCTION(BlueprintCallable, Category = "Beyond|Combat", meta = (DefaultToSelf = "Source", AdvancedDisplay = "bUnblockable,bUnparryable,bIgnoreInvincible,bForceInterrupt,Causer"))
+	UFUNCTION(BlueprintCallable, Category = "Beyond|Combat", meta = (DefaultToSelf = "Source", AdvancedDisplay = "bUnblockable,bUnparryable,bIgnoreInvincible,bForceInterrupt,Causer,Element"))
 	static bool ApplyDamage(AActor* Source, AActor* Target, float Amount,
 		UPARAM(meta = (Categories = "DamageType")) FGameplayTag DamageType,
 		UPARAM(meta = (Categories = "Event.Hit")) FGameplayTag HitResponse,
 		bool bUnblockable = false, AActor* Causer = nullptr,
-		bool bUnparryable = false, bool bIgnoreInvincible = false, bool bForceInterrupt = false);
+		bool bUnparryable = false, bool bIgnoreInvincible = false, bool bForceInterrupt = false,
+		EBeyondElement Element = EBeyondElement::None);
+
+	/**
+	 * What a hit becomes before the target's defenses (Plan 6): the attacker's Strength / Arcana, its Elemental Mastery
+	 * on its own element (and on procs), its affinity against the target's element, and a critical roll for melee,
+	 * projectile and explosion hits. OutTags gets the hit's Element.* tag and Damage.Critical when it crits.
+	 * Beyond.CritMode: -1 rolls (never during automation tests), 0 never, 1 rolls, 2 always.
+	 */
+	static float ComputeOutgoingDamage(const AActor* Source, const AActor* Target, float Amount, const FGameplayTag& DamageType, EBeyondElement Element,
+		FGameplayTagContainer& OutTags);
+
+	// The element a hit carries: the given one, a proc's (lightning, burn, poison), else the attacker's own for its spells
+	// (demigods) or every hit (enemies)
+	static EBeyondElement ResolveHitElement(const AActor* Source, const FGameplayTag& DamageType, EBeyondElement Element);
 
 	/**
 	 * Adapter for the old S_DamageInfo struct: pass the E_DamageType / E_DamageResponse enums as bytes

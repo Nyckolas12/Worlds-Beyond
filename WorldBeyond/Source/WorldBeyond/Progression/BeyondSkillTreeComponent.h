@@ -87,6 +87,12 @@ public:
 	// Levels added to AbilityClass by ability-rank nodes
 	int32 GetAbilityRankBonus(const UClass* AbilityClass) const;
 
+	// Element Damage nodes' bonus for hits of Element (0.2 = +20 %)
+	float GetElementDamageBonus(EBeyondElement Element) const;
+
+	// Runs the taken Passive nodes for Trigger (the combat events call it; tests too). DamageTags: the hit's tags
+	void FirePassives(EBeyondPassiveTrigger Trigger, const FGameplayTagContainer& DamageTags);
+
 	// Abilities from effects of this type on nodes with a rank (granted abilities, unlocked duo powers)
 	TArray<TSubclassOf<UGameplayAbility>> GetUnlockedAbilities(EBeyondSkillEffectType Type) const;
 
@@ -99,6 +105,8 @@ public:
 	void RefreshEffects() { ApplyEffects(); }
 
 protected:
+	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual bool PayPoints(int32 Amount);
 	virtual void RefundPoints(int32 Amount);
 	virtual void ApplyEffects();
@@ -114,6 +122,15 @@ protected:
 	TMap<FName, int32> Ranks;
 
 private:
+	void HandleHitLanded(AActor* DamageInstigator, AActor* Target, float Damage, const FGameplayTagContainer& DamageTags);
+	UFUNCTION()
+	void HandleCharacterKilled(ABeyondCharacterBase* Victim, AActor* Killer);
+	void RunPassive(const FBeyondSkillEffect& Effect, int32 Rank);
+
+	FDelegateHandle HitLandedHandle;
+	// When each passive (node id + effect index) may go off again, world seconds
+	TMap<FName, double> PassiveReadyTimes;
+
 	bool TargetsAbility(const UClass* AbilityClass) const;
 	void ApplyStats(ABeyondCharacterBase* Character);
 	bool ApplyGrantedAbilities(ABeyondCharacterBase* Character);
