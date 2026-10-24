@@ -2,6 +2,7 @@
 
 #include "Items/BeyondItemLibrary.h"
 #include "Characters/BeyondCharacterBase.h"
+#include "Items/BeyondEconomySettings.h"
 #include "Items/BeyondLootSettings.h"
 #include "Progression/BeyondStatEffects.h"
 
@@ -120,6 +121,8 @@ FText UBeyondItemLibrary::GetSlotName(EBeyondItemSlot Slot)
 	case EBeyondItemSlot::Chest: return LOCTEXT("Chest", "Chest");
 	case EBeyondItemSlot::Gauntlets: return LOCTEXT("Gauntlets", "Gauntlets");
 	case EBeyondItemSlot::Boots: return LOCTEXT("Boots", "Boots");
+	case EBeyondItemSlot::Accessory: return LOCTEXT("Accessory", "Accessory");
+	case EBeyondItemSlot::Charm: return LOCTEXT("Charm", "Charm");
 	default: return LOCTEXT("Weapon", "Weapon");
 	}
 }
@@ -151,7 +154,8 @@ TArray<FBeyondItemStat> UBeyondItemLibrary::GetItemStats(const FBeyondItemInstan
 	const UBeyondLootSettings* Settings = GetDefault<UBeyondLootSettings>();
 	const int32 TierIndex = static_cast<int32>(Item.Tier);
 	const float TierScale = Settings->TierStatScale.IsValidIndex(TierIndex) ? Settings->TierStatScale[TierIndex] : 1.0f;
-	const float Scale = TierScale * ItemLevelScale(Item.ItemLevel);
+	const float Upgrade = 1.0f + GetDefault<UBeyondEconomySettings>()->UpgradeStatsPerLevel * FMath::Max(Item.UpgradeLevel, 0);
+	const float Scale = TierScale * ItemLevelScale(Item.ItemLevel) * Upgrade;
 
 	auto AddStat = [&Result](EBeyondSkillStat Stat, float Value)
 	{
@@ -172,7 +176,7 @@ TArray<FBeyondItemStat> UBeyondItemLibrary::GetItemStats(const FBeyondItemInstan
 	}
 	for (const FBeyondItemStat& Stat : Item.BonusStats)
 	{
-		AddStat(Stat.Stat, Stat.Value);
+		AddStat(Stat.Stat, Item.UpgradeLevel > 0 ? FMath::RoundToFloat(Stat.Value * Upgrade) : Stat.Value);
 	}
 	return Result;
 }
@@ -244,6 +248,73 @@ FBeyondItemInstance UBeyondItemLibrary::MakeItemFromStream(const UBeyondItemDefi
 UBeyondItemDatabase* UBeyondItemLibrary::GetItemDatabase()
 {
 	return GetDefault<UBeyondLootSettings>()->ItemDatabase.LoadSynchronous();
+}
+
+int32 UBeyondItemLibrary::GetMaxUpgradeLevel()
+{
+	return GetDefault<UBeyondEconomySettings>()->MaxUpgradeLevel;
+}
+
+FBeyondCurrencyBundle UBeyondItemLibrary::GetUpgradeCost(const FBeyondItemInstance& Item)
+{
+	if (!Item.GetDefinition())
+	{
+		return FBeyondCurrencyBundle();
+	}
+	return GetDefault<UBeyondEconomySettings>()->GetUpgradeStepCost(Item.Tier, Item.UpgradeLevel + 1);
+}
+
+FBeyondItemInstance UBeyondItemLibrary::WithUpgrade(const FBeyondItemInstance& Item, int32 Levels)
+{
+	FBeyondItemInstance Upgraded = Item;
+	Upgraded.UpgradeLevel = FMath::Clamp(Item.UpgradeLevel + Levels, 0, GetMaxUpgradeLevel());
+	return Upgraded;
+}
+
+FBeyondCurrencyBundle UBeyondItemLibrary::GetSalvageYield(const FBeyondItemInstance& Item)
+{
+	FBeyondCurrencyBundle Yield;
+	if (!Item.GetDefinition())
+	{
+		return Yield;
+	}
+	const UBeyondEconomySettings* Economy = GetDefault<UBeyondEconomySettings>();
+	const int32 TierIndex = static_cast<int32>(Item.Tier);
+	if (Economy->SalvageYield.IsValidIndex(TierIndex))
+	{
+		Yield = Economy->SalvageYield[TierIndex];
+		Yield.Gold = FMath::RoundToInt(Yield.Gold * ItemLevelScale(Item.ItemLevel));
+	}
+	const FBeyondCurrencyBundle Spent = Economy->GetUpgradeTotalCost(Item.Tier, Item.UpgradeLevel);
+	for (const EBeyondCurrency Currency : FBeyondCurrencyBundle::All)
+	{
+		Yield.Add(Currency, FMath::FloorToInt(Spent.Get(Currency) * Economy->SalvageUpgradeRefund));
+	}
+	return Yield;
+}
+
+FText UBeyondItemLibrary::GetCurrencyName(EBeyondCurrency Currency)
+{
+	switch (Currency)
+	{
+	case EBeyondCurrency::Crystals: return LOCTEXT("Crystals", "Crystals");
+	case EBeyondCurrency::EchoShards: return LOCTEXT("EchoShards", "Echo Shards");
+	case EBeyondCurrency::ReverieFragments: return LOCTEXT("ReverieFragments", "Reverie Fragments");
+	default: return LOCTEXT("Gold", "Gold");
+	}
+}
+
+FText UBeyondItemLibrary::FormatCurrencies(const FBeyondCurrencyBundle& Bundle)
+{
+	TArray<FString> Parts;
+	for (const EBeyondCurrency Currency : FBeyondCurrencyBundle::All)
+	{
+		if (const int32 Amount = Bundle.Get(Currency); Amount > 0)
+		{
+			Parts.Add(FText::Format(LOCTEXT("CurrencyAmount", "{0} {1}"), FText::AsNumber(Amount), GetCurrencyName(Currency)).ToString());
+		}
+	}
+	return Parts.IsEmpty() ? LOCTEXT("NoCurrency", "nothing") : FText::FromString(FString::Join(Parts, TEXT(", ")));
 }
 
 TArray<FBeyondItemInstance> UBeyondItemLibrary::RollLootForEnemy(const ABeyondCharacterBase* Victim, int32 Seed)

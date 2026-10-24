@@ -177,6 +177,12 @@ WATER = {
     "blackmere": "MI_Water_Blight",
     "glassmere": "ice",
 }
+# Rivers from world_content.LAYOUT["rivers"]: the water instance on their strips
+RIVER_WATER = {
+    "elder_run": "MI_Water_Elderwood",
+    "rime_melt": "MI_Water_Elderwood",
+    "blight_channel": "MI_Water_Blight",
+}
 # Water instances: scattering and absorption (per metre, r g b), the surface's roughness
 WATER_LOOKS = {
     "MI_Water_Elderwood": dict(scattering=(0.004, 0.014, 0.013), absorption=(0.45, 0.12, 0.09), roughness=0.03),

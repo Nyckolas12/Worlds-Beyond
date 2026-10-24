@@ -11,8 +11,10 @@
 #include "Items/BeyondItemLibrary.h"
 #include "Player/BeyondPartyComponent.h"
 #include "Player/BeyondPlayerController.h"
+#include "Progression/BeyondProgressionSettings.h"
 #include "Progression/BeyondSkillTreeComponent.h"
 #include "Progression/BeyondStatEffects.h"
+#include "Quests/BeyondQuestComponent.h"
 #include "UI/BeyondCharacterProfile.h"
 #include "UI/BeyondUIArt.h"
 #include "World/BeyondRegionDefinition.h"
@@ -189,17 +191,27 @@ FBeyondOverviewModel UBeyondOverviewWidget::BuildModel() const
 		}
 	}
 
-	//~ Bond (its levels come later; the meter and the duo tree's effects for now)
+	//~ Bond: the level, what it gives while the demigods fight together, what the next one adds
 	if (Party)
 	{
-		Model.BondExperience = Party->GetBond();
-		Model.BondExperienceToNext = Party->MaxBond;
-		if (const float Faster = 100.0f * (Party->GetBondGainMultiplier() - 1.0f); Faster > 0.5f)
+		const UBeyondProgressionSettings* Progression = GetDefault<UBeyondProgressionSettings>();
+		Model.BondLevel = Party->GetBondLevel();
+		Model.BondExperience = Party->GetBondExperience();
+		Model.BondExperienceToNext = Party->GetBondExperienceToNext();
+		auto DescribeLevel = [](const FBeyondBondLevel& Level)
 		{
-			Model.BondPerks.Add(FText::Format(LOCTEXT("BondGainPerk", "The Bond meter fills {0} faster."), FText::FromString(BeyondUI::FormatPercent(Faster))));
-		}
-		Model.BondPerks.Add(FText::Format(LOCTEXT("BondPointsPerk", "{0} Bond Points to spend on the duo tree."), FText::AsNumber(Party->GetBondPoints())));
-		Model.BondPerks.Add(LOCTEXT("BondDuoPerk", "Full meter: the duo move is ready on G."));
+			return FText::Format(LOCTEXT("BondLevelPerks", "+{0} damage dealt, -{1} taken"), FText::FromString(BeyondUI::FormatPercent(100.0f * Level.DamageDealtBonus)),
+				FText::FromString(BeyondUI::FormatPercent(100.0f * Level.DamageTakenReduction)));
+		};
+		const FBeyondBondLevel& Current = Progression->GetBondLevel(Model.BondLevel);
+		Model.BondPerks.Add(Current.DamageDealtBonus > 0.0f || Current.DamageTakenReduction > 0.0f
+			? FText::Format(LOCTEXT("BondTogether", "Together: {0}"), DescribeLevel(Current))
+			: LOCTEXT("BondGrow", "Fight side by side to deepen the Bond."));
+		Model.BondPerks.Add(Model.BondLevel < Progression->GetMaxBondLevel()
+			? FText::Format(LOCTEXT("BondNext", "Lv. {0}: {1}"), FText::AsNumber(Model.BondLevel + 1), DescribeLevel(Progression->GetBondLevel(Model.BondLevel + 1)))
+			: LOCTEXT("BondPeak", "The Bond is at its peak."));
+		Model.BondPerks.Add(Party->IsBondFull() ? LOCTEXT("BondDuoReady", "The meter is full: the duo move is ready on G.")
+			: FText::Format(LOCTEXT("BondMeter", "Bond meter {0}: the duo move on G when full."), FText::FromString(BeyondUI::FormatPercent(100.0f * Party->GetBond() / Party->MaxBond))));
 	}
 	if (const UBeyondDuoSkillTreeComponent* Duo = PC ? PC->DuoSkillTree.Get() : nullptr)
 	{
@@ -218,9 +230,21 @@ FBeyondOverviewModel UBeyondOverviewWidget::BuildModel() const
 		}
 	}
 
-	//~ Resources (the wallet comes later; points and the bag for now)
+	//~ Resources: the wallet, then the trees' points
 	UBeyondUISubsystem* UI = UBeyondUISubsystem::Get();
 	const UBeyondUIArtSet* Art = UI ? UI->GetArtSet() : nullptr;
+	if (const UBeyondInventoryComponent* Inventory = PC ? PC->InventoryComponent.Get() : nullptr)
+	{
+		for (const EBeyondCurrency Currency : FBeyondCurrencyBundle::All)
+		{
+			FBeyondOverviewModel::FLine& Line = Model.Resources.AddDefaulted_GetRef();
+			Line.Glyph = BeyondUI::CurrencyGlyph(Currency);
+			const TSoftObjectPtr<UTexture2D>* Icon = Art ? Art->CurrencyIcons.Find(Currency) : nullptr;
+			Line.Icon = Icon ? LoadTexture(*Icon) : nullptr;
+			Line.Title = UBeyondItemLibrary::GetCurrencyName(Currency);
+			Line.Value = BeyondUI::FormatNumber(Inventory->GetCurrency(Currency));
+		}
+	}
 	if (const UBeyondSkillTreeComponent* OwnTree = Character ? Character->GetSkillTreeComponent() : nullptr)
 	{
 		FBeyondOverviewModel::FLine& Line = Model.Resources.AddDefaulted_GetRef();
@@ -237,38 +261,49 @@ FBeyondOverviewModel UBeyondOverviewWidget::BuildModel() const
 		Line.Title = LOCTEXT("BondPointsResource", "Bond Points");
 		Line.Value = FString::FromInt(Party->GetBondPoints());
 	}
-	if (const UBeyondInventoryComponent* Inventory = PC ? PC->InventoryComponent.Get() : nullptr)
-	{
-		FBeyondOverviewModel::FLine& Line = Model.Resources.AddDefaulted_GetRef();
-		Line.Glyph = EBeyondGlyph::Grid;
-		Line.Title = LOCTEXT("BagResource", "Bag");
-		Line.Value = FString::Printf(TEXT("%d / %d"), Inventory->GetItemCount(), Inventory->Capacity);
-	}
 
 	//~ Loadout
 	if (const UBeyondEquipmentComponent* Equipment = Character ? Character->GetEquipmentComponent() : nullptr)
 	{
-		for (const EBeyondItemSlot ItemSlot : { EBeyondItemSlot::Weapon, EBeyondItemSlot::Helm, EBeyondItemSlot::Chest, EBeyondItemSlot::Gauntlets, EBeyondItemSlot::Boots })
+		for (const EBeyondItemSlot ItemSlot : { EBeyondItemSlot::Weapon, EBeyondItemSlot::Helm, EBeyondItemSlot::Chest, EBeyondItemSlot::Gauntlets, EBeyondItemSlot::Boots,
+			EBeyondItemSlot::Accessory, EBeyondItemSlot::Charm })
 		{
 			FBeyondItemInstance Worn;
 			Model.Loadout.Emplace(ItemSlot, Equipment->GetEquipped(ItemSlot, Worn) ? TOptional<FBeyondItemInstance>(Worn) : TOptional<FBeyondItemInstance>());
 		}
 	}
 
-	//~ Journey (the quest log comes later): where the party is
+	//~ Journey: the tracked quest (else the story's current chapter), or where the party is without one
 	const UBeyondWorldSubsystem* World = UBeyondWorldSubsystem::Get(this);
-	Model.QuestKind = LOCTEXT("Journey", "Journey");
-	if (const UBeyondRegionDefinition* Region = World ? World->GetCurrentRegion() : nullptr)
+	const UBeyondQuestComponent* Quests = PC ? PC->QuestComponent.Get() : nullptr;
+	const FName Focus = Quests ? Quests->GetFocusQuest() : NAME_None;
+	if (const FBeyondQuest* Quest = Quests ? Quests->FindQuest(Focus) : nullptr)
 	{
-		Model.QuestTitle = Region->GetDisplayNameOrId();
-		Model.QuestObjective = LOCTEXT("ExploreRegion", "Explore the region and its villages.");
+		Model.QuestKind = Quest->Kind == EBeyondQuestKind::Main ? FText::Format(LOCTEXT("ChapterKind", "Chapter {0}"), FText::AsNumber(Quest->Chapter))
+			: LOCTEXT("SideKind", "Side Quest");
+		Model.QuestTitle = Quest->Title;
+		const int32 Current = Quests->GetCurrentObjective(Focus);
+		Model.QuestObjective = Quest->Objectives.IsValidIndex(Current) ? Quest->Objectives[Current].Text : Quest->Summary;
+		Model.QuestChapter = FText::Format(LOCTEXT("StoryProgress", "Story {0} / {1}  ·  Side quests {2} / {3}"),
+			FText::AsNumber(Quests->GetCompletedCount(EBeyondQuestKind::Main)), FText::AsNumber(Quests->GetQuestCount(EBeyondQuestKind::Main)),
+			FText::AsNumber(Quests->GetCompletedCount(EBeyondQuestKind::Side)), FText::AsNumber(Quests->GetQuestCount(EBeyondQuestKind::Side)));
+		Model.QuestThumbnail = LoadTexture(Quest->Thumbnail);
 	}
 	else
 	{
-		Model.QuestTitle = LOCTEXT("TheWilds", "The Wandering Dominion");
-		Model.QuestObjective = LOCTEXT("FindWay", "Find your way through the wilds.");
+		Model.QuestKind = LOCTEXT("Journey", "Journey");
+		if (const UBeyondRegionDefinition* Region = World ? World->GetCurrentRegion() : nullptr)
+		{
+			Model.QuestTitle = Region->GetDisplayNameOrId();
+			Model.QuestObjective = LOCTEXT("ExploreRegion", "Explore the region and its villages.");
+		}
+		else
+		{
+			Model.QuestTitle = LOCTEXT("TheWilds", "The Wandering Dominion");
+			Model.QuestObjective = LOCTEXT("FindWay", "Find your way through the wilds.");
+		}
+		Model.QuestChapter = LOCTEXT("NoQuest", "No quest is being followed (J opens the quest log)");
 	}
-	Model.QuestChapter = LOCTEXT("QuestLogSoon", "The quest log opens with the next update");
 
 	//~ Records
 	int32 Areas = 0;
@@ -296,9 +331,10 @@ FBeyondOverviewModel UBeyondOverviewWidget::BuildModel() const
 		Line.Title = Title;
 		Line.Value = Value;
 	};
-	AddRecord(EBeyondGlyph::Hourglass, LOCTEXT("Playtime", "Playtime"), BeyondUI::FormatPlaytime(GetWorld() ? GetWorld()->GetRealTimeSeconds() : 0.0));
+	AddRecord(EBeyondGlyph::Hourglass, LOCTEXT("Playtime", "Playtime"), BeyondUI::FormatPlaytime(Party ? Party->GetPlaytime() : 0.0));
 	AddRecord(EBeyondGlyph::Compass, LOCTEXT("Areas", "Areas Discovered"), FString::Printf(TEXT("%d / %d"), AreasFound, Areas));
-	AddRecord(EBeyondGlyph::Quests, LOCTEXT("Level", "Party Level"), FString::FromInt(Party ? Party->GetPartyLevel() : 1));
+	AddRecord(EBeyondGlyph::Quests, LOCTEXT("SideQuests", "Side Quests"), FString::Printf(TEXT("%d / %d"), Quests ? Quests->GetCompletedCount(EBeyondQuestKind::Side) : 0,
+		Quests ? Quests->GetQuestCount(EBeyondQuestKind::Side) : 0));
 	AddRecord(EBeyondGlyph::Skull, LOCTEXT("Bosses", "Bosses Defeated"), FString::Printf(TEXT("%d / %d"), Bosses, static_cast<int32>(UE_ARRAY_COUNT(BossIds))));
 	return Model;
 }
@@ -352,6 +388,7 @@ bool UBeyondOverviewWidget::GetCounter(FBeyondMenuCounter& OutCounter) const
 		return false;
 	}
 	OutCounter.Label = LOCTEXT("Resources", "Resources");
+	AddCurrencyToCounter(OutCounter, EBeyondCurrency::Gold);
 	FBeyondMenuCounter::FValue& Bond = OutCounter.Values.AddDefaulted_GetRef();
 	Bond.Glyph = EBeyondGlyph::BondPoint;
 	Bond.Tint = BeyondUI::Palette().BlueBright;
@@ -519,8 +556,8 @@ void UBeyondOverviewWidget::PaintPage(BeyondUI::FPainter& Paint) const
 		{
 			Paint.Glyph(Line.Glyph, IconCentre, 22.0f, P.Text, 26, 1.4f);
 		}
-		Paint.Text(Line.Title.ToString(), Font(EBeyondFont::BodyBold, 18.0f), RowTopLeft + FVector2f(64.0f, 3.0f), P.Text, 0.0f, 25);
-		Paint.Text(Line.Text.ToString(), Font(EBeyondFont::Body, 16.0f), RowTopLeft + FVector2f(64.0f, 27.0f), P.TextDim, 0.0f, 25);
+		Paint.TextFit(Line.Title.ToString(), EBeyondFont::BodyBold, 18.0f, RowTopLeft + FVector2f(64.0f, 3.0f), RowSize.X - 80.0f, P.Text, 0.0f, 25);
+		Paint.TextFit(Line.Text.ToString(), EBeyondFont::Body, 16.0f, RowTopLeft + FVector2f(64.0f, 27.0f), RowSize.X - 80.0f, P.TextDim, 0.0f, 25);
 	}
 
 	//~ Right: Bond status, duo abilities, resources
@@ -540,17 +577,18 @@ void UBeyondOverviewWidget::PaintPage(BeyondUI::FPainter& Paint) const
 		Paint.Glow(Crescent, 50.0f, WithAlpha(P.Violet, 0.4f), 23);
 		Paint.Glyph(EBeyondGlyph::Bond, Crescent, 62.0f, P.GoldBright, 24, 2.2f);
 	}
-	Paint.Text(LOCTEXT("BondMeterLabel", "Bond Meter").ToString(), Font(EBeyondFont::Heading, 18.0f), FVector2f(BondTopLeft.X + 128.0f, Y + 6.0f), P.Text, 0.0f, 24);
-	Paint.Text(FString::Printf(TEXT("%d / %d"), FMath::RoundToInt(Model.BondExperience), FMath::RoundToInt(Model.BondExperienceToNext)), Font(EBeyondFont::Number, 17.0f),
-		FVector2f(BondTopLeft.X + RightWidth - 24.0f, Y + 8.0f), P.Text, 1.0f, 24);
+	Paint.Text(FText::Format(LOCTEXT("BondLevelLabel", "Bond Lv. {0}"), FText::AsNumber(FMath::Max(Model.BondLevel, 1))).ToString(), Font(EBeyondFont::Heading, 18.0f),
+		FVector2f(BondTopLeft.X + 128.0f, Y + 6.0f), P.Text, 0.0f, 24);
+	Paint.Text(Model.BondExperienceToNext > 0.0f ? FString::Printf(TEXT("%d / %d"), FMath::RoundToInt(Model.BondExperience), FMath::RoundToInt(Model.BondExperienceToNext))
+		: LOCTEXT("BondMax", "MAX").ToString(), Font(EBeyondFont::Number, 17.0f), FVector2f(BondTopLeft.X + RightWidth - 24.0f, Y + 8.0f), P.Text, 1.0f, 24);
 	Paint.Bar(FVector2f(BondTopLeft.X + 128.0f, Y + 40.0f), FVector2f(RightWidth - 152.0f, 7.0f),
-		Model.BondExperienceToNext > 0.0f ? Model.BondExperience / Model.BondExperienceToNext : 0.0f, P.Blue, 24, false);
-	float PerkY = Y + 86.0f;
+		Model.BondExperienceToNext > 0.0f ? Model.BondExperience / Model.BondExperienceToNext : 1.0f, P.Violet, 24, false);
+	float PerkY = Y + 76.0f;
 	for (const FText& Perk : Model.BondPerks)
 	{
-		Paint.Sparkle(FVector2f(BondTopLeft.X + 34.0f, PerkY + 11.0f), 7.0f, P.BlueBright, 24);
-		Paint.Text(Perk.ToString(), Font(EBeyondFont::Body, 17.0f), FVector2f(BondTopLeft.X + 52.0f, PerkY), P.Text, 0.0f, 24);
-		PerkY += 24.0f;
+		Paint.Sparkle(FVector2f(BondTopLeft.X + 34.0f, PerkY + 10.0f), 6.0f, P.BlueBright, 24);
+		Paint.TextFit(Perk.ToString(), EBeyondFont::Body, 16.0f, FVector2f(BondTopLeft.X + 52.0f, PerkY), RightWidth - 76.0f, P.Text, 0.0f, 24);
+		PerkY += 22.0f;
 	}
 
 	const FVector2f DuoTopLeft = RightTopLeft + FVector2f(0.0f, BondSize.Y + 12.0f);
@@ -580,29 +618,33 @@ void UBeyondOverviewWidget::PaintPage(BeyondUI::FPainter& Paint) const
 	const FVector2f ResourcesSize(RightWidth, CentreTopLeft.Y + CentreSize.Y - ResourcesTopLeft.Y);
 	Paint.Panel(ResourcesTopLeft, ResourcesSize, 20);
 	Y = Paint.SectionHeader(LOCTEXT("KeyResources", "Key Resources").ToString(), ResourcesTopLeft + FVector2f(24.0f, 14.0f), RightWidth - 48.0f, 22, 16.0f);
+	const float ResourceRow = Model.Resources.IsEmpty() ? 32.0f
+		: FMath::Min(32.0f, (ResourcesTopLeft.Y + ResourcesSize.Y - 10.0f - Y) / Model.Resources.Num());
 	for (const FBeyondOverviewModel::FLine& Line : Model.Resources)
 	{
-		const FVector2f IconCentre(ResourcesTopLeft.X + 40.0f, Y + 14.0f);
+		const FVector2f IconCentre(ResourcesTopLeft.X + 40.0f, Y + 13.0f);
 		if (Line.Icon)
 		{
-			Paint.ImageCentred(Line.Icon, IconCentre, FVector2f(30.0f, 30.0f), FLinearColor::White, 24);
+			Paint.ImageCentred(Line.Icon, IconCentre, FVector2f(28.0f, 28.0f), FLinearColor::White, 24);
 		}
 		else
 		{
-			Paint.Glyph(Line.Glyph, IconCentre, 24.0f, P.GoldBright, 24, 1.6f);
+			Paint.Glyph(Line.Glyph, IconCentre, 22.0f, P.GoldBright, 24, 1.6f);
 		}
-		Paint.Text(Line.Title.ToString(), Font(EBeyondFont::Body, 19.0f), FVector2f(ResourcesTopLeft.X + 66.0f, Y), P.Text, 0.0f, 24);
-		Paint.Text(Line.Value, Font(EBeyondFont::Number, 19.0f), FVector2f(ResourcesTopLeft.X + RightWidth - 24.0f, Y), P.Text, 1.0f, 24);
-		Y += 32.0f;
+		Paint.Text(Line.Title.ToString(), Font(EBeyondFont::Body, 18.0f), FVector2f(ResourcesTopLeft.X + 66.0f, Y), P.Text, 0.0f, 24);
+		Paint.Text(Line.Value, Font(EBeyondFont::Number, 18.0f), FVector2f(ResourcesTopLeft.X + RightWidth - 24.0f, Y), P.Text, 1.0f, 24);
+		Y += ResourceRow;
 	}
 
 	//~ Bottom: loadout, journey, record
 	const FVector2f LoadoutTopLeft(300.0f, BottomTop);
 	Paint.Panel(LoadoutTopLeft, FVector2f(600.0f, BottomHeight), 20);
 	Paint.SectionHeader(LOCTEXT("Loadout", "Equipment Loadout").ToString(), LoadoutTopLeft + FVector2f(22.0f, 12.0f), 556.0f, 22, 16.0f);
+	const float LoadoutStep = Model.Loadout.IsEmpty() ? 0.0f : FMath::Min(112.0f, 540.0f / Model.Loadout.Num());
+	const float LoadoutFrame = FMath::Min(74.0f, LoadoutStep - 16.0f);
 	for (int32 Index = 0; Index < Model.Loadout.Num(); ++Index)
 	{
-		const FVector2f Centre(LoadoutTopLeft.X + 76.0f + Index * 112.0f, LoadoutTopLeft.Y + 100.0f);
+		const FVector2f Centre(LoadoutTopLeft.X + 300.0f + (Index - (Model.Loadout.Num() - 1) * 0.5f) * LoadoutStep, LoadoutTopLeft.Y + 100.0f);
 		const TOptional<FBeyondItemInstance>& Worn = Model.Loadout[Index].Value;
 		FItemFrameStyle Style;
 		Style.bEmpty = !Worn.IsSet();
@@ -610,13 +652,17 @@ void UBeyondOverviewWidget::PaintPage(BeyondUI::FPainter& Paint) const
 		if (Worn.IsSet())
 		{
 			Style.Tier = Worn->Tier;
+			Style.UpgradeLevel = Worn->UpgradeLevel;
+			Style.bShowUpgrade = true;
+			Style.bLocked = Worn->bLocked;
 			if (const UBeyondItemDefinition* Definition = Worn->GetDefinition())
 			{
 				Style.Icon = Definition->Icon;
 			}
 		}
-		Paint.ItemFrame(Centre, 74.0f, Style, 24);
-		Paint.Text(UBeyondItemLibrary::GetSlotName(Model.Loadout[Index].Key).ToString(), Font(EBeyondFont::Body, 16.0f), FVector2f(Centre.X, Centre.Y + 42.0f), P.TextDim, 0.5f, 26);
+		Paint.ItemFrame(Centre, LoadoutFrame, Style, 24);
+		Paint.Text(UBeyondItemLibrary::GetSlotName(Model.Loadout[Index].Key).ToString(), Font(EBeyondFont::Body, 15.0f), FVector2f(Centre.X, Centre.Y + LoadoutFrame * 0.5f + 6.0f),
+			P.TextDim, 0.5f, 26);
 	}
 
 	const FVector2f QuestTopLeft(914.0f, BottomTop);

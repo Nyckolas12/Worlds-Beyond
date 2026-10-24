@@ -112,6 +112,15 @@ def step_layout():
     layout.set_editor_property("lakes", [
         struct(unreal.BeyondLayoutLake, id=unreal.Name(lake_id), centre=v2(centre), radius=float(radius), depth=float(depth), frozen=bool(frozen))
         for lake_id, centre, radius, depth, frozen in L["lakes"]])
+    layout.set_editor_property("snow_line_height", float(L.get("snow_line", 225.0)))
+    layout.set_editor_property("rivers", [
+        struct(unreal.BeyondLayoutRiver, id=unreal.Name(river_id), points=[v2(p) for p in points], width=float(width),
+               depth=float(depth), valley_width=float(valley_width), valley_depth=float(valley_depth))
+        for river_id, points, width, depth, valley_width, valley_depth in L.get("rivers", [])])
+    layout.set_editor_property("plateaus", [
+        struct(unreal.BeyondLayoutPlateau, id=unreal.Name(plateau_id), centre=v2(centre), radius=float(radius),
+               cliff_width=float(cliff), height=float(height), terrace_steps=int(steps), edge_warp=float(warp))
+        for plateau_id, centre, radius, cliff, height, steps, warp in L.get("plateaus", [])])
     layout.set_editor_property("roads", [
         struct(unreal.BeyondLayoutRoad, id=unreal.Name(road_id), points=[v2(p) for p in points], width=float(width), cobble=bool(cobble))
         for road_id, points, width, cobble in L["roads"]])
@@ -124,6 +133,13 @@ def step_layout():
         pads.append(pad("arena_" + arena_id, centre, radius / 100.0 + 6.0, 25, "Rock" if boss else "Ground"))
     for stone_id, _name, centre, _yaw, _attuned in content.WAYSTONES:
         pads.append(pad("waystone_" + stone_id, centre, 9, 10, "Cobble"))
+    # The ruins' flat ground (the prefab sits on it)
+    places = {place[0]: place for place in content.PLACES}
+    sites = content.RUIN_SITES if hasattr(content, "RUIN_SITES") else {}
+    for place_id, site in sites.items():
+        if place_id in places and site.get("pad"):
+            radius, falloff = site["pad"]
+            pads.append(pad("ruin_" + place_id, places[place_id][3], radius, falloff, "Rock"))
     for region_id, r in content.REGIONS.items():
         if r["kind"] == "Village":
             pads.append(pad(region_id, r["centre"], r["radius"] * 0.85, 30, "Dirt"))
@@ -134,8 +150,9 @@ def step_layout():
     layout.set_editor_property("pads", pads)
 
     save(layout, LAYOUT_ASSET)
-    log("%s: %d regions, %d ridges, %d peaks, %d lakes, %d roads, %d pads" % (
-        LAYOUT_ASSET, len(regions), len(L["ridges"]), len(L["peaks"]), len(L["lakes"]), len(L["roads"]), len(pads)))
+    log("%s: %d regions, %d ridges, %d peaks, %d lakes, %d rivers, %d plateaus, %d roads, %d pads" % (
+        LAYOUT_ASSET, len(regions), len(L["ridges"]), len(L["peaks"]), len(L["lakes"]), len(L.get("rivers", [])),
+        len(L.get("plateaus", [])), len(L["roads"]), len(pads)))
     return layout
 
 
@@ -299,4 +316,6 @@ def main():
     write_report("last_run_pass15.txt")
 
 
-main()
+# BEYOND_IMPORT_ONLY=1: import the steps without running them (terrain previews from the editor)
+if os.environ.get("BEYOND_IMPORT_ONLY", "") != "1":
+    main()

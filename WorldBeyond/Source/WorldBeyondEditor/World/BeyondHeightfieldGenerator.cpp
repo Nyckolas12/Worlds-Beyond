@@ -398,6 +398,50 @@ void FBeyondHeightfieldGenerator::Generate(const UBeyondWorldLayout& Layout, FBe
 	Out.bHasVolcano = Volcano.bEnabled;
 	Out.LavaLevel = Volcano.LavaLevel;
 
+	//~ 1b. Plateaus: a flat top above the ground's average round their foot, cliff sides (ledged when stepped)
+	// Fixed offset from the seed (no draw from Random, so the other noise of an existing layout stays the same)
+	const FVector2D PlateauOffset(137.0 + (Layout.Seed % 97), -211.0 + (Layout.Seed % 53));
+	for (const FBeyondLayoutPlateau& Plateau : Layout.Plateaus)
+	{
+		const float Outer = Plateau.Radius + Plateau.CliffWidth + Plateau.EdgeWarp;
+		float Sum = 0.0f;
+		constexpr int32 RingSamples = 32;
+		for (int32 K = 0; K < RingSamples; ++K)
+		{
+			const float Angle = K * UE_TWO_PI / RingSamples;
+			Sum += Out.SampleHeight(Plateau.Centre + FVector2D(FMath::Cos(Angle), FMath::Sin(Angle)) * Outer);
+		}
+		const float Top = Sum / RingSamples + Plateau.Height;
+		const int32 MinX = FMath::Clamp(FMath::FloorToInt(Plateau.Centre.X - Outer + Half), 0, Size - 1);
+		const int32 MaxX = FMath::Clamp(FMath::CeilToInt(Plateau.Centre.X + Outer + Half), 0, Size - 1);
+		const int32 MinY = FMath::Clamp(FMath::FloorToInt(Half - Plateau.Centre.Y - Outer), 0, Size - 1);
+		const int32 MaxY = FMath::Clamp(FMath::CeilToInt(Half - Plateau.Centre.Y + Outer), 0, Size - 1);
+		ParallelFor(MaxY - MinY + 1, [&](int32 Row)
+		{
+			const int32 Y = MinY + Row;
+			for (int32 X = MinX; X <= MaxX; ++X)
+			{
+				const FVector2D ToPoint = Out.VertexToMetres(X, Y) - Plateau.Centre;
+				const float D = static_cast<float>(ToPoint.Size());
+				const FVector2D Direction = D > 0.01f ? ToPoint / D : FVector2D::ZeroVector;
+				const float Edge = Plateau.Radius + Plateau.EdgeWarp * Fbm(Direction * 2.5f, 3, PlateauOffset);
+				if (D >= Edge + Plateau.CliffWidth)
+				{
+					continue;
+				}
+				float T = 1.0f - SmoothStep01(Edge, Edge + Plateau.CliffWidth, D);
+				if (Plateau.TerraceSteps > 0 && T < 1.0f)
+				{
+					const float Steps = static_cast<float>(Plateau.TerraceSteps + 1);
+					T = FMath::Lerp(FMath::FloorToFloat(T * Steps) / Steps, T, 0.25f);
+				}
+				float& H = Out.Heights[Out.Index(X, Y)];
+				H = FMath::Max(H, FMath::Lerp(H, Top, T));
+			}
+		});
+		UE_LOG(LogBeyondEditor, Display, TEXT("[Heightfield] plateau %s: top %.1f m"), *Plateau.Id.ToString(), Top);
+	}
+
 	//~ 2. Lakes: a bowl below the ground at their centre, a muddy shore
 	TArray<float> Shore;
 	Shore.SetNumZeroed(Count);
@@ -431,6 +475,140 @@ void FBeyondHeightfieldGenerator::Generate(const UBeyondWorldLayout& Layout, FBe
 				}
 			}
 		}
+	}
+
+	//~ 2b. Rivers: a smoothed profile that only ever falls downstream, a valley pressed down to it, a shallow channel
+	TArray<float> RiverShore;
+	RiverShore.SetNumZeroed(Count);
+	Out.RiverMask.SetNumZeroed(Count);
+	if (!Layout.Rivers.IsEmpty())
+	{
+		TArray<float> RiverDistance;
+		TArray<float> RiverSurface;
+		TArray<uint8> RiverIndex;
+		RiverDistance.Init(TNumericLimits<float>::Max(), Count);
+		RiverSurface.SetNumZeroed(Count);
+		RiverIndex.Init(255, Count);
+		for (int32 RiverNumber = 0; RiverNumber < Layout.Rivers.Num() && RiverNumber < 255; ++RiverNumber)
+		{
+			const FBeyondLayoutRiver& River = Layout.Rivers[RiverNumber];
+			TArray<FVector2D> Points;
+			for (int32 Index = 0; Index + 1 < River.Points.Num(); ++Index)
+			{
+				const FVector2D A = River.Points[Index];
+				const FVector2D B = River.Points[Index + 1];
+				const int32 Steps = FMath::Max(1, FMath::CeilToInt(FVector2D::Distance(A, B) / RoadStep));
+				for (int32 Step = 0; Step < Steps; ++Step)
+				{
+					Points.Add(FMath::Lerp(A, B, static_cast<double>(Step) / Steps));
+				}
+			}
+			if (!River.Points.IsEmpty())
+			{
+				Points.Add(River.Points.Last());
+			}
+			if (Points.Num() < 2)
+			{
+				continue;
+			}
+			TArray<float> Profile;
+			for (const FVector2D& Point : Points)
+			{
+				Profile.Add(Out.SampleHeight(Point));
+			}
+			// Smooth three times (about 80 m each), then never rise downstream
+			for (int32 Pass = 0; Pass < 3; ++Pass)
+			{
+				TArray<float> Smoothed = Profile;
+				for (int32 Index = 0; Index < Profile.Num(); ++Index)
+				{
+					float Sum = 0.0f;
+					int32 Samples = 0;
+					for (int32 K = FMath::Max(0, Index - 10); K <= FMath::Min(Profile.Num() - 1, Index + 10); ++K)
+					{
+						Sum += Profile[K];
+						++Samples;
+					}
+					Smoothed[Index] = Sum / Samples;
+				}
+				Profile = MoveTemp(Smoothed);
+			}
+			for (int32 Index = 0; Index < Profile.Num(); ++Index)
+			{
+				Profile[Index] -= River.ValleyDepth;
+				if (Index > 0)
+				{
+					Profile[Index] = FMath::Min(Profile[Index], Profile[Index - 1]);
+				}
+			}
+			TArray<FVector>& Stored = Out.RiverProfiles.FindOrAdd(River.Id);
+			Stored.Reset();
+			for (int32 Index = 0; Index < Points.Num(); Index += 2)
+			{
+				Stored.Add(FVector(Points[Index].X, Points[Index].Y, Profile[Index]));
+			}
+			if ((Points.Num() - 1) % 2 != 0)
+			{
+				Stored.Add(FVector(Points.Last().X, Points.Last().Y, Profile.Last()));
+			}
+
+			const float Reach = FMath::Max(River.ValleyWidth * 0.5f, River.Width * 0.5f + 6.0f);
+			for (int32 Index = 0; Index + 1 < Points.Num(); ++Index)
+			{
+				const FVector2D A = Points[Index];
+				const FVector2D B = Points[Index + 1];
+				const int32 MinX = FMath::Clamp(FMath::FloorToInt(FMath::Min(A.X, B.X) - Reach + Half), 0, Size - 1);
+				const int32 MaxX = FMath::Clamp(FMath::CeilToInt(FMath::Max(A.X, B.X) + Reach + Half), 0, Size - 1);
+				const int32 MinY = FMath::Clamp(FMath::FloorToInt(Half - FMath::Max(A.Y, B.Y) - Reach), 0, Size - 1);
+				const int32 MaxY = FMath::Clamp(FMath::CeilToInt(Half - FMath::Min(A.Y, B.Y) + Reach), 0, Size - 1);
+				for (int32 Y = MinY; Y <= MaxY; ++Y)
+				{
+					for (int32 X = MinX; X <= MaxX; ++X)
+					{
+						float T;
+						const float D = DistanceToSegment(Out.VertexToMetres(X, Y), A, B, T);
+						const int32 Vertex = Out.Index(X, Y);
+						if (D < Reach && D < RiverDistance[Vertex])
+						{
+							RiverDistance[Vertex] = D;
+							RiverSurface[Vertex] = FMath::Lerp(Profile[Index], Profile[Index + 1], T);
+							RiverIndex[Vertex] = static_cast<uint8>(RiverNumber);
+						}
+					}
+				}
+			}
+			UE_LOG(LogBeyondEditor, Display, TEXT("[Heightfield] river %s: water %.1f m at the source, %.1f m at the mouth"),
+				*River.Id.ToString(), Profile[0], Profile.Last());
+		}
+		ParallelFor(Count, [&](int32 Vertex)
+		{
+			if (RiverIndex[Vertex] == 255)
+			{
+				return;
+			}
+			const FBeyondLayoutRiver& River = Layout.Rivers[RiverIndex[Vertex]];
+			const float HalfWidth = River.Width * 0.5f;
+			const float ValleyHalf = FMath::Max(River.ValleyWidth * 0.5f, HalfWidth + 6.0f);
+			const float D = RiverDistance[Vertex];
+			const float Surface = RiverSurface[Vertex];
+			const float Depth = FMath::Clamp(River.Depth, 0.2f, 0.9f);
+			float Target;
+			if (D < HalfWidth)
+			{
+				const float R = D / HalfWidth;
+				Target = Surface - Depth * (1.0f - R * R);
+			}
+			else
+			{
+				// A low wet bank, then the valley side rising gently
+				Target = Surface + 0.35f * FMath::Min(1.0f, (D - HalfWidth) / 4.0f) + FMath::Max(0.0f, D - HalfWidth - 4.0f) * 0.06f;
+			}
+			const float Weight = D < HalfWidth + 4.0f ? 1.0f : 1.0f - SmoothStep01(HalfWidth + 4.0f, ValleyHalf, D);
+			float& H = Out.Heights[Vertex];
+			H = FMath::Lerp(H, FMath::Min(H, Target), Weight);
+			RiverShore[Vertex] = 1.0f - SmoothStep01(HalfWidth, HalfWidth + 8.0f, D);
+			Out.RiverMask[Vertex] = D < HalfWidth ? 255 : 0;
+		});
 	}
 
 	//~ 3. Roads: a smoothed, gently sloped profile along each, the ground pressed to it
@@ -642,13 +820,14 @@ void FBeyondHeightfieldGenerator::Generate(const UBeyondWorldLayout& Layout, FBe
 
 			if (!bMolten)
 			{
-				Push(Snow, SmoothStep01(205.0f, 245.0f, H + Noise * 12.0f));
+				Push(Snow, SmoothStep01(Layout.SnowLineHeight - 20.0f, Layout.SnowLineHeight + 20.0f, H + Noise * 12.0f));
 			}
 			if (Out.bHasVolcano && H < Out.LavaLevel + 2.0f && FVector2D::Distance(P, Layout.Volcano.Centre) < Layout.Volcano.RimRadius)
 			{
 				Push(Ash, 1.0f);
 			}
 			Push(Mud, Shore[Vertex] * 0.85f);
+			Push(Mud, RiverShore[Vertex] * 0.7f);
 			Push(Rock, SmoothStep01(28.0f, 40.0f, Slope + Noise * 4.0f));
 			if (RoadIndex[Vertex] != 255)
 			{
@@ -688,5 +867,19 @@ void FBeyondHeightfieldGenerator::Generate(const UBeyondWorldLayout& Layout, FBe
 		}
 	});
 
+	float MinHeight = TNumericLimits<float>::Max();
+	float MaxHeight = -TNumericLimits<float>::Max();
+	for (const float Height : Out.Heights)
+	{
+		MinHeight = FMath::Min(MinHeight, Height);
+		MaxHeight = FMath::Max(MaxHeight, Height);
+	}
+	const float Limit = 512.0f * Layout.HeightScaleZ / 200.0f;
+	UE_LOG(LogBeyondEditor, Display, TEXT("[Heightfield] heights %.1f m to %.1f m (landscape range +-%.0f m), %d rivers, %d plateaus"),
+		MinHeight, MaxHeight, Limit, Layout.Rivers.Num(), Layout.Plateaus.Num());
+	if (MaxHeight > Limit || MinHeight < -Limit)
+	{
+		UE_LOG(LogBeyondEditor, Warning, TEXT("[Heightfield] heights leave the landscape's range: raise HeightScaleZ or lower the peaks"));
+	}
 	UE_LOG(LogBeyondEditor, Display, TEXT("World builder: generated a %d x %d heightfield in %.1f s"), Size, Size, FPlatformTime::Seconds() - StartTime);
 }

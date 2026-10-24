@@ -18,7 +18,6 @@
 
 namespace BeyondArmorLocal
 {
-	constexpr float DiscardWindow = 2.5f;
 	constexpr double DoubleClickSeconds = 0.35;
 
 	// The paper doll: slots on a rune ring around the silhouette
@@ -49,8 +48,7 @@ namespace BeyondArmorLocal
 	{
 		const TCHAR* Label;
 		float AngleDegrees;
-		// The slot it shows; none for the ones still to come (Accessory, Charm)
-		TOptional<EBeyondItemSlot> Slot;
+		EBeyondItemSlot Slot;
 		EBeyondGlyph Glyph;
 	};
 
@@ -60,8 +58,8 @@ namespace BeyondArmorLocal
 			{ TEXT("Helmet"), -90.0f, EBeyondItemSlot::Helm, EBeyondGlyph::Helm },
 			{ TEXT("Chest"), -32.0f, EBeyondItemSlot::Chest, EBeyondGlyph::Chest },
 			{ TEXT("Boots"), 16.0f, EBeyondItemSlot::Boots, EBeyondGlyph::Boots },
-			{ TEXT("Charm"), 62.0f, TOptional<EBeyondItemSlot>(), EBeyondGlyph::Amulet },
-			{ TEXT("Accessory"), 118.0f, TOptional<EBeyondItemSlot>(), EBeyondGlyph::Ring },
+			{ TEXT("Charm"), 62.0f, EBeyondItemSlot::Charm, EBeyondGlyph::Amulet },
+			{ TEXT("Accessory"), 118.0f, EBeyondItemSlot::Accessory, EBeyondGlyph::Ring },
 			{ TEXT("Gauntlets"), 164.0f, EBeyondItemSlot::Gauntlets, EBeyondGlyph::Gauntlets },
 			{ TEXT("Weapon"), 212.0f, EBeyondItemSlot::Weapon, EBeyondGlyph::Sword },
 		};
@@ -117,6 +115,8 @@ namespace BeyondArmorLocal
 		case EBeyondBagFilter::Gauntlets: return Definition->Slot == EBeyondItemSlot::Gauntlets;
 		case EBeyondBagFilter::Boots: return Definition->Slot == EBeyondItemSlot::Boots;
 		case EBeyondBagFilter::Weapon: return Definition->Slot == EBeyondItemSlot::Weapon;
+		case EBeyondBagFilter::Ring: return Definition->Slot == EBeyondItemSlot::Accessory;
+		case EBeyondBagFilter::Amulet: return Definition->Slot == EBeyondItemSlot::Charm;
 		default: return false;
 		}
 	}
@@ -391,12 +391,16 @@ bool UBeyondInventoryWidget::DiscardBagItem(FGuid ItemId)
 {
 	UBeyondInventoryComponent* Inventory = GetInventory();
 	FBeyondItemInstance Item;
-	if (!Inventory || !Inventory->RemoveItem(ItemId, Item))
+	if (!Inventory || !Inventory->FindItem(ItemId, Item))
 	{
 		return false;
 	}
-	DiscardArmedItem.Invalidate();
-	DiscardArmedAge = -1.0f;
+	FBeyondCurrencyBundle Yield;
+	if (!Inventory->SalvageItem(ItemId, Yield))
+	{
+		ShowMessage(LOCTEXT("LockedSalvage", "Locked items can't be salvaged (L unlocks)"), true);
+		return false;
+	}
 	if (Hovered.BagItem == ItemId)
 	{
 		Hovered = FInventoryHit();
@@ -405,33 +409,147 @@ bool UBeyondInventoryWidget::DiscardBagItem(FGuid ItemId)
 	{
 		SelectedBagItem.Invalidate();
 	}
-	ShowMessage(FText::Format(LOCTEXT("Discarded", "{0} discarded"), UBeyondItemLibrary::GetItemName(Item)));
+	ShowMessage(FText::Format(LOCTEXT("Salvaged", "{0} salvaged: +{1}"), UBeyondItemLibrary::GetItemName(Item), UBeyondItemLibrary::FormatCurrencies(Yield)));
 	ClampScroll();
 	return true;
 }
 
-void UBeyondInventoryWidget::HandleDiscardKey()
+int32 UBeyondInventoryWidget::SalvageJunk()
+{
+	UBeyondInventoryComponent* Inventory = GetInventory();
+	FBeyondCurrencyBundle Yield;
+	const int32 Count = Inventory ? Inventory->SalvageJunk(Yield) : 0;
+	if (Count == 0)
+	{
+		ShowMessage(LOCTEXT("NoJunk", "Select a bag item, or mark junk with X, then hold V to salvage"), true);
+		return 0;
+	}
+	Hovered = FInventoryHit();
+	SelectedBagItem.Invalidate();
+	ShowMessage(FText::Format(LOCTEXT("SalvagedJunk", "{0} junk {0}|plural(one=item,other=items) salvaged: +{1}"), FText::AsNumber(Count),
+		UBeyondItemLibrary::FormatCurrencies(Yield)));
+	ClampScroll();
+	return Count;
+}
+
+bool UBeyondInventoryWidget::UpgradeItem(FGuid ItemId)
+{
+	UBeyondInventoryComponent* Inventory = GetInventory();
+	FText Reason;
+	if (!Inventory || !Inventory->UpgradeItem(ItemId, Reason))
+	{
+		ShowMessage(Reason.IsEmpty() ? LOCTEXT("CantUpgrade", "Can't upgrade that") : Reason, true);
+		PlayDeniedSound();
+		return false;
+	}
+	FBeyondItemInstance Item;
+	Inventory->FindOwnedItem(ItemId, Item);
+	ShowMessage(FText::Format(LOCTEXT("Upgraded", "{0} is now +{1}"), UBeyondItemLibrary::GetItemName(Item), FText::AsNumber(Item.UpgradeLevel)));
+	PlayUISound(EquipSound, 0.7f);
+	FlashWornSlot(Item);
+	return true;
+}
+
+bool UBeyondInventoryWidget::ToggleLock(FGuid ItemId)
+{
+	UBeyondInventoryComponent* Inventory = GetInventory();
+	FBeyondItemInstance Item;
+	if (!Inventory || !Inventory->FindOwnedItem(ItemId, Item) || !Inventory->SetItemLocked(ItemId, !Item.bLocked))
+	{
+		return false;
+	}
+	ShowMessage(FText::Format(Item.bLocked ? LOCTEXT("Unlocked", "{0} unlocked") : LOCTEXT("Locked", "{0} locked: it can't be salvaged"),
+		UBeyondItemLibrary::GetItemName(Item)));
+	PlaySelectSound();
+	return true;
+}
+
+bool UBeyondInventoryWidget::ToggleJunk(FGuid ItemId)
+{
+	UBeyondInventoryComponent* Inventory = GetInventory();
+	FBeyondItemInstance Item;
+	if (!Inventory || !Inventory->FindItem(ItemId, Item))
+	{
+		ShowMessage(LOCTEXT("JunkBagOnly", "Only bag items can be marked as junk"), true);
+		return false;
+	}
+	if (!Inventory->SetItemJunk(ItemId, !Item.bJunk))
+	{
+		ShowMessage(LOCTEXT("JunkLocked", "Locked items can't be junk (L unlocks)"), true);
+		PlayDeniedSound();
+		return false;
+	}
+	ShowMessage(FText::Format(Item.bJunk ? LOCTEXT("NotJunk", "{0} is no longer junk") : LOCTEXT("Junk", "{0} marked as junk (hold V to salvage the junk)"),
+		UBeyondItemLibrary::GetItemName(Item)));
+	PlaySelectSound();
+	return true;
+}
+
+void UBeyondInventoryWidget::BeginHold(EArmorHold Action)
 {
 	FBeyondItemInstance Item;
 	bool bWorn = false;
-	if (!GetDetailItem(Item, bWorn))
+	const bool bHasItem = GetDetailItem(Item, bWorn);
+	if (Action == EArmorHold::Upgrade)
 	{
-		ShowMessage(LOCTEXT("SelectToDiscard", "Select a bag item and press X to discard it"), true);
+		FText Reason;
+		const UBeyondInventoryComponent* Inventory = GetInventory();
+		if (!bHasItem || !Inventory || !Inventory->CanUpgradeItem(Item.Id, Reason))
+		{
+			ShowMessage(bHasItem ? Reason : LOCTEXT("SelectToUpgrade", "Select a piece of gear, then hold U to upgrade it"), true);
+			PlayDeniedSound();
+			return;
+		}
+	}
+	else if (bHasItem && bWorn)
+	{
+		ShowMessage(LOCTEXT("TakeOffFirst", "Take it off first to salvage it"), true);
 		return;
 	}
-	if (bWorn)
+	HoldAction = Action;
+	HoldTime = 0.0f;
+	HoldItem = bHasItem ? Item.Id : FGuid();
+}
+
+void UBeyondInventoryWidget::CancelHold()
+{
+	HoldAction = EArmorHold::None;
+	HoldTime = 0.0f;
+	HoldItem.Invalidate();
+}
+
+void UBeyondInventoryWidget::FinishHold()
+{
+	const EArmorHold Action = HoldAction;
+	const FGuid ItemId = HoldItem;
+	CancelHold();
+	if (Action == EArmorHold::Upgrade)
 	{
-		ShowMessage(LOCTEXT("TakeOffFirst", "Take it off first to discard it"), true);
-		return;
+		UpgradeItem(ItemId);
 	}
-	if (DiscardArmedItem == Item.Id && DiscardArmedAge >= 0.0f && DiscardArmedAge < BeyondArmorLocal::DiscardWindow)
+	else if (Action == EArmorHold::Salvage)
 	{
-		DiscardBagItem(Item.Id);
-		return;
+		if (ItemId.IsValid())
+		{
+			DiscardBagItem(ItemId);
+		}
+		else
+		{
+			SalvageJunk();
+		}
 	}
-	DiscardArmedItem = Item.Id;
-	DiscardArmedAge = 0.0f;
-	ShowMessage(FText::Format(LOCTEXT("ConfirmDiscard", "Press X again to discard {0} for good"), UBeyondItemLibrary::GetItemName(Item)), true);
+}
+
+void UBeyondInventoryWidget::FlashWornSlot(const FBeyondItemInstance& Item)
+{
+	const UBeyondEquipmentComponent* Equipment = GetShownEquipment();
+	FBeyondItemInstance Worn;
+	if (const UBeyondItemDefinition* Definition = Item.GetDefinition(); Definition && Equipment && Equipment->FindEquippedItem(Item.Id, Worn))
+	{
+		bFlashSlot = true;
+		FlashSlot = Definition->Slot;
+		FlashAge = 0.0f;
+	}
 }
 
 void UBeyondInventoryWidget::ActivateSelection()
@@ -463,13 +581,12 @@ void UBeyondInventoryWidget::ActivateSelection()
 
 void UBeyondInventoryWidget::AdvancePage(float DeltaSeconds)
 {
-	if (DiscardArmedAge >= 0.0f)
+	if (HoldAction != EArmorHold::None)
 	{
-		DiscardArmedAge += DeltaSeconds;
-		if (DiscardArmedAge > BeyondArmorLocal::DiscardWindow)
+		HoldTime += DeltaSeconds;
+		if (HoldTime >= HoldDuration)
 		{
-			DiscardArmedAge = -1.0f;
-			DiscardArmedItem.Invalidate();
+			FinishHold();
 		}
 	}
 	if (FlashAge >= 0.0f)
@@ -521,10 +638,10 @@ UBeyondInventoryWidget::FInventoryHit UBeyondInventoryWidget::HitTest(const FVec
 			for (int32 Index = 0; Index < Spots.Num(); ++Index)
 			{
 				const FVector2f Centre(340.0f + Member * 316.0f + (Index % 4) * 76.0f + 32.0f, 214.0f + (Index / 4) * 96.0f);
-				if (Spots[Index].Slot.IsSet() && InBox(Centre, 64.0f))
+				if (InBox(Centre, 64.0f))
 				{
 					Hit.bSlot = true;
-					Hit.ItemSlot = Spots[Index].Slot.GetValue();
+					Hit.ItemSlot = Spots[Index].Slot;
 					Hit.Member = Member;
 					return Hit;
 				}
@@ -535,10 +652,10 @@ UBeyondInventoryWidget::FInventoryHit UBeyondInventoryWidget::HitTest(const FVec
 	{
 		for (const FSlotSpot& Spot : GetSlotSpots())
 		{
-			if (Spot.Slot.IsSet() && InBox(GetSpotCentre(Spot), SlotSize))
+			if (InBox(GetSpotCentre(Spot), SlotSize))
 			{
 				Hit.bSlot = true;
-				Hit.ItemSlot = Spot.Slot.GetValue();
+				Hit.ItemSlot = Spot.Slot;
 				return Hit;
 			}
 		}
@@ -642,15 +759,43 @@ bool UBeyondInventoryWidget::HandlePageKey(const FKey& Key)
 		bDetails = !bDetails;
 		return true;
 	}
-	if (Key == EKeys::X)
+	if (Key == EKeys::U || Key == EKeys::V)
 	{
-		HandleDiscardKey();
+		BeginHold(Key == EKeys::U ? EArmorHold::Upgrade : EArmorHold::Salvage);
+		return true;
+	}
+	if (Key == EKeys::L || Key == EKeys::X)
+	{
+		FBeyondItemInstance Item;
+		bool bWorn = false;
+		if (!GetDetailItem(Item, bWorn))
+		{
+			ShowMessage(Key == EKeys::L ? LOCTEXT("SelectToLock", "Select a piece of gear to lock it") : LOCTEXT("SelectToJunk", "Select a bag item to mark it as junk"), true);
+		}
+		else if (Key == EKeys::L)
+		{
+			ToggleLock(Item.Id);
+		}
+		else
+		{
+			ToggleJunk(Item.Id);
+		}
 		return true;
 	}
 	if (Key == EKeys::Up || Key == EKeys::Down)
 	{
 		BagScrollRow += Key == EKeys::Down ? 1 : -1;
 		ClampScroll();
+		return true;
+	}
+	return false;
+}
+
+bool UBeyondInventoryWidget::HandlePageKeyUp(const FKey& Key)
+{
+	if ((Key == EKeys::U && HoldAction == EArmorHold::Upgrade) || (Key == EKeys::V && HoldAction == EArmorHold::Salvage))
+	{
+		CancelHold();
 		return true;
 	}
 	return false;
@@ -663,32 +808,43 @@ void UBeyondInventoryWidget::GetPageKeyHints(TArray<FBeyondKeyHint>& OutHints) c
 	const bool bHasItem = GetDetailItem(Item, bWorn);
 	OutHints.Add({ TEXT("LMB"), LOCTEXT("Select", "Select"), EKeys::LeftMouseButton });
 	OutHints.Add({ TEXT("F"), bHasItem && bWorn ? LOCTEXT("Unequip", "Unequip") : LOCTEXT("Equip", "Equip"), EKeys::F });
+	OutHints.Add({ TEXT("U"), LOCTEXT("UpgradeHold", "Upgrade (Hold)"), EKeys::U });
+	OutHints.Add({ TEXT("L"), bHasItem && Item.bLocked ? LOCTEXT("Unlock", "Unlock") : LOCTEXT("Lock", "Lock"), EKeys::L });
+	OutHints.Add({ TEXT("X"), LOCTEXT("JunkHint", "Junk"), EKeys::X });
+	OutHints.Add({ TEXT("V"), LOCTEXT("SalvageHold", "Salvage (Hold)"), EKeys::V });
 	OutHints.Add({ TEXT("R"), LOCTEXT("Compare", "Compare"), EKeys::R });
-	OutHints.Add({ TEXT("X"), LOCTEXT("Discard", "Discard (twice)"), EKeys::X });
 	OutHints.Add({ TEXT("T"), LOCTEXT("Details", "Details"), EKeys::T });
 }
 
 bool UBeyondInventoryWidget::GetCounter(FBeyondMenuCounter& OutCounter) const
 {
-	return false;
+	// What upgrades are paid with
+	OutCounter.Label = LOCTEXT("Wallet", "Wallet");
+	AddCurrencyToCounter(OutCounter, EBeyondCurrency::Gold);
+	AddCurrencyToCounter(OutCounter, EBeyondCurrency::Crystals);
+	AddCurrencyToCounter(OutCounter, EBeyondCurrency::EchoShards);
+	return true;
 }
 
 //~ Painting
 
 void UBeyondInventoryWidget::PaintItemTile(const BeyondUI::FPainter& Paint, const FBeyondItemInstance* Item, const FVector2f& Centre, float Size,
-	EBeyondGlyph EmptyGlyph, bool bSelected, bool bHovered, bool bShowUpgrade, int32 Layer) const
+	EBeyondGlyph EmptyGlyph, bool bSelected, bool bHovered, int32 Layer) const
 {
 	BeyondUI::FItemFrameStyle Style;
 	const UBeyondItemDefinition* Definition = Item ? Item->GetDefinition() : nullptr;
 	Style.bEmpty = Definition == nullptr;
 	Style.bSelected = bSelected;
 	Style.bHovered = bHovered;
-	Style.bShowUpgrade = bShowUpgrade;
+	Style.bShowUpgrade = true;
 	if (Definition)
 	{
 		Style.Tier = Item->Tier;
 		Style.Icon = Definition->Icon;
 		Style.Glyph = BeyondArmorLocal::GetItemGlyph(Definition);
+		Style.UpgradeLevel = Item->UpgradeLevel;
+		Style.bLocked = Item->bLocked;
+		Style.bJunk = Item->bJunk;
 	}
 	else
 	{
@@ -743,28 +899,25 @@ void UBeyondInventoryWidget::PaintPaperDoll(const BeyondUI::FPainter& Paint) con
 		Paint.Line(RingCentre + Direction * (RingRadius * 0.74f), Centre - Direction * (SlotSize * 0.55f), WithAlpha(P.Gold, 0.3f), 1.0f, 22);
 
 		FBeyondItemInstance Worn;
-		const bool bHasItem = Spot.Slot.IsSet() && Equipment && Equipment->GetEquipped(Spot.Slot.GetValue(), Worn);
-		const bool bHover = Spot.Slot.IsSet() && Hovered.bSlot && Hovered.Member == INDEX_NONE && Hovered.ItemSlot == Spot.Slot.GetValue();
-		const bool bSelected = Spot.Slot.IsSet() && bSlotSelected && SelectedSlot == Spot.Slot.GetValue();
-		const EBeyondGlyph EmptyGlyph = Spot.Slot.IsSet() && Spot.Slot.GetValue() == EBeyondItemSlot::Weapon ? (bStaff ? EBeyondGlyph::Staff : EBeyondGlyph::Sword) : Spot.Glyph;
-		PaintItemTile(Paint, bHasItem ? &Worn : nullptr, Centre, SlotSize, EmptyGlyph, bSelected, bHover, false, 24);
-		if (bFlashSlot && FlashAge >= 0.0f && Spot.Slot.IsSet() && FlashSlot == Spot.Slot.GetValue())
+		const bool bHasItem = Equipment && Equipment->GetEquipped(Spot.Slot, Worn);
+		const bool bHover = Hovered.bSlot && Hovered.Member == INDEX_NONE && Hovered.ItemSlot == Spot.Slot;
+		const bool bSelected = bSlotSelected && SelectedSlot == Spot.Slot;
+		const EBeyondGlyph EmptyGlyph = Spot.Slot == EBeyondItemSlot::Weapon ? (bStaff ? EBeyondGlyph::Staff : EBeyondGlyph::Sword) : Spot.Glyph;
+		PaintItemTile(Paint, bHasItem ? &Worn : nullptr, Centre, SlotSize, EmptyGlyph, bSelected, bHover, 24);
+		if (bFlashSlot && FlashAge >= 0.0f && FlashSlot == Spot.Slot)
 		{
 			const float Alpha = FlashAge / 0.6f;
 			const float Grow = SlotSize + 10.0f + 40.0f * Alpha;
 			Paint.RectOutline(Centre - FVector2f(Grow, Grow) * 0.5f, FVector2f(Grow, Grow), WithAlpha(P.GoldBright, 1.0f - Alpha), 2.0f, 30);
 		}
 
-		// Label and the item's level under the slot (+N once items can be upgraded)
+		// Label and the item's level under the slot
 		const float LabelY = Centre.Y + SlotSize * 0.5f + 6.0f;
-		Paint.Text(FString(Spot.Label).ToUpper(), Font(EBeyondFont::Heading, 15.0f), FVector2f(Centre.X, LabelY), Spot.Slot.IsSet() ? P.Text : P.TextFaint, 0.5f, 26);
+		Paint.Text(FString(Spot.Label).ToUpper(), Font(EBeyondFont::Heading, 15.0f), FVector2f(Centre.X, LabelY), P.Text, 0.5f, 26);
 		if (bHasItem)
 		{
-			Paint.Text(FString::Printf(TEXT("Lv %d"), Worn.ItemLevel), Font(EBeyondFont::Number, 15.0f), FVector2f(Centre.X, LabelY + 20.0f), P.GoldBright, 0.5f, 26);
-		}
-		else if (!Spot.Slot.IsSet())
-		{
-			Paint.Text(LOCTEXT("SoonSlot", "Sealed").ToString(), Font(EBeyondFont::BodyItalic, 15.0f), FVector2f(Centre.X, LabelY + 20.0f), P.TextFaint, 0.5f, 26);
+			Paint.Text(Worn.UpgradeLevel > 0 ? FString::Printf(TEXT("Lv %d  +%d"), Worn.ItemLevel, Worn.UpgradeLevel) : FString::Printf(TEXT("Lv %d"), Worn.ItemLevel),
+				Font(EBeyondFont::Number, 15.0f), FVector2f(Centre.X, LabelY + 20.0f), P.GoldBright, 0.5f, 26);
 		}
 	}
 }
@@ -792,9 +945,9 @@ void UBeyondInventoryWidget::PaintPartyView(const BeyondUI::FPainter& Paint) con
 		{
 			const FVector2f Centre(TopLeft.X + 24.0f + (Index % 4) * 76.0f + 32.0f, 214.0f + (Index / 4) * 96.0f);
 			FBeyondItemInstance Worn;
-			const bool bHasItem = Spots[Index].Slot.IsSet() && Equipment && Equipment->GetEquipped(Spots[Index].Slot.GetValue(), Worn);
-			const bool bHover = Hovered.bSlot && Hovered.Member == Member && Spots[Index].Slot.IsSet() && Hovered.ItemSlot == Spots[Index].Slot.GetValue();
-			PaintItemTile(Paint, bHasItem ? &Worn : nullptr, Centre, 64.0f, Spots[Index].Glyph, false, bHover, false, 24);
+			const bool bHasItem = Equipment && Equipment->GetEquipped(Spots[Index].Slot, Worn);
+			const bool bHover = Hovered.bSlot && Hovered.Member == Member && Hovered.ItemSlot == Spots[Index].Slot;
+			PaintItemTile(Paint, bHasItem ? &Worn : nullptr, Centre, 64.0f, Spots[Index].Glyph, false, bHover, 24);
 		}
 		const float StatsTop = Paint.SectionHeader(LOCTEXT("PartyStats", "Combat Stats").ToString(), TopLeft + FVector2f(22.0f, 338.0f), Size.X - 44.0f, 24, 15.0f);
 		BeyondMenuPanels::PaintStats(Paint, BeyondMenuPanels::GetCombatStats(Character), FVector2f(TopLeft.X + 18.0f, StatsTop), Size.X - 40.0f, 27.0f, 24, false, 17.0f);
@@ -866,24 +1019,25 @@ void UBeyondInventoryWidget::PaintBag(const BeyondUI::FPainter& Paint) const
 		{
 			if (Index < Shown)
 			{
-				PaintItemTile(Paint, nullptr, Centre, CellSize, EBeyondGlyph::None, false, false, false, 44);
+				PaintItemTile(Paint, nullptr, Centre, CellSize, EBeyondGlyph::None, false, false, 44);
 			}
 			continue;
 		}
 		const FBeyondItemInstance& Item = Items[Index];
 		const bool bHover = Hovered.BagItem == Item.Id;
 		const bool bSelected = !bSlotSelected && SelectedBagItem == Item.Id;
-		PaintItemTile(Paint, &Item, Centre, CellSize, EBeyondGlyph::None, bSelected, bHover, false, 44);
+		PaintItemTile(Paint, &Item, Centre, CellSize, EBeyondGlyph::None, bSelected, bHover, 44);
 
-		// Green arrow: better than what the shown demigod wears there; red cross: they can't use it
+		// Top right (unless the lock badge is there): green arrow, better than what the shown demigod wears there; red
+		// cross, they can't use it. Bottom right: the item level (the frame's +N there once upgraded)
 		const UBeyondItemDefinition* Definition = Item.GetDefinition();
 		const FVector2f Corner = Centre + FVector2f(CellSize * 0.5f - 12.0f, -CellSize * 0.5f + 12.0f);
 		FText Reason;
-		if (Equipment && Definition && !Equipment->CanEquip(Item, Reason))
+		if (!Item.bLocked && Equipment && Definition && !Equipment->CanEquip(Item, Reason))
 		{
 			Paint.Glyph(EBeyondGlyph::Cross, Corner, 14.0f, P.Minus, 50, 2.0f);
 		}
-		else if (Equipment && Definition)
+		else if (!Item.bLocked && Equipment && Definition)
 		{
 			FBeyondItemInstance Worn;
 			if (!Equipment->GetEquipped(Definition->Slot, Worn) || ItemScore(Item) > ItemScore(Worn) + 0.5f)
@@ -891,12 +1045,16 @@ void UBeyondInventoryWidget::PaintBag(const BeyondUI::FPainter& Paint) const
 				Paint.Glyph(EBeyondGlyph::Up, Corner, 15.0f, P.Plus, 50, 2.0f);
 			}
 		}
-		Paint.Text(FString::FromInt(Item.ItemLevel), Font(EBeyondFont::Number, 13.0f), Centre + FVector2f(CellSize * 0.5f - 6.0f, CellSize * 0.5f - 20.0f), P.Text, 1.0f, 50);
-		if (DiscardArmedItem == Item.Id && DiscardArmedAge >= 0.0f)
+		if (Item.UpgradeLevel <= 0)
 		{
-			const float Pulse = 0.5f + 0.5f * FMath::Sin(AnimTime * 10.0f);
-			Paint.RectOutline(Centre - FVector2f(CellSize, CellSize) * 0.5f - FVector2f(3.0f, 3.0f), FVector2f(CellSize + 6.0f, CellSize + 6.0f),
-				WithAlpha(P.Minus, 0.4f + 0.5f * Pulse), 2.0f, 51);
+			Paint.Text(FString::FromInt(Item.ItemLevel), Font(EBeyondFont::Number, 13.0f), Centre + FVector2f(CellSize * 0.5f - 6.0f, CellSize * 0.5f - 20.0f), P.Text, 1.0f, 50);
+		}
+		// Being salvaged (V held): a red frame closing in
+		if (HoldAction == EArmorHold::Salvage && HoldItem == Item.Id && HoldDuration > 0.0f)
+		{
+			const float Fill = FMath::Clamp(HoldTime / HoldDuration, 0.0f, 1.0f);
+			const float Grow = CellSize + 6.0f + 24.0f * (1.0f - Fill);
+			Paint.RectOutline(Centre - FVector2f(Grow, Grow) * 0.5f, FVector2f(Grow, Grow), WithAlpha(P.Minus, 0.4f + 0.6f * Fill), 2.0f, 51);
 		}
 	}
 
@@ -1040,7 +1198,9 @@ void UBeyondInventoryWidget::PaintCard(const BeyondUI::FPainter& Paint) const
 	const float Left = CardTopLeft.X + 364.0f;
 	const float Width = CardSize.X - 364.0f - 26.0f;
 	float Y = CardTopLeft.Y + 18.0f;
-	Paint.Text(UBeyondItemLibrary::GetItemName(Item).ToString(), Font(EBeyondFont::Display, 27.0f), FVector2f(Left, Y), FMath::Lerp(Tier, FLinearColor::White, 0.15f), 0.0f, 44);
+	const FString Name = UBeyondItemLibrary::GetItemName(Item).ToString();
+	Paint.Text(Item.UpgradeLevel > 0 ? FString::Printf(TEXT("%s  +%d"), *Name, Item.UpgradeLevel) : Name, Font(EBeyondFont::Display, 27.0f), FVector2f(Left, Y),
+		FMath::Lerp(Tier, FLinearColor::White, 0.15f), 0.0f, 44);
 	const FString LevelText = FString::Printf(TEXT("Lv %d"), Item.ItemLevel);
 	const FSlateFontInfo LevelFont = Font(EBeyondFont::Number, 22.0f);
 	const FVector2f LevelBox(MeasureText(LevelText, LevelFont).X + 24.0f, 38.0f);
@@ -1049,8 +1209,10 @@ void UBeyondInventoryWidget::PaintCard(const BeyondUI::FPainter& Paint) const
 	Paint.RectOutline(LevelTopLeft, LevelBox, WithAlpha(P.GoldBright, 0.7f), 1.0f, 44);
 	Paint.Text(LevelText, LevelFont, LevelTopLeft + FVector2f(LevelBox.X * 0.5f, 5.0f), P.Text, 0.5f, 45);
 	Y += 40.0f;
-	Paint.Text(FString::Printf(TEXT("%s %s%s"), *UBeyondItemLibrary::GetTierName(Item.Tier).ToString(), *UBeyondItemLibrary::GetSlotName(Definition->Slot).ToString(),
-		bWorn ? *FString(TEXT("  ·  worn")) : TEXT("")), Font(EBeyondFont::BodyItalic, 19.0f), FVector2f(Left, Y), WithAlpha(Tier, 0.9f), 0.0f, 44);
+	FString TierLine = FString::Printf(TEXT("%s %s"), *UBeyondItemLibrary::GetTierName(Item.Tier).ToString(), *UBeyondItemLibrary::GetSlotName(Definition->Slot).ToString());
+	TierLine += bWorn ? TEXT("  ·  worn") : TEXT("");
+	TierLine += Item.bLocked ? TEXT("  ·  locked") : Item.bJunk ? TEXT("  ·  junk") : TEXT("");
+	Paint.Text(TierLine, Font(EBeyondFont::BodyItalic, 19.0f), FVector2f(Left, Y), WithAlpha(Tier, 0.9f), 0.0f, 44);
 	Y += 32.0f;
 	Paint.Separator(FVector2f(Left, Y), Width, 43, 0.5f);
 	Y += 10.0f;
@@ -1109,12 +1271,36 @@ void UBeyondInventoryWidget::PaintCard(const BeyondUI::FPainter& Paint) const
 		}
 	}
 
-	// Flavour text
+	// Flavour text, if there is room above the prices
 	const float ButtonTop = CardTopLeft.Y + CardSize.Y - 58.0f;
-	if (!Definition->Description.IsEmpty() && Y < ButtonTop - 30.0f)
+	const float PriceTop = ButtonTop - 54.0f;
+	if (!Definition->Description.IsEmpty() && Y < PriceTop - 30.0f)
 	{
-		Paint.Paragraph(Definition->Description.ToString(), Font(EBeyondFont::BodyItalic, 17.0f), FVector2f(Left, FMath::Max(Y + 6.0f, ButtonTop - 52.0f)), Width, 21.0f,
+		Paint.Paragraph(Definition->Description.ToString(), Font(EBeyondFont::BodyItalic, 17.0f), FVector2f(Left, FMath::Max(Y + 6.0f, PriceTop - 48.0f)), Width, 21.0f,
 			P.TextDim, 44, 2);
+	}
+
+	// What the next upgrade costs, and what salvaging it would give
+	const UBeyondInventoryComponent* Inventory = GetInventory();
+	const FSlateFontInfo PriceFont = Font(EBeyondFont::Body, 17.0f);
+	Paint.Glyph(EBeyondGlyph::Up, FVector2f(Left + 9.0f, PriceTop + 11.0f), 16.0f, P.GoldBright, 44, 1.6f);
+	if (Item.UpgradeLevel >= UBeyondItemLibrary::GetMaxUpgradeLevel())
+	{
+		Paint.Text(FText::Format(LOCTEXT("FullyUpgraded", "Fully upgraded (+{0})"), FText::AsNumber(Item.UpgradeLevel)).ToString(), PriceFont,
+			FVector2f(Left + 26.0f, PriceTop), P.GoldBright, 0.0f, 44);
+	}
+	else
+	{
+		const FBeyondCurrencyBundle Cost = UBeyondItemLibrary::GetUpgradeCost(Item);
+		Paint.Text(FText::Format(LOCTEXT("UpgradeCost", "Upgrade to +{0}: {1}"), FText::AsNumber(Item.UpgradeLevel + 1), UBeyondItemLibrary::FormatCurrencies(Cost)).ToString(),
+			PriceFont, FVector2f(Left + 26.0f, PriceTop), Inventory && Inventory->CanAfford(Cost) ? P.Text : P.Minus, 0.0f, 44);
+	}
+	if (!bWorn)
+	{
+		const FString SalvageLine = Item.bLocked ? LOCTEXT("LockedNoSalvage", "Locked: it won't be salvaged").ToString()
+			: FText::Format(LOCTEXT("SalvageYield", "Salvage: {0}"), UBeyondItemLibrary::FormatCurrencies(UBeyondItemLibrary::GetSalvageYield(Item))).ToString();
+		Paint.Glyph(Item.bLocked ? EBeyondGlyph::Lock : EBeyondGlyph::Coin, FVector2f(Left + 9.0f, PriceTop + 33.0f), 16.0f, P.TextDim, 44, 1.4f);
+		Paint.Text(SalvageLine, PriceFont, FVector2f(Left + 26.0f, PriceTop + 22.0f), P.TextDim, 0.0f, 44);
 	}
 
 	// What F does with it, and the other keys, as buttons
@@ -1125,12 +1311,19 @@ void UBeyondInventoryWidget::PaintCard(const BeyondUI::FPainter& Paint) const
 		Action = Reason;
 	}
 	float X = Left;
-	const TPair<FString, FText> Buttons[] = { { TEXT("F"), Action }, { TEXT("R"), LOCTEXT("CompareButton", "Compare") }, { TEXT("T"), LOCTEXT("DetailsButton", "Details") } };
+	const TPair<FString, FText> Buttons[] = { { TEXT("F"), Action }, { TEXT("U"), LOCTEXT("UpgradeButton", "Upgrade") },
+		{ TEXT("L"), Item.bLocked ? LOCTEXT("UnlockButton", "Unlock") : LOCTEXT("LockButton", "Lock") } };
 	for (const TPair<FString, FText>& Button : Buttons)
 	{
 		const FSlateFontInfo ButtonFont = Font(EBeyondFont::Body, 17.0f);
 		const float ButtonWidth = 64.0f + MeasureText(Button.Value.ToString(), ButtonFont).X;
 		Paint.GradientV(FVector2f(X, ButtonTop), FVector2f(ButtonWidth, 40.0f), FromHex(0x161E33, 0.92f), FromHex(0x0A0F1C, 0.92f), 43);
+		// Holding U fills the upgrade button
+		if (Button.Key == TEXT("U") && HoldAction == EArmorHold::Upgrade && HoldItem == Item.Id && HoldDuration > 0.0f)
+		{
+			const float Fill = FMath::Clamp(HoldTime / HoldDuration, 0.0f, 1.0f);
+			Paint.GradientH(FVector2f(X, ButtonTop), FVector2f(ButtonWidth * Fill, 40.0f), WithAlpha(P.Gold, 0.55f), WithAlpha(P.GoldBright, 0.75f), 44);
+		}
 		Paint.RectOutline(FVector2f(X, ButtonTop), FVector2f(ButtonWidth, 40.0f), WithAlpha(P.Silver, 0.5f), 1.0f, 44);
 		Paint.KeyHint(Button.Key, Button.Value.ToString(), FVector2f(X + 10.0f, ButtonTop + 6.0f), 45);
 		X += ButtonWidth + 12.0f;

@@ -18,6 +18,7 @@ class ABeyondWaystone;
 class UBeyondBondMeterWidget;
 class UBeyondDuoSkillTreeComponent;
 class UBeyondInventoryComponent;
+class UBeyondQuestComponent;
 class UBeyondPartyComponent;
 class UBeyondSkillTreeAsset;
 class UBeyondSkillTreeComponent;
@@ -62,6 +63,10 @@ public:
 	// Angel and Ji-Woong's banter (Plan 4)
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Party")
 	TObjectPtr<UBeyondBanterComponent> BanterComponent;
+
+	// The main story's chapters and the side quests (Plan 6)
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Party")
+	TObjectPtr<UBeyondQuestComponent> QuestComponent;
 
 	// Given to Duo Skill Tree on BeginPlay
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Party|Skill Tree")

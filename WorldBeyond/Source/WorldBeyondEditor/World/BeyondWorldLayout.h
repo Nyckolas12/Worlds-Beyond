@@ -174,6 +174,69 @@ struct FBeyondLayoutLake
 	bool bFrozen = false;
 };
 
+// A river: a shallow (wadeable) channel in a broad valley, always running downhill from its first point to its last
+USTRUCT(BlueprintType)
+struct FBeyondLayoutRiver
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "River")
+	FName Id;
+
+	// Metres east / north, from the source to the mouth
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "River")
+	TArray<FVector2D> Points;
+
+	// Width of the water (m)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "River", meta = (ClampMin = "2"))
+	float Width = 12.0f;
+
+	// Water depth in the middle (m); kept under 0.9 so the party can wade across anywhere
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "River", meta = (ClampMin = "0.2", ClampMax = "0.9"))
+	float Depth = 0.7f;
+
+	// Width of the valley the river runs in (m)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "River", meta = (ClampMin = "10"))
+	float ValleyWidth = 180.0f;
+
+	// The valley floor sits this far (m) below the smoothed ground along the river
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "River", meta = (ClampMin = "0"))
+	float ValleyDepth = 8.0f;
+};
+
+// A flat-topped rise with cliff sides (ruins, citadels, lookouts)
+USTRUCT(BlueprintType)
+struct FBeyondLayoutPlateau
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Plateau")
+	FName Id;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Plateau")
+	FVector2D Centre = FVector2D::ZeroVector;
+
+	// Flat inside this radius (m)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Plateau", meta = (ClampMin = "5"))
+	float Radius = 90.0f;
+
+	// The cliff drops back to the ground over this width (m): small is steep
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Plateau", meta = (ClampMin = "2"))
+	float CliffWidth = 35.0f;
+
+	// Top above the ground's average around it (m)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Plateau")
+	float Height = 60.0f;
+
+	// Ledges down the cliff (0: one smooth face)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Plateau", meta = (ClampMin = "0", ClampMax = "8"))
+	int32 TerraceSteps = 0;
+
+	// The edge wanders this far (m) so it doesn't read as a circle
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Plateau", meta = (ClampMin = "0"))
+	float EdgeWarp = 15.0f;
+};
+
 USTRUCT(BlueprintType)
 struct FBeyondLayoutVolcano
 {
@@ -262,6 +325,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "World", meta = (ClampMin = "50"))
 	float BorderWarpScale = 420.0f;
 
+	// Snow covers the ground above this height (m; not in molten regions)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "World")
+	float SnowLineHeight = 225.0f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Shape")
 	TArray<FBeyondLayoutRegion> Regions;
 
@@ -276,6 +343,12 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Shape")
 	TArray<FBeyondLayoutLake> Lakes;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Shape")
+	TArray<FBeyondLayoutRiver> Rivers;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Shape")
+	TArray<FBeyondLayoutPlateau> Plateaus;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Shape")
 	TArray<FBeyondLayoutRoad> Roads;

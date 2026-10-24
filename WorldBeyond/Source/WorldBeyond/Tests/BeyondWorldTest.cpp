@@ -223,7 +223,7 @@ bool FBeyondWorldTest::RunTest(const FString& Parameters)
 		Save->LastWaystone = TEXT("w1");
 		TArray<uint8> Bytes;
 		const UBeyondSaveGame* Loaded = UGameplayStatics::SaveGameToMemory(Save, Bytes) ? Cast<UBeyondSaveGame>(UGameplayStatics::LoadGameFromMemory(Bytes)) : nullptr;
-		TestTrue(TEXT("Save v6 keeps discovered regions, places, attuned waystones and the last waystone"), Loaded && Loaded->Version == 6
+		TestTrue(TEXT("Save v6 keeps discovered regions, places, attuned waystones and the last waystone"), Loaded && Loaded->Version >= 6
 			&& Loaded->DiscoveredRegions.Num() == 1 && Loaded->DiscoveredPlaces.Num() == 2 && Loaded->AttunedWaystones.Contains(TEXT("w1"))
 			&& Loaded->LastWaystone == TEXT("w1"));
 	}

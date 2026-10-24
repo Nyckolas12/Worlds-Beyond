@@ -18,7 +18,8 @@ class UGameplayAbility;
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FBeyondEquipmentChangedSignature, UBeyondEquipmentComponent*, Equipment);
 
 /**
- * What a demigod wears: four armor slots and a weapon (created at runtime on Player-team characters). Item stats and
+ * What a demigod wears: four armor slots, a weapon, an accessory and a charm (created at runtime on Player-team
+ * characters; the last two since Plan 6). Item stats and
  * 2-piece set bonuses go on as one infinite UBeyondGE_EquipmentStats; full sets (4 pieces) switch on their effect:
  * - Venom Infusion: using Q / E / R coats weapon and spells in venom for a while, and infused hits poison;
  * - Chain Lightning: hits may arc lightning to nearby enemies;
@@ -38,6 +39,12 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Equipment")
 	bool GetEquipped(EBeyondItemSlot Slot, FBeyondItemInstance& OutItem) const;
+
+	// The worn item with this id, if any
+	bool FindEquippedItem(FGuid ItemId, FBeyondItemInstance& OutItem) const;
+
+	// Puts a changed copy of a worn item (same id: upgraded, locked) in its place and re-applies the stats
+	bool ReplaceEquipped(const FBeyondItemInstance& Item);
 
 	// Whether this demigod can use it (weapon type); OutReason says why not
 	UFUNCTION(BlueprintPure, Category = "Equipment")

@@ -26,6 +26,7 @@
 #include "EnhancedInputSubsystems.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Items/BeyondInventoryComponent.h"
+#include "Quests/BeyondQuestComponent.h"
 #include "Items/BeyondItemLibrary.h"
 #include "Items/BeyondLootDrop.h"
 #include "Items/BeyondLootSettings.h"
@@ -113,6 +114,7 @@ ABeyondPlayerController::ABeyondPlayerController()
 	DuoSkillTree = CreateDefaultSubobject<UBeyondDuoSkillTreeComponent>(TEXT("DuoSkillTree"));
 	InventoryComponent = CreateDefaultSubobject<UBeyondInventoryComponent>(TEXT("Inventory"));
 	BanterComponent = CreateDefaultSubobject<UBeyondBanterComponent>(TEXT("Banter"));
+	QuestComponent = CreateDefaultSubobject<UBeyondQuestComponent>(TEXT("Quests"));
 	InteractPromptWidgetClass = UBeyondInteractPromptWidget::StaticClass();
 	SkillTreeWidgetClass = UBeyondSkillTreeWidget::StaticClass();
 	InventoryWidgetClass = UBeyondInventoryWidget::StaticClass();

@@ -73,6 +73,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Skill Tree")
 	virtual int32 GetTreeLevel() const;
 
+	// The party's Bond level, for nodes that need one (Plan 6)
+	UFUNCTION(BlueprintPure, Category = "Skill Tree")
+	int32 GetBondLevel() const;
+
 	UFUNCTION(BlueprintPure, Category = "Skill Tree")
 	FText GetCurrencyName() const;
 

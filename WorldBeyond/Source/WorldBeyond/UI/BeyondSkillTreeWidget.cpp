@@ -688,7 +688,8 @@ void UBeyondSkillTreeWidget::PaintNode(const BeyondUI::FPainter& Paint, const UB
 	Paint.RectOutline(PillTopLeft, PillSize, WithAlpha(Rank > 0 ? P.GoldBright : P.GoldDim, 0.85f), 1.0f, 35);
 	Paint.Text(RankText, RankFont, FVector2f(C.X, PillTopLeft.Y + (PillSize.Y - RankSize.Y) * 0.5f), State == EBeyondSkillNodeState::Maxed ? P.GoldBright : P.Text,
 		0.5f, 36, false);
-	Paint.Text(Node.DisplayName.ToString(), Font(EBeyondFont::Body, 19.0f), FVector2f(C.X, C.Y + R + 14.0f),
+	// Neighbours can sit one column (~138) away: long names shrink to fit between them
+	Paint.TextFit(Node.DisplayName.ToString(), EBeyondFont::Body, 19.0f, FVector2f(C.X, C.Y + R + 14.0f), 132.0f,
 		State == EBeyondSkillNodeState::Locked ? P.TextDim : P.Text, 0.5f, 36);
 }
 
@@ -726,6 +727,7 @@ void UBeyondSkillTreeWidget::PaintSidePanels(const BeyondUI::FPainter& Paint, co
 			Row.Value = Value;
 			Row.bPercent = bPercent;
 		};
+		AddRow(EBeyondGlyph::Bond, LOCTEXT("BondLevelRow", "Bond Level"), Tree.GetBondLevel(), false);
 		AddRow(EBeyondGlyph::BondPoint, LOCTEXT("BondPoints", "Bond Points"), Tree.GetAvailablePoints(), false);
 		AddRow(EBeyondGlyph::Up, LOCTEXT("BondGain", "Bond Gain"), 100.0f * Tree.GetEffectTotal(EBeyondSkillEffectType::BondGain), true);
 		AddRow(EBeyondGlyph::Bond, LOCTEXT("BondEcho", "Bond Echo"), 100.0f * Tree.GetEffectTotal(EBeyondSkillEffectType::BondEcho), true);

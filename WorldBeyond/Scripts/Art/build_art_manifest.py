@@ -53,8 +53,10 @@ def main():
             name = file[:-4]
             rel = "%s/%s" % (category, file)
             entry = {"name": name, "category": category, "file": rel}
-            if rel in jobs:
-                entry["job"] = jobs[rel]
+            # Finished portraits come from a raw render (finish_portraits.py)
+            job = jobs.get(rel) or jobs.get("%s/_raw/%s" % (category, file))
+            if job:
+                entry["job"] = job
             if category == "Items" and name.startswith("T_Icon_Item_"):
                 item = name[len("T_Icon_Item_"):]
                 entry["item"] = "DA_Item_" + item

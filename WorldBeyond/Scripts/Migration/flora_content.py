@@ -105,6 +105,11 @@ TINTS = {
 # paint: (per 10 x 10 m, (scale min, max)) for painting the foliage type by hand.
 ELDERWOOD, RIMEWOOD, CINDERLANDS, BLIGHTWOOD = (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0, 0, 0, 1)
 
+# The Persepolis kit's tall grass for the open meadows
+PERSEPOLIS_FOLIAGE = "/Game/SICKA_PERSEPOLIS/Mesh/Foliage/"
+MEADOW_GRASS = [PERSEPOLIS_FOLIAGE + "SM_Grasspatch_%d" % i for i in range(1, 9)]
+MEADOW_PROPS = [PERSEPOLIS_FOLIAGE + "SM_FolliageProp_%s" % n for n in ("2", "3", "4", "5", "6")]
+
 PLANTINGS = {
     # ------------------------------------------------ landmarks and cliffs
     # The desert cliff on the Cinderlands' steep rock (the crater's outer wall, the Greyspine, the border mountains)
@@ -126,40 +131,40 @@ PLANTINGS = {
 
     # ------------------------------------------------ trees
     # The Elderwood's spruce stands (the groves' hearts)
-    "elder_spruce": dict(kind="tree", meshes=[(SPRUCE_FULL, 1.0), (SPRUCE_HALF, 0.25)], regions=ELDERWOOD,
+    "elder_spruce": dict(kind="tree", altitude=(0, 320), meshes=[(SPRUCE_FULL, 1.0), (SPRUCE_HALF, 0.25)], regions=ELDERWOOD,
                          avoid=ROAD_LAYERS + ["Rock", "Mud"], max_avoid=0.4, slope=(0, 30), grove=(0.0, 0.5), density=30.0,
                          size=(14.0, 24.0), sink_m=0.3, footprint=2.2, road=5.0, cull=(0, 0),
                          tint="spruce_green", collision=("trunk", 0.16, 4.0), paint=(0.25, (1.2, 1.8))),
     # Elders: small trees through the groves and thicker at their edges
-    "elders": dict(kind="tree", meshes=[(ELDER, 1.0)], regions=ELDERWOOD, avoid=ROAD_LAYERS + ["Rock"], max_avoid=0.4,
+    "elders": dict(kind="tree", altitude=(0, 300), meshes=[(ELDER, 1.0)], regions=ELDERWOOD, avoid=ROAD_LAYERS + ["Rock", "Mud"], max_avoid=0.4,
                    slope=(0, 28), grove=(0.08, 0.6), density=18.0, size=(3.8, 6.5), sink_m=0.1, footprint=1.6, road=4.0,
                    cull=(0, 0), collision=("trunk", 0.07, 1.6)),
     # Young spruce at the groves' edges (the Elderwood and the Rimewood)
-    "young_spruce": dict(kind="tree", meshes=[(SPRUCE_YOUNG, 1.0)], regions=(1, 0.8, 0, 0), avoid=ROAD_LAYERS + ["Rock"],
+    "young_spruce": dict(kind="tree", altitude=(0, 330), meshes=[(SPRUCE_YOUNG, 1.0)], regions=(1, 0.8, 0, 0), avoid=ROAD_LAYERS + ["Rock", "Mud"],
                          max_avoid=0.4, slope=(0, 30), grove=(0.42, 0.64), density=6.0, size=(3.5, 7.5), sink_m=0.1,
                          footprint=1.4, road=4.0, cull=(0, 0), tint="spruce_green", collision=("trunk", 0.08, 2.5), paint=(0.3, (0.8, 1.3))),
     # Baltic pine saplings at the edges
-    "pine_saplings": dict(kind="tree", meshes=[(SAPLINGS_TALL, 1.0)], regions=(1, 0.6, 0, 0), avoid=ROAD_LAYERS + ["Rock"],
+    "pine_saplings": dict(kind="tree", altitude=(0, 300), meshes=[(SAPLINGS_TALL, 1.0)], regions=(1, 0.6, 0, 0), avoid=ROAD_LAYERS + ["Rock", "Mud"],
                           max_avoid=0.4, slope=(0, 30), grove=(0.45, 0.68), density=8.0, size=(3.0, 5.5), sink_m=0.05,
                           footprint=1.1, road=3.0, cull=(0, 300), collision=("trunk", 0.05, 1.8)),
     # The Blightwood: dead pines, thick and grey
     "dead_pines": dict(kind="tree", meshes=[(DEAD_PINES_TALL, 1.0), (DEAD_PINE_SNAG, 0.4)], regions=BLIGHTWOOD,
-                       avoid=ROAD_LAYERS + ["Rock"], max_avoid=0.4, slope=(0, 30), grove=(0.0, 0.62), density=28.0,
+                       avoid=ROAD_LAYERS + ["Rock", "Mud"], max_avoid=0.4, slope=(0, 30), grove=(0.0, 0.62), density=28.0,
                        scale=(0.85, 1.25), sink_m=0.2, footprint=1.8, tilt=4.0, road=5.0, cull=(0, 0),
                        collision=("trunk", 0.25, 4.0)),
     # A few dead pines out in the Blightwood's open ground
     "dead_pines_open": dict(kind="tree", meshes=[(DEAD_PINES_TALL, 1.0), (DEAD_PINE_SNAG, 1.0)], regions=BLIGHTWOOD,
-                            avoid=ROAD_LAYERS + ["Rock"], max_avoid=0.4, slope=(0, 30), grove=(0.62, 1.0), density=2.5,
+                            avoid=ROAD_LAYERS + ["Rock", "Mud"], max_avoid=0.4, slope=(0, 30), grove=(0.62, 1.0), density=2.5,
                             scale=(0.8, 1.15), sink_m=0.2, footprint=1.8, tilt=8.0, road=5.0, cull=(0, 0),
                             collision=("trunk", 0.25, 4.0)),
     # The Rimewood's spruce stands
-    "frost_spruce": dict(kind="tree", meshes=[(SPRUCE_FULL, 1.0), (SPRUCE_HALF, 0.35)], regions=RIMEWOOD,
-                         avoid=ROAD_LAYERS + ["Rock"], max_avoid=0.45, slope=(0, 32), grove=(0.0, 0.45), density=34.0,
+    "frost_spruce": dict(kind="tree", altitude=(0, 330), meshes=[(SPRUCE_FULL, 1.0), (SPRUCE_HALF, 0.35)], regions=RIMEWOOD,
+                         avoid=ROAD_LAYERS + ["Rock", "Mud"], max_avoid=0.45, slope=(0, 32), grove=(0.0, 0.45), density=34.0,
                          size=(12.0, 22.0), sink_m=0.3, footprint=2.0, road=5.0, cull=(0, 0),
                          tint="spruce_green", collision=("trunk", 0.16, 4.0), paint=(0.25, (1.1, 1.7))),
     # Charred dead pines, few and far between in the Cinderlands
     "charred_pines": dict(kind="tree", meshes=[(DEAD_PINES_TALL, 1.0), (DEAD_PINE_SNAG, 1.0)], regions=CINDERLANDS,
-                          avoid=ROAD_LAYERS + ["Rock"], max_avoid=0.4, slope=(0, 25), grove=(0.0, 0.35), density=5.0,
+                          avoid=ROAD_LAYERS + ["Rock", "Mud"], max_avoid=0.4, slope=(0, 25), grove=(0.0, 0.35), density=5.0,
                           scale=(0.6, 0.95), sink_m=0.3, footprint=2.0, tilt=10.0, road=5.0, cull=(0, 0),
                           collision=("trunk", 0.25, 4.0), materials=CHARRED_SLOTS),
 
@@ -173,11 +178,11 @@ PLANTINGS = {
     "mossy_banks": dict(kind="rock", meshes=[(EMBANKMENTS, 1.0)], regions=ELDERWOOD, slope=(10, 30), density=1.0,
                         scale=(1.4, 2.6), sink=0.2, align=1.0, downhill=True, yaw=90.0, road=4.0, cull=(0, 400),
                         collision="mesh", paint=(0.05, (1.4, 2.6))),
-    "stumps": dict(kind="rock", meshes=[(STUMPS, 1.0)], regions=(1, 0.5, 0, 0), avoid=ROAD_LAYERS + ["Rock"], max_avoid=0.4,
+    "stumps": dict(kind="rock", meshes=[(STUMPS, 1.0)], regions=(1, 0.5, 0, 0), avoid=ROAD_LAYERS + ["Rock", "Mud"], max_avoid=0.4,
                    slope=(0, 25), grove=(0.0, 0.65), density=1.5, scale=(0.8, 1.3), sink_m=0.05, road=2.0, cull=(0, 250),
                    collision="mesh", paint=(0.1, (0.8, 1.3))),
     "blight_logs": dict(kind="rock", meshes=[([FALLEN_PINE], 1.0), ([PINE_STUMP], 1.2)], regions=BLIGHTWOOD,
-                        avoid=ROAD_LAYERS + ["Rock"], max_avoid=0.4, slope=(0, 22), density=3.0, scale=(0.8, 1.4),
+                        avoid=ROAD_LAYERS + ["Rock", "Mud"], max_avoid=0.4, slope=(0, 22), density=3.0, scale=(0.8, 1.4),
                         sink_m=0.1, align=0.8, road=3.0, cull=(0, 300), collision="mesh", paint=(0.1, (0.8, 1.4))),
     "frost_rocks": dict(kind="rock", meshes=[([SNOW_PILE], 1.0), ([BOULDER], 0.8)], regions=RIMEWOOD, slope=(0, 35),
                         density=2.2, scale=(0.6, 1.6), sink=0.15, align=0.8, road=3.0, cull=(0, 500), collision="mesh",
@@ -192,13 +197,28 @@ PLANTINGS = {
                     min_layer=0.4, slope=(0, 30), grove=(0.5, 1.0), density=45.0, size=(0.4, 0.85), sink_m=0.02,
                     footprint=0.45, road=1.5, cull=(0, 90), shadow=False),
     # Pine seedlings among them
-    "pine_seedlings": dict(kind="shrub", meshes=[(SAPLINGS_SMALL, 1.0)], regions=(1, 0.5, 0, 0), avoid=ROAD_LAYERS + ["Rock"],
+    "pine_seedlings": dict(kind="shrub", meshes=[(SAPLINGS_SMALL, 1.0)], regions=(1, 0.5, 0, 0), avoid=ROAD_LAYERS + ["Rock", "Mud"],
                            max_avoid=0.4, slope=(0, 30), grove=(0.35, 0.75), density=10.0, size=(0.7, 2.0), sink_m=0.02,
                            footprint=0.5, road=1.5, cull=(0, 140)),
     # Reeds on the lakes' muddy shores
     "reeds": dict(kind="shrub", meshes=[(REEDS, 1.0)], regions=(1, 0, 0, 0.6), layers=["Mud", "Grass", "Moss"], min_layer=0.3,
                   shore=(-0.5, 0.9), lakes=["mirrormere", "reedpool", "blackmere"], slope=(0, 22), density=500.0,
                   size=(1.5, 2.4), sink_m=0.05, footprint=0.4, road=2.0, cull=(0, 160)),
+
+    # ------------------------------------------------ the redesign: valley forests, meadows, river banks
+    # Spruce thick on the Elderwood's low valley floors, where the rivers and lakes run
+    "valley_spruce": dict(kind="tree", meshes=[(SPRUCE_FULL, 1.0), (SPRUCE_HALF, 0.4)], regions=ELDERWOOD,
+                          avoid=ROAD_LAYERS + ["Rock", "Mud"], max_avoid=0.4, slope=(0, 26), grove=(0.0, 0.75),
+                          altitude=(0, 34), density=14.0, size=(14.0, 24.0), sink_m=0.3, footprint=2.2, road=5.0,
+                          cull=(0, 0), tint="spruce_green", collision=("trunk", 0.16, 4.0), paint=(0.25, (1.2, 1.8))),
+    # Tall grass meadows in the open, between the groves
+    "meadow_grass": dict(kind="shrub", meshes=[(MEADOW_GRASS, 1.0), (MEADOW_PROPS, 0.35)], regions=(1, 0, 0, 0.3),
+                         layers=["Grass", "Moss"], min_layer=0.35, avoid=ROAD_LAYERS + ["Rock", "Mud"], max_avoid=0.3,
+                         slope=(0, 25), grove=(0.55, 1.0), density=40.0, scale=(0.9, 1.4), sink_m=0.03, footprint=0.6,
+                         road=1.5, cull=(0, 110), shadow=False),
+    # Reeds along the rivers' muddy banks
+    "river_reeds": dict(kind="shrub", meshes=[(REEDS, 1.0)], regions=(1, 0.5, 0, 0.6), layers=["Mud"], min_layer=0.45,
+                        slope=(0, 20), density=180.0, size=(1.5, 2.4), sink_m=0.05, footprint=0.4, road=2.0, cull=(0, 160)),
 }
 
 # ---------------------------------------------------------------- landmarks (placed where named, not scattered)

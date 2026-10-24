@@ -16,6 +16,7 @@
 #include "Misc/Paths.h"
 #include "RenderingThread.h"
 #include "Slate/WidgetRenderer.h"
+#include "TextureCompiler.h"
 #include "TextureResource.h"
 #include "UI/BeyondUIStyle.h"
 #include "UI/BeyondUISwatchWidget.h"
@@ -41,7 +42,11 @@ bool BeyondUICapture::CaptureWidget(UUserWidget* Widget, const FIntPoint& Size, 
 	{
 		FWidgetRenderer Renderer(false, true);
 		const TSharedRef<SWidget> Slate = Widget->TakeWidget();
-		// Twice: the first pass lays the widget out and caches fonts
+		// The first pass lays the widget out, caches fonts and loads its pictures; freshly imported textures then finish
+		// compiling (they draw blank until they have) before the pass that is kept
+		Renderer.DrawWidget(Target, Slate, DrawSize, 0.016f);
+		FTextureCompilingManager::Get().FinishAllCompilation();
+		FlushRenderingCommands();
 		Renderer.DrawWidget(Target, Slate, DrawSize, 0.016f);
 		Renderer.DrawWidget(Target, Slate, DrawSize, 0.016f);
 	}

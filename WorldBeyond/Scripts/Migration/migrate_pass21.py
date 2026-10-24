@@ -45,7 +45,10 @@ CATEGORIES = {
     "Ornaments": ("Ornaments", 1024),
     "Quests": ("Quests", 1024),
     "Portraits": ("Portraits", 1024),
+    "Relic": ("Relic", 1024),
 }
+# Opaque pictures compress plainly; icons and cut-outs keep a clean alpha with BC7
+OPAQUE = ("Backdrops", "Quests")
 EMBLEM_FOLDERS = {"T_Icon_Element_": "Icons/Elements", "T_Icon_Currency_": "Icons/Currency", "T_Emblem_Set_": "Icons/Sets", "T_Emblem_": "Emblems"}
 
 ABILITIES = "/Game/WorldsBeyond/Abilities/"
@@ -113,7 +116,8 @@ def import_texture(png, category):
     if texture is None:
         warn("could not import %s" % png)
         return None
-    texture.set_editor_property("compression_settings", unreal.TextureCompressionSettings.TC_EDITOR_ICON)
+    texture.set_editor_property("compression_settings", unreal.TextureCompressionSettings.TC_DEFAULT if category in OPAQUE
+                                else unreal.TextureCompressionSettings.TC_BC7)
     texture.set_editor_property("lod_group", unreal.TextureGroup.TEXTUREGROUP_UI)
     texture.set_editor_property("mip_gen_settings", unreal.TextureMipGenSettings.TMGS_NO_MIPMAPS)
     texture.set_editor_property("never_stream", True)

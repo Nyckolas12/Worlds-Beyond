@@ -73,6 +73,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Beyond|World Builder")
 	static bool GetLakeLevel(UBeyondWorldLayout* Layout, FName LakeId, float& OutZ);
 
+	// A layout river's water surface in Unreal space (X, Y, Z in cm), source first, a point every ~8 m
+	UFUNCTION(BlueprintCallable, Category = "Beyond|World Builder")
+	static bool GetRiverProfile(UBeyondWorldLayout* Layout, FName RiverId, TArray<FVector>& OutPoints);
+
 	/**
 	 * The painted world map from the terrain: T_WorldMap (Resolution px square: ground colours by layer, region tint,
 	 * hillshade, contours, water, roads, forest stipple, paper), a fog mask per region and DA_WorldMap pointing at them,

@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "AbilitySystem/BeyondElement.h"
 #include "Fonts/SlateFontInfo.h"
+#include "Items/BeyondCurrency.h"
 #include "Items/BeyondItemTypes.h"
 #include "Layout/Geometry.h"
 #include "Styling/SlateBrush.h"
@@ -122,6 +123,8 @@ namespace BeyondUI
 	WORLDBEYOND_API FText ElementName(EBeyondElement Element);
 	WORLDBEYOND_API EBeyondGlyph ElementGlyph(EBeyondElement Element);
 	WORLDBEYOND_API EBeyondGlyph SlotGlyph(EBeyondItemSlot ItemSlot, bool bStaff = false);
+	WORLDBEYOND_API EBeyondGlyph CurrencyGlyph(EBeyondCurrency Currency);
+	WORLDBEYOND_API FLinearColor CurrencyColor(EBeyondCurrency Currency);
 
 	//~ Text
 

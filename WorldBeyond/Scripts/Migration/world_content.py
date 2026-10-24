@@ -35,16 +35,16 @@ EMBERS = "/Game/Effects/Embers/NS_EmbersLarge"
 # sun lux / colour, sky light intensity / colour, fog density / falloff / colour, saturation, tint, exposure, precipitation
 WEATHER = {
     "forest": dict(sun=9.0, sun_colour=(1.0, 0.95, 0.86), sky=1.0, sky_colour=(1.0, 1.0, 1.0),
-                   fog=0.02, falloff=0.2, fog_colour=(0.45, 0.56, 0.5), saturation=1.05, tint=(1.0, 1.0, 0.97), exposure=0.0),
+                   fog=0.025, falloff=0.14, fog_colour=(0.5, 0.6, 0.62), saturation=1.05, tint=(1.0, 1.0, 0.97), exposure=0.0),
     "blight": dict(sun=4.5, sun_colour=(0.8, 0.75, 0.95), sky=0.7, sky_colour=(0.75, 0.7, 0.9),
                    fog=0.065, falloff=0.12, fog_colour=(0.32, 0.28, 0.4), saturation=0.6, tint=(0.92, 0.88, 1.0), exposure=-0.4),
     "frost": dict(sun=7.0, sun_colour=(0.86, 0.92, 1.0), sky=1.1, sky_colour=(0.85, 0.92, 1.0),
-                  fog=0.035, falloff=0.15, fog_colour=(0.7, 0.78, 0.9), saturation=0.85, tint=(0.94, 0.97, 1.05), exposure=0.1),
+                  fog=0.035, falloff=0.11, fog_colour=(0.7, 0.78, 0.9), saturation=0.85, tint=(0.94, 0.97, 1.05), exposure=0.1),
     "molten": dict(sun=6.0, sun_colour=(1.0, 0.72, 0.5), sky=0.85, sky_colour=(1.0, 0.8, 0.7),
                    fog=0.05, falloff=0.1, fog_colour=(0.55, 0.32, 0.2), saturation=1.1, tint=(1.08, 0.95, 0.86), exposure=-0.15,
                    precipitation=EMBERS),
     "crossroads": dict(sun=8.0, sun_colour=(1.0, 0.93, 0.84), sky=1.0, sky_colour=(1.0, 1.0, 1.0),
-                       fog=0.025, falloff=0.18, fog_colour=(0.5, 0.55, 0.6), saturation=1.0, tint=(1.0, 1.0, 1.0), exposure=0.0),
+                       fog=0.028, falloff=0.13, fog_colour=(0.5, 0.55, 0.6), saturation=1.0, tint=(1.0, 1.0, 1.0), exposure=0.0),
 }
 
 # ---------------------------------------------------------------- region borders (m), shared by neighbours and followed by
@@ -182,7 +182,7 @@ TERRAIN = {
 
 LAYOUT = dict(
     seed=1977, components=32, sections=2, quads=63, height_scale_z=200.0,
-    border_width=220.0, border_height=300.0, region_blend=180.0, border_warp=45.0, border_warp_scale=380.0,
+    border_width=240.0, border_height=320.0, snow_line=300.0, region_blend=180.0, border_warp=45.0, border_warp_scale=380.0,
     # Long rises between regions; passes cut through them: points, height, width, passes, pass width
     ridges=[
         # Elderwood | Blightwood, the Willowmere Gap
@@ -196,11 +196,16 @@ LAYOUT = dict(
     ],
     # Peaks: centre, radius, height, sharpness
     peaks=[
-        ((1700, 1750), 500, 300, 1.6),
-        ((1850, 1100), 350, 200, 1.5),
-        ((300, 1850), 300, 170, 1.6),
-        ((-1850, 1850), 350, 190, 1.5),
-        ((-1750, -1850), 260, 110, 1.4),
+        # The Frozen Crown massif (Hrimgar's summit), snow from 300 m
+        ((1700, 1750), 500, 330, 1.7),
+        ((1850, 1100), 380, 220, 1.6),
+        # The Northspire above the Rime Grotto (the skyline north of Frostholm)
+        ((850, 1760), 240, 330, 1.8),
+        ((300, 1850), 300, 200, 1.6),
+        ((-1850, 1850), 380, 230, 1.5),
+        ((-1750, -1850), 300, 170, 1.5),
+        # The Westcrag over the raiders' woods
+        ((-1880, -400), 260, 150, 1.6),
     ],
     volcano=dict(centre=(-1250, 1350), radius=550, rim_radius=280, rim_height=260, floor_height=140, lava_level=134,
                  breach_bearing=135, breach_half_angle=14),
@@ -210,6 +215,24 @@ LAYOUT = dict(
         ("reedpool", (-650, -150), 90, 5, False),
         ("blackmere", (1400, -800), 150, 7, False),
         ("glassmere", (1100, 1350), 180, 6, True),
+    ],
+    # Rivers: id, points (source to mouth, m), width (m), depth (m: under the 0.6 m deep-water line, wadeable everywhere),
+    # valley width (m), valley depth (m). Roads that cross them become fords
+    rivers=[
+        # Down from the Northgate foothills through Reedpool, across the King's Road, into Mirrormere
+        ("elder_run", [(-700, 320), (-680, 120), (-660, -60), (-620, -150), (-560, -230), (-420, -480), (-250, -548),
+                       (-120, -600), (30, -660), (150, -700), (260, -820), (330, -990)], 12, 0.5, 160, 6),
+        # Snowmelt off the Northspire into Glassmere
+        ("rime_melt", [(960, 1630), (985, 1560), (1010, 1510), (1035, 1475)], 10, 0.5, 120, 8),
+        # The Blightwood's bog channel, across the east road, into Blackmere
+        ("blight_channel", [(880, -1050), (990, -1020), (1100, -990), (1190, -930), (1270, -870)], 10, 0.5, 120, 3),
+    ],
+    # Plateaus: id, centre (m), flat radius (m), slope width (m), height (m), ledges, edge wander (m).
+    # The slopes stay walkable (under ~25 degrees) so the ruins on top are reached on foot
+    plateaus=[
+        ("kingsfork_acropolis", (330, 610), 45, 80, 24, 0, 10),
+        ("elder_tor", (-1400, -1100), 55, 110, 30, 0, 12),
+        ("blight_hill", (1600, -560), 45, 90, 22, 0, 10),
     ],
     # Roads: id, points, width (m), cobble
     roads=[
@@ -288,6 +311,13 @@ PLACES = [
     ("slag_mines", "The Slag Mines", "Ruins", (-1650, 800), 35),
     ("shrine_of_the_pyre", "Shrine of the Pyre", "Shrine", (-600, 1250), 30),
     ("emberfall", "Emberfall", "Vista", (-300, 1800), 40),
+    # The old empire's ruins (SICKA Persepolis prefabs, migrate_pass22.py; RUIN_SITES below)
+    ("ruins_kingsfork_acropolis", "The Acropolis of Kingsfork", "Ruins", (330, 610), 60),
+    ("ruins_elder_tor", "Tor of the Fallen King", "Ruins", (-1400, -1100), 55),
+    ("ruins_blight_colonnade", "The Hollow Colonnade", "Ruins", (1600, -560), 45),
+    ("ruins_rimehold_gate", "The Rimehold Gate", "Ruins", (450, 1100), 40),
+    ("ruins_cinder_throne", "The Cinder Throne", "Ruins", (-1050, 620), 40),
+    ("ruins_overgrown_colonnade", "The Overgrown Colonnade", "Ruins", (-600, -1350), 40),
 ]
 
 # Enemy camps: id, (x, y) m, [(enemy id, count)], level offset in the region band, respawn rule
@@ -330,3 +360,18 @@ CAMPS = [
 
 # Where the party starts (x, y) m and facing (degrees, 0 = east, 90 = north)
 PLAYER_START = ((-250, -780), 90)
+
+# ================================================================ ruins (migrate_pass22.py, ruins_content.py)
+# place id: the ruin prefab, facing (degrees, 0 = east, 90 = north), its flat pad (radius m, falloff m; None: no pad,
+# the prefab's floor sinks into the ground), rock outcrops round it, overgrowth pieces round it
+RUIN_SITES = {
+    "ruins_kingsfork_acropolis": dict(prefab="Citadel", yaw=175, pad=(32, 10), outcrops=10, overgrowth=40),
+    "ruins_elder_tor": dict(prefab="ColonnadeB", yaw=30, pad=(26, 14), outcrops=8, overgrowth=35),
+    "ruins_blight_colonnade": dict(prefab="ColonnadeA", yaw=120, pad=(24, 10), outcrops=6, overgrowth=25),
+    "ruins_rimehold_gate": dict(prefab="Gate", yaw=250, pad=(22, 18), outcrops=6, overgrowth=15),
+    "ruins_cinder_throne": dict(prefab="Terrace", yaw=90, pad=(24, 18), outcrops=6, overgrowth=10),
+    "ruins_overgrown_colonnade": dict(prefab="ColonnadeA", yaw=300, pad=(24, 18), outcrops=4, overgrowth=45),
+    "old_watchtower": dict(prefab="Shrine", yaw=0, pad=None, outcrops=3, overgrowth=20),
+    "chapel_of_ash": dict(prefab="Shrine", yaw=45, pad=None, outcrops=3, overgrowth=15),
+    "slag_mines": dict(prefab="Terrace", yaw=180, pad=None, outcrops=4, overgrowth=8),
+}

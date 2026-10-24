@@ -3,6 +3,7 @@
 #include "UI/BeyondMenuWidget.h"
 #include "Characters/BeyondCharacterBase.h"
 #include "Engine/Texture2D.h"
+#include "Items/BeyondInventoryComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "Player/BeyondPartyComponent.h"
 #include "Player/BeyondPlayerController.h"
@@ -240,6 +241,22 @@ void UBeyondMenuWidget::PlaySelectSound() const
 void UBeyondMenuWidget::PlayDeniedSound() const
 {
 	PlayUISound(DeniedSound, 0.7f);
+}
+
+void UBeyondMenuWidget::AddCurrencyToCounter(FBeyondMenuCounter& Counter, EBeyondCurrency Currency) const
+{
+	const ABeyondPlayerController* PC = GetBeyondPlayerController();
+	const UBeyondInventoryComponent* Inventory = PC ? PC->InventoryComponent.Get() : nullptr;
+	FBeyondMenuCounter::FValue& Value = Counter.Values.AddDefaulted_GetRef();
+	Value.Text = BeyondUI::FormatNumber(Inventory ? Inventory->GetCurrency(Currency) : 0);
+	Value.Glyph = BeyondUI::CurrencyGlyph(Currency);
+	Value.Tint = BeyondUI::CurrencyColor(Currency);
+	UBeyondUISubsystem* UI = UBeyondUISubsystem::Get();
+	const UBeyondUIArtSet* Art = UI ? UI->GetArtSet() : nullptr;
+	if (const TSoftObjectPtr<UTexture2D>* Icon = Art ? Art->CurrencyIcons.Find(Currency) : nullptr)
+	{
+		Value.Icon = LoadTexture(*Icon);
+	}
 }
 
 UTexture2D* UBeyondMenuWidget::LoadTexture(const TSoftObjectPtr<UTexture2D>& Texture) const

@@ -35,6 +35,7 @@
 #include "UI/BeyondOverviewWidget.h"
 #include "UI/BeyondPauseMenuWidget.h"
 #include "UI/BeyondQuestLogWidget.h"
+#include "UI/BeyondUIDemo.h"
 #include "UI/BeyondSkillTreeWidget.h"
 
 /**
@@ -246,7 +247,7 @@ bool FBeyondUITest::RunTest(const FString& Parameters)
 		T.TestEqual(TEXT("Overview: max health"), Model.MaxHealth, ASC->GetNumericAttribute(UCharacterAttributeSet::GetMaxHealthAttribute()), 0.01f);
 		T.TestEqual(TEXT("Overview: level"), Model.Level.Level, Angel->GetCharacterLevel());
 		T.TestTrue(TEXT("Overview: class title from the profile"), !Model.ClassTitle.IsEmpty());
-		T.TestEqual(TEXT("Overview: five loadout slots"), Model.Loadout.Num(), 5);
+		T.TestEqual(TEXT("Overview: seven loadout slots (with Accessory and Charm)"), Model.Loadout.Num(), 7);
 		T.TestTrue(TEXT("Overview: stats listed"), Model.Stats.Num() >= 5);
 
 		//~ The pause menu: resume, and quit asks twice
@@ -289,6 +290,7 @@ bool FBeyondUICaptureMenusTest::RunTest(const FString& Parameters)
 			return true;
 		}
 		ABeyondPlayerController* PC = State->PC.Get();
+		T.TestTrue(TEXT("The demo party is set up"), BeyondUIDemo::ApplyDemoState(PC));
 
 		// Fresh copies of each page, painted off screen (the live menus stay where they are)
 		struct FShot { EBeyondMenuPage Page; TSubclassOf<UUserWidget> Class; int32 Tab; const TCHAR* Name; };

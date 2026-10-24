@@ -48,6 +48,9 @@ WATER_MATERIAL = WATER_DIR + "/M_Beyond_Water"
 ICE_MATERIAL = WATER_DIR + "/M_Beyond_Ice"
 LAVA_MATERIAL = WATER_DIR + "/M_Beyond_Lava"
 CYLINDER = "/Engine/BasicShapes/Cylinder"
+PLANE = "/Engine/BasicShapes/Plane"
+# Profile points (about 8 m apart) per river water strip
+RIVER_CHUNK = 5
 SAVED = os.path.join(os.path.abspath(unreal.Paths.project_saved_dir()), "WorldBuilder", "ground")
 
 REBUILD_GROUND = os.environ.get("BEYOND_REBUILD_GROUND", "") == "1"
@@ -724,6 +727,62 @@ def place_hazard(existing, label, kind, centre, top_z, bottom_z, radius_cm, burn
     return actor
 
 
+def river_profile(river_id):
+    """The river's water surface (Unreal cm points, source first) from the layout."""
+    result = WLIB.get_river_profile(LAYOUT, unreal.Name(river_id))
+    # Python gets the out array (an empty one when the river isn't in the layout)
+    if isinstance(result, tuple):
+        result = result[-1]
+    return list(result) if result is not None else []
+
+
+def place_river(existing, river, materials):
+    """Water strips along a river (WB_Water_River_<id>_<nn>): thin planes on its surface, overlapping, no collision."""
+    river_id, _points, width, _depth, _valley_width, _valley_depth = river
+    profile = river_profile(river_id)
+    if len(profile) < 2:
+        warn("%s: no river profile in the layout (run migrate_pass15.py with BEYOND_REBUILD_LAYOUT=1)" % river_id)
+        return 0
+    material = materials.get(content.RIVER_WATER.get(river_id, "MI_Water_Elderwood"))
+    mesh = unreal.load_asset(PLANE)
+    placed = strips = 0
+    for chunk, index in enumerate(range(0, len(profile) - 1, RIVER_CHUNK)):
+        a = profile[index]
+        b = profile[min(index + RIVER_CHUNK, len(profile) - 1)]
+        label = "WB_Water_River_%s_%02d" % (river_id, chunk)
+        strips += 1
+        if not clear_label(existing, label):
+            continue
+        dx, dy, dz = b.x - a.x, b.y - a.y, b.z - a.z
+        flat = math.hypot(dx, dy)
+        if flat < 1.0:
+            continue
+        length = math.hypot(flat, dz) + 300.0
+        centre = unreal.Vector((a.x + b.x) * 0.5, (a.y + b.y) * 0.5, (a.z + b.z) * 0.5 + 3.0)
+        rotation = unreal.Rotator(roll=0.0, pitch=math.degrees(math.atan2(dz, flat)), yaw=math.degrees(math.atan2(dy, dx)))
+        actor = ACTORS.spawn_actor_from_class(unreal.StaticMeshActor, centre, rotation)
+        if actor is None:
+            warn("could not place %s" % label)
+            continue
+        actor.modify()
+        component = actor.static_mesh_component
+        component.modify()
+        component.set_static_mesh(mesh)
+        # The engine plane: 100 x 100, pivot in the middle
+        actor.set_actor_scale3d(unreal.Vector(length / 100.0, (width * 100.0 + 200.0) / 100.0, 1.0))
+        if material is not None:
+            component.set_material(0, material)
+        component.set_editor_property("cast_shadow", False)
+        component.set_collision_profile_name("NoCollision")
+        component.set_editor_property("can_ever_affect_navigation", False)
+        actor.set_actor_label(label)
+        actor.set_folder_path("Ground/Rivers")
+        placed += 1
+    log("%s: %d water strips (%d placed now), %.1f m at the source, %.1f m at the mouth" % (
+        river_id, strips, placed, profile[0].z / 100.0, profile[-1].z / 100.0))
+    return placed
+
+
 def step_surfaces(materials):
     existing = existing_actors()
     placed = 0
@@ -743,6 +802,10 @@ def step_surfaces(materials):
         placed += place_hazard(existing, "WB_Hazard_%s" % lake_id, unreal.BeyondHazardKind.DEEP_WATER, (x, y), top,
                                level - (depth + 6.0) * 100.0, radius * 100.0) is not None
         log("%s: water at %.1f m, deep water from %.1f m down within %.0f m" % (lake_id, level / 100.0, content.DEEP_BELOW_SURFACE, radius))
+
+    # Rivers (pass 15's layout): shallow, no deep-water hazard
+    for river in world_content.LAYOUT.get("rivers", []):
+        placed += place_river(existing, river, materials)
 
     # The caldera
     lava = content.LAVA

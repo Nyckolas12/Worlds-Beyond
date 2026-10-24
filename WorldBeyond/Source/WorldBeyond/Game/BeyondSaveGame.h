@@ -4,7 +4,9 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/SaveGame.h"
+#include "Items/BeyondCurrency.h"
 #include "Items/BeyondItemTypes.h"
+#include "Quests/BeyondQuestTypes.h"
 #include "UObject/SoftObjectPath.h"
 #include "BeyondSaveGame.generated.h"
 
@@ -47,9 +49,10 @@ public:
 	static constexpr int32 UserIndex = 0;
 
 	// 1: levels (Plan 1A); 2: skill trees, Bond Points, duo loadout (Plan 1B); 3: inventory and equipment (Plan 2);
-	// 4: defeated story bosses (Plan 3); 5: story flags (Plan 4); 6: the open world (Plan 5)
+	// 4: defeated story bosses (Plan 3); 5: story flags (Plan 4); 6: the open world (Plan 5); 7: the wallet, item upgrades /
+	// locks / junk marks, Accessory and Charm slots, the Bond level, quests and playtime (Plan 6)
 	UPROPERTY(SaveGame, BlueprintReadOnly, Category = "Save")
-	int32 Version = 6;
+	int32 Version = 7;
 
 	// Keyed by the demigod's class name (BP_Angel_C, BP_Ji-Woong_C)
 	UPROPERTY(SaveGame, BlueprintReadOnly, Category = "Save")
@@ -61,6 +64,13 @@ public:
 	// Highest party level Bond Points were already given for
 	UPROPERTY(SaveGame, BlueprintReadOnly, Category = "Save")
 	int32 BondPointsLevel = 0;
+
+	// The duo's Bond level and the EXP into it (version 7)
+	UPROPERTY(SaveGame, BlueprintReadOnly, Category = "Save")
+	int32 BondLevel = 1;
+
+	UPROPERTY(SaveGame, BlueprintReadOnly, Category = "Save")
+	float BondExperience = 0.0f;
 
 	// Duo tree: node id -> rank
 	UPROPERTY(SaveGame, BlueprintReadOnly, Category = "Save")
@@ -77,6 +87,10 @@ public:
 	// The starter kit was handed out (older saves get it on load)
 	UPROPERTY(SaveGame, BlueprintReadOnly, Category = "Save")
 	bool bStarterKitGiven = false;
+
+	// The party's money (version 7; older saves get the starting purse)
+	UPROPERTY(SaveGame, BlueprintReadOnly, Category = "Save")
+	FBeyondCurrencyBundle Wallet;
 
 	// Story bosses the party has beaten (UBeyondBossDefinition::BossId)
 	UPROPERTY(SaveGame, BlueprintReadOnly, Category = "Save")
@@ -101,4 +115,15 @@ public:
 	// Where the party resumes in the open world
 	UPROPERTY(SaveGame, BlueprintReadOnly, Category = "Save")
 	FName LastWaystone;
+
+	// Quests started or done, and the one the HUD follows (version 7)
+	UPROPERTY(SaveGame, BlueprintReadOnly, Category = "Save")
+	TArray<FBeyondQuestProgress> Quests;
+
+	UPROPERTY(SaveGame, BlueprintReadOnly, Category = "Save")
+	FName TrackedQuest;
+
+	// Seconds played, menus and pauses not counted (version 7)
+	UPROPERTY(SaveGame, BlueprintReadOnly, Category = "Save")
+	double Playtime = 0.0;
 };

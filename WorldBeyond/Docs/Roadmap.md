@@ -12,6 +12,7 @@ gets its own plan in [Plans/](Plans/), built one at a time in this order:
 | **3** | [Enemies, mini-bosses, main bosses](Plans/03_Enemies_Bosses.md) (phases, mechanics, twists, loot) | **Built** (passes 10–11) | Uses EXP (1) and loot (2) |
 | **4** | [Dialogue: NPCs, village chatter, demigod banter](Plans/04_Dialogue.md) | **Built** (pass 13) | Villages (5) get populated with it |
 | **5** | [Open world](Plans/05_Open_World.md): regions, villages, POIs, boss arenas, map / fast travel | **5A–5D built** (passes 14–18: systems, the world, villages, the textured ground with grass, water and lava); trees and rocks, polish next | Biggest and content-heavy; uses all of the above |
+| **6** | [UI overhaul to the mockup look](Plans/06_UI_Overhaul.md) + the systems it shows (currencies, upgrades, crits, elements, Bond levels, quests) | **Phases 1–5 built** (passes 20, 21, 23); HUD, Blueprint widget theming and the 3D models next | Every system above gets its screen |
 
 ## Free art to collect (Fab)
 

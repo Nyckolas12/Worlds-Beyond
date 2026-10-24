@@ -12,6 +12,7 @@
 #include "Game/BeyondCombatSubsystem.h"
 #include "GameFramework/Controller.h"
 #include "Player/BeyondPartyComponent.h"
+#include "World/BeyondWorldSubsystem.h"
 #include "WorldBeyond.h"
 
 #define LOCTEXT_NAMESPACE "BeyondSkillTree"
@@ -45,7 +46,7 @@ int32 UBeyondSkillTreeComponent::GetRank(FName NodeId) const
 
 bool UBeyondSkillTreeComponent::MeetsRequirements(const FBeyondSkillNode& Node) const
 {
-	if (GetTreeLevel() < Node.RequiredLevel)
+	if (GetTreeLevel() < Node.RequiredLevel || GetBondLevel() < Node.RequiredBondLevel)
 	{
 		return false;
 	}
@@ -57,6 +58,12 @@ bool UBeyondSkillTreeComponent::MeetsRequirements(const FBeyondSkillNode& Node) 
 		}
 	}
 	return true;
+}
+
+int32 UBeyondSkillTreeComponent::GetBondLevel() const
+{
+	const UBeyondPartyComponent* Party = UBeyondWorldSubsystem::GetParty(this);
+	return Party ? Party->GetBondLevel() : 1;
 }
 
 EBeyondSkillNodeState UBeyondSkillTreeComponent::GetNodeState(FName NodeId) const
@@ -99,6 +106,11 @@ bool UBeyondSkillTreeComponent::CanUnlock(FName NodeId, FText& OutReason) const
 	if (GetTreeLevel() < Node->RequiredLevel)
 	{
 		OutReason = FText::Format(LOCTEXT("NeedsLevel", "Requires level {0}"), FText::AsNumber(Node->RequiredLevel));
+		return false;
+	}
+	if (GetBondLevel() < Node->RequiredBondLevel)
+	{
+		OutReason = FText::Format(LOCTEXT("NeedsBondLevel", "Requires Bond level {0}"), FText::AsNumber(Node->RequiredBondLevel));
 		return false;
 	}
 	for (const FName& Required : Node->Requires)

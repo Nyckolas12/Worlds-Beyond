@@ -81,6 +81,34 @@ bool UBeyondEquipmentComponent::GetEquipped(EBeyondItemSlot Slot, FBeyondItemIns
 	return false;
 }
 
+bool UBeyondEquipmentComponent::FindEquippedItem(FGuid ItemId, FBeyondItemInstance& OutItem) const
+{
+	for (const TPair<EBeyondItemSlot, FBeyondItemInstance>& Pair : Equipped)
+	{
+		if (Pair.Value.Id == ItemId)
+		{
+			OutItem = Pair.Value;
+			return true;
+		}
+	}
+	return false;
+}
+
+bool UBeyondEquipmentComponent::ReplaceEquipped(const FBeyondItemInstance& Item)
+{
+	for (TPair<EBeyondItemSlot, FBeyondItemInstance>& Pair : Equipped)
+	{
+		if (Pair.Value.Id == Item.Id && Item.IsValid())
+		{
+			Pair.Value = Item;
+			ApplyEffects();
+			OnEquipmentChanged.Broadcast(this);
+			return true;
+		}
+	}
+	return false;
+}
+
 bool UBeyondEquipmentComponent::CanEquip(const FBeyondItemInstance& Item, FText& OutReason) const
 {
 	return UBeyondItemLibrary::CanCharacterUse(Item, GetCharacter(), OutReason);

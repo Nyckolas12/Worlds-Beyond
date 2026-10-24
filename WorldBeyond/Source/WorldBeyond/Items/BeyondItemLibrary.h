@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Items/BeyondCurrency.h"
 #include "Items/BeyondItemTypes.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "BeyondItemLibrary.generated.h"
@@ -32,7 +33,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Beyond|Items")
 	static FText FormatStat(const FBeyondItemStat& Stat);
 
-	// Base stats x tier x level, plus bonus stats; one entry per stat
+	// Base stats x tier x level, plus bonus stats, all x the upgrade; one entry per stat
 	UFUNCTION(BlueprintPure, Category = "Beyond|Items")
 	static TArray<FBeyondItemStat> GetItemStats(const FBeyondItemInstance& Item);
 
@@ -57,4 +58,27 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Beyond|Items")
 	static UBeyondItemDatabase* GetItemDatabase();
+
+	//~ Plan 6: upgrades, salvage, currencies
+
+	UFUNCTION(BlueprintPure, Category = "Beyond|Items")
+	static int32 GetMaxUpgradeLevel();
+
+	// What the next upgrade costs; empty when it is at the maximum
+	UFUNCTION(BlueprintPure, Category = "Beyond|Items")
+	static FBeyondCurrencyBundle GetUpgradeCost(const FBeyondItemInstance& Item);
+
+	// The item one upgrade higher (stats, cost and limits aside)
+	static FBeyondItemInstance WithUpgrade(const FBeyondItemInstance& Item, int32 Levels = 1);
+
+	// What salvaging it gives: its tier's share (more for higher item levels) plus part of what its upgrades cost
+	UFUNCTION(BlueprintPure, Category = "Beyond|Items")
+	static FBeyondCurrencyBundle GetSalvageYield(const FBeyondItemInstance& Item);
+
+	UFUNCTION(BlueprintPure, Category = "Beyond|Items")
+	static FText GetCurrencyName(EBeyondCurrency Currency);
+
+	// "1,200 Gold, 3 Crystals" (empty: "nothing")
+	UFUNCTION(BlueprintPure, Category = "Beyond|Items")
+	static FText FormatCurrencies(const FBeyondCurrencyBundle& Bundle);
 };

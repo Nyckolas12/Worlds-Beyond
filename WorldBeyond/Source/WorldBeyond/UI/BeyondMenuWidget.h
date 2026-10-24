@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
 #include "InputCoreTypes.h"
+#include "Items/BeyondCurrency.h"
 #include "UI/BeyondUIGlyphs.h"
 #include "UI/BeyondUIStyle.h"
 #include "UI/BeyondUITypes.h"
@@ -172,6 +173,9 @@ protected:
 	//~ Helpers for pages
 
 	ABeyondPlayerController* GetBeyondPlayerController() const;
+
+	// Adds the party's amount of Currency to a header counter (its picture, else its glyph)
+	void AddCurrencyToCounter(FBeyondMenuCounter& Counter, EBeyondCurrency Currency) const;
 	// The party, Conduit (Angel) first, then the Striker (Ji-Woong), then anyone else
 	TArray<ABeyondCharacterBase*> GetPartyInDuoOrder() const;
 	// The demigod of a header tab (null for the duo or a filter)

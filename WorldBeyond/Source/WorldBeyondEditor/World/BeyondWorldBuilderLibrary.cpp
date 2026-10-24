@@ -244,6 +244,10 @@ namespace BeyondWorldBuilderLocal
 						}
 					}
 				}
+				if (Field.RiverMask.IsValidIndex(Vertex) && Field.RiverMask[Vertex] > 0)
+				{
+					Colour = Mix(WaterColour * (0.85f + 0.2f * Shade), InkColour, 0.12f);
+				}
 				if (Field.bHasVolcano && H < Field.LavaLevel && FVector2D::Distance(P, Layout.Volcano.Centre) < Layout.Volcano.RimRadius)
 				{
 					Colour = LavaColour * (0.85f + 0.3f * Shade);
@@ -602,6 +606,23 @@ bool UBeyondWorldBuilderLibrary::GetLakeLevel(UBeyondWorldLayout* Layout, FName 
 	}
 	OutZ = *Level * 100.0f;
 	return true;
+}
+
+bool UBeyondWorldBuilderLibrary::GetRiverProfile(UBeyondWorldLayout* Layout, FName RiverId, TArray<FVector>& OutPoints)
+{
+	OutPoints.Reset();
+	const FBeyondHeightfield* Field = BeyondWorldBuilderLocal::GetField(Layout);
+	const TArray<FVector>* Profile = Field ? Field->RiverProfiles.Find(RiverId) : nullptr;
+	if (!Profile)
+	{
+		return false;
+	}
+	for (const FVector& Point : *Profile)
+	{
+		// Metres east / north -> Unreal (X east, Y south), centimetres
+		OutPoints.Add(FVector(Point.X * 100.0, -Point.Y * 100.0, Point.Z * 100.0));
+	}
+	return OutPoints.Num() >= 2;
 }
 
 UBeyondWorldMapData* UBeyondWorldBuilderLibrary::BakeWorldMap(UBeyondWorldLayout* Layout, const FString& Folder, int32 Resolution)

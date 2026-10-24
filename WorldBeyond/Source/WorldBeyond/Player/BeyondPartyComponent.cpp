@@ -13,12 +13,15 @@
 #include "Game/BeyondSaveGame.h"
 #include "GameFramework/PlayerController.h"
 #include "HAL/IConsoleManager.h"
+#include "Items/BeyondEconomySettings.h"
 #include "Items/BeyondEquipmentComponent.h"
 #include "Items/BeyondInventoryComponent.h"
 #include "Items/BeyondItemLibrary.h"
 #include "Items/BeyondLootDrop.h"
 #include "Items/BeyondLootSettings.h"
 #include "Kismet/GameplayStatics.h"
+#include "Progression/BeyondProgressionSettings.h"
+#include "Quests/BeyondQuestComponent.h"
 #include "Progression/BeyondSkillTreeComponent.h"
 #include "Characters/BeyondRushComponent.h"
 #include "TimerManager.h"
@@ -144,6 +147,7 @@ void UBeyondPartyComponent::BeginPlay()
 	if (UBeyondInventoryComponent* Inventory = GetInventory())
 	{
 		Inventory->OnInventoryChanged.AddUniqueDynamic(this, &ThisClass::HandleInventoryChanged);
+		Inventory->OnCurrencyChanged.AddUniqueDynamic(this, &ThisClass::HandleCurrencyChanged);
 	}
 }
 
@@ -172,6 +176,11 @@ void UBeyondPartyComponent::HandleCharacterKilled(ABeyondCharacterBase* Victim, 
 	{
 		DropLoot(Victim);
 	}
+	// Gold (and for tougher foes crystals, shards, fragments); training dummies and the like pay nothing
+	if (Victim->CanDropLoot())
+	{
+		AwardCurrencies(GetDefault<UBeyondEconomySettings>()->GetKillReward(Victim->Rank, Victim->GetCharacterLevel()), *Victim->GetName());
+	}
 
 	const float Reward = Victim->GetExperienceRewardValue();
 	if (Reward <= 0.0f)
@@ -184,7 +193,11 @@ void UBeyondPartyComponent::HandleCharacterKilled(ABeyondCharacterBase* Victim, 
 	AwardExperience(Reward);
 	OnExperienceAwarded.Broadcast(Victim, Reward);
 
-	// Main bosses also give Bond Points for the duo tree
+	// Main bosses also give Bond EXP, and Bond Points for the duo tree
+	if (Victim->Rank == EBeyondEnemyRank::Boss)
+	{
+		AddBondExperience(GetDefault<UBeyondProgressionSettings>()->BondExperiencePerBoss);
+	}
 	if (Victim->Rank == EBeyondEnemyRank::Boss && BondPointsPerBoss > 0)
 	{
 		AddBondPoints(BondPointsPerBoss);
@@ -268,6 +281,22 @@ void UBeyondPartyComponent::HandleEquipmentChanged(UBeyondEquipmentComponent* Eq
 	QueueSave();
 }
 
+void UBeyondPartyComponent::HandleCurrencyChanged(EBeyondCurrency Currency, int32 NewAmount, int32 Delta)
+{
+	QueueSave();
+}
+
+void UBeyondPartyComponent::AwardCurrencies(const FBeyondCurrencyBundle& Reward, const TCHAR* Why)
+{
+	UBeyondInventoryComponent* Inventory = GetInventory();
+	if (!Inventory || Reward.IsEmpty())
+	{
+		return;
+	}
+	Inventory->AddCurrencies(Reward);
+	UE_LOG(LogBeyond, Log, TEXT("Party: +%s (%s)"), *UBeyondItemLibrary::FormatCurrencies(Reward).ToString(), Why);
+}
+
 void UBeyondPartyComponent::QueueSave()
 {
 	if (bSaveQueued || bRestoringProgress || !bProgressLoaded || !IsSavingEnabled())
@@ -322,6 +351,10 @@ void UBeyondPartyComponent::GiveStarterKit()
 {
 	bStarterKitGiven = true;
 	UBeyondInventoryComponent* Inventory = GetInventory();
+	if (Inventory)
+	{
+		Inventory->AddCurrencies(GetDefault<UBeyondEconomySettings>()->StartingPurse);
+	}
 	for (const TSoftObjectPtr<UBeyondItemDefinition>& StarterEntry : GetDefault<UBeyondLootSettings>()->StarterItems)
 	{
 		const UBeyondItemDefinition* Definition = StarterEntry.LoadSynchronous();
@@ -414,7 +447,7 @@ bool UBeyondPartyComponent::SaveProgress()
 	}
 
 	bSaveQueued = false;
-	Save->Version = 6;
+	Save->Version = 7;
 	Save->DefeatedBosses = DefeatedBosses.Array();
 	Save->StoryFlags = StoryFlags.Array();
 	Save->DiscoveredRegions = DiscoveredRegions.Array();
@@ -423,6 +456,8 @@ bool UBeyondPartyComponent::SaveProgress()
 	Save->LastWaystone = LastWaystone;
 	Save->BondPoints = BondPoints;
 	Save->BondPointsLevel = BondPointsLevel;
+	Save->BondLevel = BondLevel;
+	Save->BondExperience = BondExperience;
 	if (const UBeyondDuoSkillTreeComponent* DuoTree = Cast<UBeyondDuoSkillTreeComponent>(GetDuoTree()))
 	{
 		Save->DuoRanks = DuoTree->GetRanks();
@@ -431,8 +466,14 @@ bool UBeyondPartyComponent::SaveProgress()
 	if (const UBeyondInventoryComponent* Inventory = GetInventory())
 	{
 		Save->Inventory = Inventory->GetItems();
+		Save->Wallet = Inventory->GetWallet();
 	}
 	Save->bStarterKitGiven = bStarterKitGiven;
+	Save->Playtime = Playtime;
+	if (const UBeyondQuestComponent* Quests = GetOwner()->FindComponentByClass<UBeyondQuestComponent>())
+	{
+		Quests->WriteSave(*Save);
+	}
 
 	const bool bSaved = UGameplayStatics::SaveGameToSlot(Save, UBeyondSaveGame::SlotName, UBeyondSaveGame::UserIndex);
 	UE_LOG(LogBeyond, Log, TEXT("Party: progress %s"), bSaved ? TEXT("saved") : TEXT("could not be saved"));
@@ -476,6 +517,9 @@ bool UBeyondPartyComponent::LoadProgress()
 	BondPoints = FMath::Max(Save->BondPoints, 0);
 	BondPointsLevel = FMath::Max(Save->BondPointsLevel, 0);
 	OnBondPointsChanged.Broadcast(BondPoints);
+	// Saves from before Bond levels (version 6) start at level 1
+	RestoreBondLevel(Save->BondLevel, Save->BondExperience);
+	OnBondLevelChanged.Broadcast(BondLevel);
 	if (UBeyondDuoSkillTreeComponent* DuoTree = Cast<UBeyondDuoSkillTreeComponent>(GetDuoTree()))
 	{
 		DuoTree->RestoreRanks(Save->DuoRanks);
@@ -491,6 +535,12 @@ bool UBeyondPartyComponent::LoadProgress()
 	if (UBeyondInventoryComponent* Inventory = GetInventory())
 	{
 		Inventory->RestoreItems(Save->Inventory);
+		Inventory->RestoreWallet(Save->Wallet);
+		// Saves from before the wallet (version 6) get the starting purse (a save still without the starter kit gets it with the kit)
+		if (Save->Version < 7 && Save->bStarterKitGiven)
+		{
+			Inventory->AddCurrencies(GetDefault<UBeyondEconomySettings>()->StartingPurse);
+		}
 	}
 	bStarterKitGiven = Save->bStarterKitGiven;
 	UE_LOG(LogBeyond, Log, TEXT("Party: bag restored with %d items"), Save->Inventory.Num());
@@ -501,6 +551,12 @@ bool UBeyondPartyComponent::LoadProgress()
 	DiscoveredPlaces = TSet<FName>(Save->DiscoveredPlaces);
 	AttunedWaystones = TSet<FName>(Save->AttunedWaystones);
 	LastWaystone = Save->LastWaystone;
+	Playtime = FMath::Max(Save->Playtime, 0.0);
+	// The quests check themselves once the party has formed (saves from before them catch up without rewards)
+	if (UBeyondQuestComponent* Quests = GetOwner()->FindComponentByClass<UBeyondQuestComponent>())
+	{
+		Quests->ReadSave(*Save);
+	}
 	return true;
 }
 
@@ -553,6 +609,7 @@ bool UBeyondPartyComponent::DiscoverRegion(FName RegionId)
 		return false;
 	}
 	DiscoveredRegions.Add(RegionId);
+	AwardCurrencies(GetDefault<UBeyondEconomySettings>()->RegionDiscoveryReward, *RegionId.ToString());
 	QueueSave();
 	return true;
 }
@@ -564,6 +621,7 @@ bool UBeyondPartyComponent::DiscoverPlace(FName PlaceId)
 		return false;
 	}
 	DiscoveredPlaces.Add(PlaceId);
+	AwardCurrencies(GetDefault<UBeyondEconomySettings>()->PlaceDiscoveryReward, *PlaceId.ToString());
 	QueueSave();
 	return true;
 }
@@ -576,6 +634,7 @@ bool UBeyondPartyComponent::AttuneWaystone(FName WaystoneId)
 	}
 	AttunedWaystones.Add(WaystoneId);
 	DiscoveredPlaces.Add(WaystoneId);
+	AwardCurrencies(GetDefault<UBeyondEconomySettings>()->WaystoneAttuneReward, *WaystoneId.ToString());
 	QueueSave();
 	return true;
 }
@@ -652,14 +711,22 @@ void UBeyondPartyComponent::ResetProgress()
 	if (UBeyondInventoryComponent* Inventory = GetInventory())
 	{
 		Inventory->RestoreItems(TArray<FBeyondItemInstance>());
+		Inventory->RestoreWallet(FBeyondCurrencyBundle());
 	}
 	GiveStarterKit();
 	BondPoints = 0;
 	BondPointsLevel = 0;
 	OnBondPointsChanged.Broadcast(BondPoints);
+	RestoreBondLevel(1, 0.0f);
+	OnBondLevelChanged.Broadcast(BondLevel);
+	Playtime = 0.0;
 	if (UBeyondSkillTreeComponent* DuoTree = GetDuoTree())
 	{
 		DuoTree->RestoreRanks(TMap<FName, int32>());
+	}
+	if (UBeyondQuestComponent* Quests = GetOwner()->FindComponentByClass<UBeyondQuestComponent>())
+	{
+		Quests->ResetQuests();
 	}
 	UE_LOG(LogBeyond, Log, TEXT("Party: progress reset to level 1"));
 }
@@ -719,6 +786,7 @@ void UBeyondPartyComponent::HandleDamageDealt(AActor* DamageInstigator, AActor* 
 	{
 		Gain += SynergyBond;
 		Recent.LastSynergyTime = Now;
+		AddBondExperience(GetDefault<UBeyondProgressionSettings>()->BondExperiencePerSynergy);
 	}
 	Recent.Member = Attacker;
 	Recent.Time = Now;
@@ -754,7 +822,75 @@ bool UBeyondPartyComponent::ConsumeBond()
 	}
 	// Bond Echo (duo tree) leaves part of the meter filled
 	SetBond(MaxBond * BondEchoFraction);
+	AddBondExperience(GetDefault<UBeyondProgressionSettings>()->BondExperiencePerDuoMove);
 	return true;
+}
+
+float UBeyondPartyComponent::GetBondExperienceToNext() const
+{
+	const UBeyondProgressionSettings* Settings = GetDefault<UBeyondProgressionSettings>();
+	return BondLevel >= Settings->GetMaxBondLevel() ? 0.0f : Settings->GetBondLevel(BondLevel).ExperienceToNext;
+}
+
+void UBeyondPartyComponent::AddBondExperience(float Amount)
+{
+	const UBeyondProgressionSettings* Settings = GetDefault<UBeyondProgressionSettings>();
+	if (Amount <= 0.0f || BondLevel >= Settings->GetMaxBondLevel())
+	{
+		return;
+	}
+	BondExperience += Amount;
+	const int32 OldLevel = BondLevel;
+	while (BondLevel < Settings->GetMaxBondLevel() && BondExperience >= GetBondExperienceToNext())
+	{
+		BondExperience -= GetBondExperienceToNext();
+		++BondLevel;
+	}
+	if (BondLevel >= Settings->GetMaxBondLevel())
+	{
+		BondExperience = 0.0f;
+	}
+	if (BondLevel != OldLevel)
+	{
+		UE_LOG(LogBeyond, Log, TEXT("Party: Bond level %d"), BondLevel);
+		OnBondLevelChanged.Broadcast(BondLevel);
+		SaveProgress();
+	}
+	else
+	{
+		QueueSave();
+	}
+}
+
+void UBeyondPartyComponent::RestoreBondLevel(int32 Level, float Experience)
+{
+	const UBeyondProgressionSettings* Settings = GetDefault<UBeyondProgressionSettings>();
+	BondLevel = FMath::Clamp(Level, 1, Settings->GetMaxBondLevel());
+	BondExperience = BondLevel >= Settings->GetMaxBondLevel() ? 0.0f : FMath::Clamp(Experience, 0.0f, GetBondExperienceToNext());
+}
+
+bool UBeyondPartyComponent::AreTogether() const
+{
+	TArray<const ABeyondCharacterBase*, TInlineAllocator<2>> Standing;
+	for (const ABeyondCharacterBase* Member : Members)
+	{
+		if (IsValid(Member) && !UBeyondCombatLibrary::IsActorDead(Member))
+		{
+			Standing.Add(Member);
+		}
+	}
+	return Standing.Num() >= 2
+		&& FVector::Dist(Standing[0]->GetActorLocation(), Standing[1]->GetActorLocation()) <= GetDefault<UBeyondProgressionSettings>()->BondPerkDistance;
+}
+
+float UBeyondPartyComponent::GetBondDamageDealtBonus(const AActor* Member) const
+{
+	return FindMemberFor(Member) && AreTogether() ? GetDefault<UBeyondProgressionSettings>()->GetBondLevel(BondLevel).DamageDealtBonus : 0.0f;
+}
+
+float UBeyondPartyComponent::GetBondDamageTakenReduction(const AActor* Member) const
+{
+	return FindMemberFor(Member) && AreTogether() ? GetDefault<UBeyondProgressionSettings>()->GetBondLevel(BondLevel).DamageTakenReduction : 0.0f;
 }
 
 void UBeyondPartyComponent::SetBond(float NewBond)
@@ -1118,6 +1254,10 @@ void UBeyondPartyComponent::TeleportPartyTo(const FTransform& Transform, bool bH
 void UBeyondPartyComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+	if (bInitialized)
+	{
+		Playtime += DeltaTime;
+	}
 	UpdateRevive(DeltaTime);
 }
 
@@ -1171,5 +1311,6 @@ void UBeyondPartyComponent::UpdateRevive(float DeltaTime)
 		Downed->Revive(ReviveHealthFraction);
 		ReviveTarget.Reset();
 		ReviveProgress = 0.0f;
+		AddBondExperience(GetDefault<UBeyondProgressionSettings>()->BondExperiencePerRevive);
 	}
 }

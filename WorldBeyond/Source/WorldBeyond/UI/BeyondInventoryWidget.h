@@ -32,8 +32,9 @@ enum class EBeyondBagFilter : uint8
  * (Helmet, Weapon, Chest, Gauntlets, Boots, Accessory, Charm), level and combat stats with the gear's share, the party's
  * bag (filters, 5 wide, scrolls), the armor sets worn and the selected item's card. Duo: both demigods' loadouts side by
  * side over the same bag.
- * Mouse: click to select, double-click to equip / take off; wheel scrolls the bag. Keys: F equip / take off, R compare
- * with what is worn, T details, X twice discards; the frame's keys switch tab and page.
+ * Mouse: click to select, double-click to equip / take off; wheel scrolls the bag. Keys: F equip / take off, U (hold)
+ * upgrade (bag or worn, Plan 6), L lock, X mark as junk, V (hold) salvage the selected bag item (nothing selected: all the
+ * junk), R compare with what is worn, T details; the frame's keys switch tab and page.
  */
 UCLASS(Blueprintable)
 class WORLDBEYOND_API UBeyondInventoryWidget : public UBeyondMenuWidget
@@ -80,9 +81,28 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
 	bool UnequipSlot(EBeyondItemSlot ItemSlot);
 
-	// Throws a bag item away for good (the X key asks twice first)
+	// Salvages a bag item into currency (holding V does it); false and a message for a locked one
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
 	bool DiscardBagItem(FGuid ItemId);
+
+	// Raises an item (in the bag or worn by either demigod) one upgrade level; false and a message if it can't
+	UFUNCTION(BlueprintCallable, Category = "Inventory")
+	bool UpgradeItem(FGuid ItemId);
+
+	UFUNCTION(BlueprintCallable, Category = "Inventory")
+	bool ToggleLock(FGuid ItemId);
+
+	// Bag items only
+	UFUNCTION(BlueprintCallable, Category = "Inventory")
+	bool ToggleJunk(FGuid ItemId);
+
+	// Salvages every bag item marked as junk; returns how many
+	UFUNCTION(BlueprintCallable, Category = "Inventory")
+	int32 SalvageJunk();
+
+	// How long U / V must be held
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory")
+	float HoldDuration = 0.6f;
 
 	// The bag in display order: slot (Helm ... Weapon), then best tier first, then item level
 	TArray<FBeyondItemInstance> GetSortedBagItems() const;
@@ -114,6 +134,7 @@ protected:
 	virtual void GetPageKeyHints(TArray<FBeyondKeyHint>& OutHints) const override;
 	virtual bool GetCounter(FBeyondMenuCounter& OutCounter) const override;
 	virtual bool HandlePageKey(const FKey& Key) override;
+	virtual bool HandlePageKeyUp(const FKey& Key) override;
 	virtual bool HandlePageClick(const FVector2f& Design, const FKey& Button) override;
 	virtual void HandlePageHover(const FVector2f& Design) override;
 	virtual bool HandlePageWheel(const FVector2f& Design, float Delta) override;
@@ -143,9 +164,16 @@ private:
 	FVector2f GetCellCentre(int32 VisibleIndex) const;
 	int32 GetBagRows() const;
 	void ClampScroll();
+	// What holding U / V does once Hold Duration has passed
+	enum class EArmorHold : uint8 { None, Upgrade, Salvage };
+
 	void ActivateSelection();
-	void HandleDiscardKey();
+	void BeginHold(EArmorHold Action);
+	void CancelHold();
+	void FinishHold();
 	void ShowEquipResult(const FBeyondItemInstance& Item);
+	// A worn item's slot lights up (after equipping or upgrading it)
+	void FlashWornSlot(const FBeyondItemInstance& Item);
 
 	void PaintPaperDoll(const BeyondUI::FPainter& Paint) const;
 	void PaintPartyView(const BeyondUI::FPainter& Paint) const;
@@ -154,7 +182,7 @@ private:
 	void PaintSets(const BeyondUI::FPainter& Paint) const;
 	void PaintCard(const BeyondUI::FPainter& Paint) const;
 	void PaintItemTile(const BeyondUI::FPainter& Paint, const FBeyondItemInstance* Item, const FVector2f& Centre, float Size, EBeyondGlyph EmptyGlyph,
-		bool bSelected, bool bHovered, bool bShowUpgrade, int32 Layer) const;
+		bool bSelected, bool bHovered, int32 Layer) const;
 
 	TArray<FInventoryTab> Tabs;
 	int32 ActiveTab = 0;
@@ -169,8 +197,10 @@ private:
 	bool bSlotSelected = false;
 	EBeyondItemSlot SelectedSlot = EBeyondItemSlot::Helm;
 
-	FGuid DiscardArmedItem;
-	float DiscardArmedAge = -1.0f;
+	EArmorHold HoldAction = EArmorHold::None;
+	float HoldTime = 0.0f;
+	// The item the hold started on (none: V with nothing selected salvages the junk)
+	FGuid HoldItem;
 	// A slot that just changed lights up briefly
 	bool bFlashSlot = false;
 	EBeyondItemSlot FlashSlot = EBeyondItemSlot::Helm;

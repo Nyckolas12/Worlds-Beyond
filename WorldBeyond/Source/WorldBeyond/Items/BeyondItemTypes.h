@@ -18,7 +18,11 @@ enum class EBeyondItemSlot : uint8
 	Chest,
 	Gauntlets,
 	Boots,
-	Weapon
+	Weapon,
+	// Plan 6 (appended: saves keep their values). Rings
+	Accessory,
+	// Amulets and talismans
+	Charm
 };
 
 UENUM(BlueprintType)
@@ -226,6 +230,18 @@ struct WORLDBEYOND_API FBeyondItemInstance
 	// Extra stats Epic and Legendary drops roll
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, SaveGame, Category = "Item")
 	TArray<FBeyondItemStat> BonusStats;
+
+	// +1 .. +15 (Plan 6): every stat x (1 + Upgrade Stats Per Level x this), Project Settings -> Worlds Beyond Economy
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, SaveGame, Category = "Item", meta = (ClampMin = "0"))
+	int32 UpgradeLevel = 0;
+
+	// Locked items can't be marked as junk, salvaged or thrown away
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, SaveGame, Category = "Item")
+	bool bLocked = false;
+
+	// Marked to be salvaged with the rest of the junk
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, SaveGame, Category = "Item")
+	bool bJunk = false;
 
 	bool IsValid() const { return Id.IsValid() && !Definition.IsNull(); }
 	const UBeyondItemDefinition* GetDefinition() const { return Definition.LoadSynchronous(); }

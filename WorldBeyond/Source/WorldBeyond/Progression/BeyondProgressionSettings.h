@@ -44,6 +44,24 @@ struct WORLDBEYOND_API FBeyondStatGrowth
 	float Defense = 1.0f;
 };
 
+/** One Bond level (Plan 6): what reaching the next costs and what the duo gets while they fight together */
+USTRUCT(BlueprintType)
+struct WORLDBEYOND_API FBeyondBondLevel
+{
+	GENERATED_BODY()
+
+	// Bond EXP from this level to the next (the last level's is ignored)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Bond", meta = (ClampMin = "0"))
+	float ExperienceToNext = 40.0f;
+
+	// More damage dealt / less taken while the demigods are close (0.12 = +12 % / -12 %)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Bond", meta = (ClampMin = "0", ClampMax = "1"))
+	float DamageDealtBonus = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Bond", meta = (ClampMin = "0", ClampMax = "0.9"))
+	float DamageTakenReduction = 0.0f;
+};
+
 /**
  * Leveling rules (Project Settings -> Game -> Worlds Beyond Progression): how much EXP each level needs, what enemies
  * are worth and how many skill points a level gives. Saved in Config/DefaultGame.ini.
@@ -78,6 +96,32 @@ public:
 	// Extra EXP per enemy level above 1 (0.1 = +10 % per level)
 	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Rewards", meta = (ClampMin = "0"))
 	float ExperiencePerEnemyLevel = 0.1f;
+
+	// Bond levels 1, 2, ... (Plan 6): the duo's partnership grows from fighting together; it never gives Bond Points
+	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Bond", meta = (TitleProperty = "ExperienceToNext"))
+	TArray<FBeyondBondLevel> BondLevels;
+
+	// Bond EXP: both demigods hitting one enemy (a synergy), a duo move, a main boss beaten, a demigod revived
+	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Bond", meta = (ClampMin = "0"))
+	float BondExperiencePerSynergy = 2.0f;
+
+	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Bond", meta = (ClampMin = "0"))
+	float BondExperiencePerDuoMove = 10.0f;
+
+	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Bond", meta = (ClampMin = "0"))
+	float BondExperiencePerBoss = 40.0f;
+
+	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Bond", meta = (ClampMin = "0"))
+	float BondExperiencePerRevive = 6.0f;
+
+	// The Bond level's damage perks need the demigods within this distance of each other (cm)
+	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Bond", meta = (ClampMin = "0"))
+	float BondPerkDistance = 1500.0f;
+
+	// Level (1-based) -> its row; the last row past the end
+	const FBeyondBondLevel& GetBondLevel(int32 Level) const;
+
+	int32 GetMaxBondLevel() const { return FMath::Max(BondLevels.Num(), 1); }
 
 	// EXP needed to go from Level to Level + 1 (0 at the max level)
 	UFUNCTION(BlueprintPure, Category = "Progression")

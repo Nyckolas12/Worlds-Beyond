@@ -1082,6 +1082,23 @@ bool UBeyondFloraLibrary::ConfigureFloraStreaming(UObject* WorldContext, FName P
 			}
 			SetupPartition->SetObjectPropertyValue_InContainer(Target, Grid);
 		}
+		// Cell names are <partition layer name>_<cell>: the flora's HLOD grids must not share the main partition's names,
+		// or the streaming generation (HLOD builder, cook, PIE) asserts on duplicate cells. Renames grids saved earlier too.
+		for (int32 Index = 0; Index < Flora.Num(); ++Index)
+		{
+			void* Setup = Flora.GetRawPtr(Index);
+			UObject* Grid = SetupPartition->GetObjectPropertyValue_InContainer(Setup);
+			FNameProperty* GridName = Grid ? FindFProperty<FNameProperty>(Grid->GetClass(), TEXT("Name")) : nullptr;
+			if (GridName)
+			{
+				const FName Unique(*FString::Printf(TEXT("%s_%s"), *PartitionName.ToString(), *SetupName->GetPropertyValue_InContainer(Setup).ToString()));
+				if (GridName->GetPropertyValue_InContainer(Grid) != Unique)
+				{
+					Grid->Modify();
+					GridName->SetPropertyValue_InContainer(Grid, Unique);
+				}
+			}
+		}
 		HLODSetups = Flora.Num();
 	}
 	Hash->MarkPackageDirty();

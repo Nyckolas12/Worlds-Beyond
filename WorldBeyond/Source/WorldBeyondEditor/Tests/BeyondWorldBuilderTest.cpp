@@ -303,6 +303,70 @@ bool FBeyondWorldBuilderTest::RunTest(const FString& Parameters)
 	const float RimNorth = A.SampleHeight(Volcano.Centre + FVector2D(0.0, Volcano.RimRadius));
 	TestTrue(*FString::Printf(TEXT("The crater (%.0f m) is below the rim (%.0f m)"), Crater, RimNorth), Crater < RimNorth - 10.0f);
 
+	// Rivers and plateaus (a copy of the layout without the road and pads, so nothing else shapes them)
+	{
+		UBeyondWorldLayout* Shaped = BeyondWorldBuilderTest::MakeLayout(1977);
+		Shaped->Roads.Empty();
+		Shaped->Pads.Empty();
+		FBeyondLayoutRiver& River = Shaped->Rivers.AddDefaulted_GetRef();
+		River.Id = TEXT("river");
+		River.Points = { FVector2D(90, -200), FVector2D(95, -90), FVector2D(90, 20) };
+		River.Width = 10.0f;
+		River.Depth = 0.7f;
+		River.ValleyWidth = 60.0f;
+		River.ValleyDepth = 4.0f;
+		FBeyondLayoutPlateau& Plateau = Shaped->Plateaus.AddDefaulted_GetRef();
+		Plateau.Id = TEXT("plateau");
+		Plateau.Centre = FVector2D(-160, -170);
+		Plateau.Radius = 25.0f;
+		Plateau.CliffWidth = 12.0f;
+		Plateau.Height = 30.0f;
+		Plateau.EdgeWarp = 4.0f;
+		Plateau.TerraceSteps = 2;
+
+		FBeyondHeightfield C;
+		FBeyondHeightfieldGenerator::Generate(*Shaped, C);
+		const TArray<FVector>* Profile = C.RiverProfiles.Find(TEXT("river"));
+		TestTrue(TEXT("The river has a water profile"), Profile && Profile->Num() >= 2);
+		if (Profile && Profile->Num() >= 2)
+		{
+			bool bDownhill = true;
+			for (int32 Index = 1; Index < Profile->Num(); ++Index)
+			{
+				bDownhill &= (*Profile)[Index].Z <= (*Profile)[Index - 1].Z + KINDA_SMALL_NUMBER;
+			}
+			TestTrue(TEXT("The river never runs uphill"), bDownhill);
+			const FVector& Middle = (*Profile)[Profile->Num() / 2];
+			const FVector2D MiddleEN(Middle.X, Middle.Y);
+			const float WaterDepth = static_cast<float>(Middle.Z) - C.SampleHeight(MiddleEN);
+			TestTrue(*FString::Printf(TEXT("The river is wadeable in its middle (%.2f m deep)"), WaterDepth), WaterDepth > 0.3f && WaterDepth <= 0.9f);
+			const float Bank = C.SampleHeight(MiddleEN + FVector2D(River.Width * 0.5f + 6.0f, 0.0));
+			TestTrue(*FString::Printf(TEXT("The river's bank is above the water (%.2f m)"), Bank - Middle.Z), Bank > Middle.Z);
+			int32 VX = FMath::RoundToInt(MiddleEN.X + C.HalfExtent);
+			int32 VY = FMath::RoundToInt(C.HalfExtent - MiddleEN.Y);
+			TestTrue(TEXT("The river is in the river mask"), C.RiverMask[C.Index(VX, VY)] == 255);
+		}
+
+		float TopLow = TNumericLimits<float>::Max();
+		float TopHigh = -TNumericLimits<float>::Max();
+		const float Inner = Plateau.Radius - Plateau.EdgeWarp - 2.0f;
+		for (float DY = -Inner; DY <= Inner; DY += 2.0f)
+		{
+			for (float DX = -Inner; DX <= Inner; DX += 2.0f)
+			{
+				if (DX * DX + DY * DY <= Inner * Inner)
+				{
+					const float H = C.SampleHeight(Plateau.Centre + FVector2D(DX, DY));
+					TopLow = FMath::Min(TopLow, H);
+					TopHigh = FMath::Max(TopHigh, H);
+				}
+			}
+		}
+		TestTrue(*FString::Printf(TEXT("The plateau's top is flat (within 5 cm: %.3f m)"), TopHigh - TopLow), TopHigh - TopLow <= 0.05f);
+		const float Foot = C.SampleHeight(Plateau.Centre + FVector2D(Plateau.Radius + Plateau.CliffWidth + Plateau.EdgeWarp + 4.0f, 0.0));
+		TestTrue(*FString::Printf(TEXT("The plateau stands above its foot (%.0f m over %.0f m)"), TopLow, Foot), TopLow > Foot + 20.0f);
+	}
+
 	// The landscape conversion
 	const TArray<uint16> Heights = A.ToLandscapeHeights(200.0f);
 	const int32 Middle = A.Index(A.Size / 2, A.Size / 2);

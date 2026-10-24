@@ -13,15 +13,16 @@
 #include "Animation/AnimInstance.h"
 #include "BeyondGameplayTags.h"
 #include "HAL/IConsoleManager.h"
+#include "Player/BeyondPartyComponent.h"
 #include "Progression/BeyondSkillTreeComponent.h"
 #include "Progression/BeyondStatEffects.h"
+#include "World/BeyondWorldSubsystem.h"
 #include "CharacterAttributeSet.h"
 #include "EngineUtils.h"
 #include "GameFramework/PlayerController.h"
 #include "GenericTeamAgentInterface.h"
 #include "LevelSequenceActor.h"
 #include "LevelSequencePlayer.h"
-#include "Player/BeyondPartyComponent.h"
 
 UAbilitySystemComponent* UBeyondCombatLibrary::GetASC(const AActor* Actor)
 {
@@ -106,6 +107,12 @@ float UBeyondCombatLibrary::ComputeOutgoingDamage(const AActor* Source, const AA
 	if (TargetCharacter && BeyondStats::GetAffinityStat(TargetCharacter->GetNativeElement(), AffinityStat))
 	{
 		Amount *= FMath::Max(0.0f, 1.0f + ReadAttribute(SourceASC, BeyondStats::GetStatAttribute(AffinityStat)) / 100.0f);
+	}
+
+	// Bond level: the duo hits harder while they fight side by side
+	if (const UBeyondPartyComponent* Party = SourceCharacter && !DamageType.MatchesTag(BeyondTags::DamageType_Environment) ? UBeyondWorldSubsystem::GetParty(SourceCharacter) : nullptr)
+	{
+		Amount *= 1.0f + Party->GetBondDamageDealtBonus(SourceCharacter);
 	}
 
 	// Critical hits: weapon and spell hits only, never procs or the environment

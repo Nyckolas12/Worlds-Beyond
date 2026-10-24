@@ -222,6 +222,28 @@ FLinearColor BeyondUI::ElementColor(EBeyondElement Element)
 	}
 }
 
+EBeyondGlyph BeyondUI::CurrencyGlyph(EBeyondCurrency Currency)
+{
+	switch (Currency)
+	{
+	case EBeyondCurrency::Crystals: return EBeyondGlyph::Crystal;
+	case EBeyondCurrency::EchoShards: return EBeyondGlyph::Shard;
+	case EBeyondCurrency::ReverieFragments: return EBeyondGlyph::Fragment;
+	default: return EBeyondGlyph::Coin;
+	}
+}
+
+FLinearColor BeyondUI::CurrencyColor(EBeyondCurrency Currency)
+{
+	switch (Currency)
+	{
+	case EBeyondCurrency::Crystals: return FromHex(0x6FB6FF);
+	case EBeyondCurrency::EchoShards: return FromHex(0xB58CFF);
+	case EBeyondCurrency::ReverieFragments: return FromHex(0xBFD4FF);
+	default: return Palette().GoldBright;
+	}
+}
+
 FText BeyondUI::ElementName(EBeyondElement Element)
 {
 	switch (Element)
@@ -260,6 +282,8 @@ EBeyondGlyph BeyondUI::SlotGlyph(EBeyondItemSlot ItemSlot, bool bStaff)
 	case EBeyondItemSlot::Chest: return EBeyondGlyph::Chest;
 	case EBeyondItemSlot::Gauntlets: return EBeyondGlyph::Gauntlets;
 	case EBeyondItemSlot::Boots: return EBeyondGlyph::Boots;
+	case EBeyondItemSlot::Accessory: return EBeyondGlyph::Ring;
+	case EBeyondItemSlot::Charm: return EBeyondGlyph::Amulet;
 	default: return bStaff ? EBeyondGlyph::Staff : EBeyondGlyph::Sword;
 	}
 }
