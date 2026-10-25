@@ -50,6 +50,9 @@ findstr /C:"Python script executed successfully" "%LOGS%\pass22.log" >nul || (se
 findstr /C:"WARNING" "%SAVED%\last_run_pass22.txt"
 :passhlod
 echo ==== HLODs ====
+rem HLOD actors are derived data. Delete the old ones in a separate run first - the builder runs its delete step
+rem after its build step - so no HLOD actor survives on an HLOD grid that a rebuilt pass has renamed.
+%UE% %PROJ% /Game/WorldsBeyond/Maps/Dominion -run=WorldPartitionBuilderCommandlet -Builder=WorldPartitionHLODsBuilder -DeleteHLODs -AllowCommandletRendering -unattended -nosplash -abslog="%LOGS%\hlod_delete.log"
 %UE% %PROJ% /Game/WorldsBeyond/Maps/Dominion -run=WorldPartitionBuilderCommandlet -Builder=WorldPartitionHLODsBuilder -AllowCommandletRendering -unattended -nosplash -abslog="%LOGS%\hlod.log"
 echo ==== minimap ====
 %UE% %PROJ% /Game/WorldsBeyond/Maps/Dominion -run=WorldPartitionBuilderCommandlet -Builder=WorldPartitionMiniMapBuilder -AllowCommandletRendering -unattended -nosplash -abslog="%LOGS%\minimap.log"

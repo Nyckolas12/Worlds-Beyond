@@ -1035,19 +1035,33 @@ bool UBeyondFloraLibrary::ConfigureFloraStreaming(UObject* WorldContext, FName P
 	FObjectProperty* SetupPartition = SetupProperty ? FindFProperty<FObjectProperty>(SetupProperty->Struct, TEXT("PartitionLayer")) : nullptr;
 	FBoolProperty* SetupLoaded = SetupProperty ? FindFProperty<FBoolProperty>(SetupProperty->Struct, TEXT("bIsSpatiallyLoaded")) : nullptr;
 	int32 HLODSetups = 0;
+	FString SetupNames;
 	if (Found > 0 && SetupName && SetupLayers && SetupPartition)
 	{
 		FScriptArrayHelper Main(Setups, Setups->ContainerPtrToValuePtr<void>(Array.GetRawPtr(0)));
 		FScriptArrayHelper Flora(Setups, Setups->ContainerPtrToValuePtr<void>(Array.GetRawPtr(Found)));
+		// Cell names are <partition layer name>_<cell>, and an HLOD actor's grid "<partition>:<HLOD grid name>" is found
+		// again by HLOD-setup name (UWorldPartitionRuntimeHashSet::ResolveRuntimePartition), so a setup and its grid share
+		// one name. The flora's are named <partition>_<main setup>: names shared with the main partition make duplicate
+		// cells, which assert in streaming generation (HLOD builder, cook, PIE).
+		const FString Prefix = PartitionName.ToString() + TEXT("_");
+		auto FloraName = [&Prefix](FName MainName)
+		{
+			const FString Text = MainName.ToString();
+			return Text.StartsWith(Prefix) ? MainName : FName(*(Prefix + Text));
+		};
 		for (int32 Index = 0; Index < Main.Num(); ++Index)
 		{
 			void* Source = Main.GetRawPtr(Index);
 			const FName Name = SetupName->GetPropertyValue_InContainer(Source);
+			const FName Unique = FloraName(Name);
 			FScriptArrayHelper SourceLayers(SetupLayers, SetupLayers->ContainerPtrToValuePtr<void>(Source));
 			bool bHas = SourceLayers.Num() == 0;
 			for (int32 Existing = 0; Existing < Flora.Num() && !bHas; ++Existing)
 			{
-				bHas = SetupName->GetPropertyValue_InContainer(Flora.GetRawPtr(Existing)) == Name;
+				// Name: a setup saved before the flora's setups were renamed (renamed below)
+				const FName ExistingName = SetupName->GetPropertyValue_InContainer(Flora.GetRawPtr(Existing));
+				bHas = ExistingName == Unique || ExistingName == Name;
 			}
 			if (bHas)
 			{
@@ -1055,7 +1069,7 @@ bool UBeyondFloraLibrary::ConfigureFloraStreaming(UObject* WorldContext, FName P
 			}
 			const int32 Added = Flora.AddValue();
 			void* Target = Flora.GetRawPtr(Added);
-			SetupName->SetPropertyValue_InContainer(Target, Name);
+			SetupName->SetPropertyValue_InContainer(Target, Unique);
 			SetupLayers->CopyCompleteValue_InContainer(Target, Source);
 			if (SetupLoaded)
 			{
@@ -1074,7 +1088,7 @@ bool UBeyondFloraLibrary::ConfigureFloraStreaming(UObject* WorldContext, FName P
 			SetGrid(TEXT("HLODIndex"), Index);
 			if (FNameProperty* GridName = FindFProperty<FNameProperty>(Grid->GetClass(), TEXT("Name")))
 			{
-				GridName->SetPropertyValue_InContainer(Grid, Name);
+				GridName->SetPropertyValue_InContainer(Grid, Unique);
 			}
 			if (FBoolProperty* ClientOnly = FindFProperty<FBoolProperty>(Grid->GetClass(), TEXT("bClientOnlyVisible")))
 			{
@@ -1082,27 +1096,37 @@ bool UBeyondFloraLibrary::ConfigureFloraStreaming(UObject* WorldContext, FName P
 			}
 			SetupPartition->SetObjectPropertyValue_InContainer(Target, Grid);
 		}
-		// Cell names are <partition layer name>_<cell>: the flora's HLOD grids must not share the main partition's names,
-		// or the streaming generation (HLOD builder, cook, PIE) asserts on duplicate cells. Renames grids saved earlier too.
+		// Setups saved by earlier runs carry the main partition's names: rename each setup together with its grid
 		for (int32 Index = 0; Index < Flora.Num(); ++Index)
 		{
 			void* Setup = Flora.GetRawPtr(Index);
+			const FName Current = SetupName->GetPropertyValue_InContainer(Setup);
 			UObject* Grid = SetupPartition->GetObjectPropertyValue_InContainer(Setup);
-			FNameProperty* GridName = Grid ? FindFProperty<FNameProperty>(Grid->GetClass(), TEXT("Name")) : nullptr;
-			if (GridName)
+			if (Current.IsNone() || !Grid)
 			{
-				const FName Unique(*FString::Printf(TEXT("%s_%s"), *PartitionName.ToString(), *SetupName->GetPropertyValue_InContainer(Setup).ToString()));
-				if (GridName->GetPropertyValue_InContainer(Grid) != Unique)
-				{
-					Grid->Modify();
-					GridName->SetPropertyValue_InContainer(Grid, Unique);
-				}
+				continue; // the non-spatially loaded (persistent) setup, which the engine rebuilds on load
 			}
+			const FName Unique = FloraName(Current);
+			if (Current != Unique)
+			{
+				SetupName->SetPropertyValue_InContainer(Setup, Unique);
+			}
+			FNameProperty* GridName = FindFProperty<FNameProperty>(Grid->GetClass(), TEXT("Name"));
+			if (GridName && GridName->GetPropertyValue_InContainer(Grid) != Unique)
+			{
+				Grid->Modify();
+				GridName->SetPropertyValue_InContainer(Grid, Unique);
+			}
+			if (!SetupNames.IsEmpty())
+			{
+				SetupNames += TEXT(", ");
+			}
+			SetupNames += Unique.ToString();
 		}
 		HLODSetups = Flora.Num();
 	}
 	Hash->MarkPackageDirty();
-	UE_LOG(LogBeyondEditor, Display, TEXT("Flora: %s has %d HLOD setups"), *PartitionName.ToString(), HLODSetups);
+	UE_LOG(LogBeyondEditor, Display, TEXT("Flora: %s has %d HLOD setups (%s)"), *PartitionName.ToString(), HLODSetups, *SetupNames);
 	UE_LOG(LogBeyondEditor, Display, TEXT("Flora: runtime partition %s, %.0f m cells, loaded within %.0f m%s"), *PartitionName.ToString(), CellSize, LoadingRange,
 		bSet ? TEXT("") : TEXT(" (could not set its sizes)"));
 	return bSet;
