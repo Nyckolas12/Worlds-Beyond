@@ -38,6 +38,8 @@ one plan per system under [Plans/](Plans/).
 | Open world (Plan 5) | `World/`, `UI/BeyondRegionBannerWidget.*`, `UI/BeyondWorldMapWidget.*` | Regions and villages (banner, discovery, weather, music, level band), waystones, places, hazards, fast travel through the streaming hold, the world map. See *Open world* below |
 | World builder (Plan 5B) | `Source/WorldBeyondEditor/` (editor-only module) | The terrain generator, the World Partition landscape, its greybox material and layers, the painted world map; used by passes 15–16 to build `/Game/WorldsBeyond/Maps/Dominion` |
 | Village builder (Plan 5C) | `Source/WorldBeyondEditor/World/BeyondVillageBuilderLibrary.*`, `Scripts/Migration/village_kit.py` | House prefabs assembled from the modular kit and packed into Packed Level Actors, placing them, a camera capture to PNG for headless passes; used by pass 17 |
+| Ground (Plan 5D) | `Source/WorldBeyondEditor/World/BeyondGroundLibrary.*`, `Scripts/Migration/ground_content.py` | The textured landscape material (11 height-blended layers, region grades from a baked region mask, snow in the frost), its instance, landscape grass types, putting a material on a partitioned landscape; water / ice / lava materials and surfaces; used by pass 18 |
+| Flora (Plan 5E) | `Source/WorldBeyondEditor/World/BeyondFloraLibrary.*`, `World/BeyondFloraTile.*`, `Scripts/Migration/flora_content.py` | Trees, shrubs, rocks and cliffs scattered per region from the generated terrain, clear of roads and gameplay sites: static meshes into World Partition foliage (`FT_*` types you can paint with), the skeletal Megaplants into flora tiles (instanced skinned meshes in the dynamic wind, invisible trunk colliders), the Flora streaming grid; used by pass 19 |
 
 ## Controls
 
@@ -314,7 +316,22 @@ Kingsfork with their people; open it and press Play). Try the systems in any oth
 - **The map (M):** regions you haven't found are fogged; pick an attuned waystone (arrows / click) and confirm twice
   to travel. No fast travel in a fight, a conversation, with a demigod down or sealed in a boss arena.
 - **Places:** caves, shrines and vistas are discovered when you come close (toast, EXP, on the map).
-- **Hazards:** lava burns while you stand in it; deep water sends you back to dry ground, a little hurt.
+- **Hazards:** lava burns while you stand in it; deep water sends you back to dry ground, a little hurt. A hazard's
+  *Radius* makes it round (the lakes and the caldera use it).
+- **The ground (pass 18):** the landscape wears `/Game/WorldsBeyond/World/Landscape/MI_Beyond_Landscape`: grass,
+  forest floor, moss, dirt, paths, cobbles, mud, rock (projected from three sides on cliffs), snow, ash with faint embers
+  and violet-black corrupted ground with glowing veins, height-blended where they meet. The Blightwood is graded violet
+  and grey, the Rimewood cold (its paths trampled snow, snow between cobbles and on rock tops), the Cinderlands warm and
+  charred. Grass, ferns, moss, twigs, dead weeds, snow clumps and stones grow near the camera. Every value is a parameter
+  of the instance, grouped by layer: swap a layer's textures there (with a texture of the same kind, virtual or not).
+- **Water:** Mirrormere and Reedpool clear, Blackmere murky violet (deep water in their middles; wade at the edges),
+  Glassmere frozen (walk on it), lava pools in the caldera that burn (Kael'thar's floor stays dry).
+- **Trees and rocks (pass 19):** spruce and elder groves with clearings in the Elderwood (heather in the open, reeds on
+  the lake shores), dead pines in the Blightwood, spruce stands and snow drifts in the Rimewood, desert cliffs, sandstone
+  mesas and a few charred pines in the Cinderlands; rocks, stumps and crags everywhere. Static ones are foliage: paint or
+  erase them in **Foliage mode** with the `FT_*` types in `/Game/WorldsBeyond/World/Flora/`. The Megaplants (elders,
+  saplings, dead pines, heather, reeds) sway in the dynamic wind in `WB_Flora_<x>_<y>` tiles (select one to delete
+  instances). Trees and rocks block and the navmesh goes round them; shrubs don't.
 - **Villages:** each house is a Packed Level Actor of a prefab in `/Game/WorldsBeyond/World/Prefabs/`; select one →
   *Level Instance → Edit*, change it, *Commit*, and every copy follows. Villagers are `BP_NPC_Base` actors (`WB_NPC_*`)
   with their own name, look and rows.
@@ -411,6 +428,22 @@ UnrealEditor-Cmd.exe WorldBeyond.uproject -ExecCmds="Automation RunTests WorldsB
   `village_content.py` (only villages without houses; `BEYOND_REBUILD_VILLAGES=1` or `=mossbrook,frostholm`), the
   villagers and their dialogue rows and banter (missing rows only; `BEYOND_REWRITE_DIALOGUE=1`). Pictures of the prefabs
   and villages in `Saved/WorldBuilder/`. Report: `last_run_pass17.txt`.
+- `migrate_pass18.py` — pass 18 (Plan 5D, the ground; same command): from `ground_content.py`, the region mask, six grass
+  types, `M_Beyond_Landscape` and its instance `MI_Beyond_Landscape` (put on the landscape and its 256 proxies), the
+  ground textures capped at 2048 px (`BEYOND_GROUND_FULL_RES=1` leaves them), the water / ice / lava materials in
+  `/Game/WorldsBeyond/World/Water/` and their surfaces and hazards in Dominion. Only made when missing:
+  `BEYOND_REBUILD_GROUND=1` rebuilds the material, mask and grass (the instance keeps your changes;
+  `BEYOND_RESET_GROUND_INSTANCE=1` clears them), `BEYOND_REBUILD_WATER=1` the water. Pictures with the grass grown in
+  `Saved/WorldBuilder/ground/` (`BEYOND_SKIP_PICTURES=1` skips them). The first run compiles the landscape's shaders
+  for a long while. Report: `last_run_pass18.txt`.
+- `migrate_pass19.py` — pass 19 (Plan 5E, trees, shrubs and rocks; same command): from `flora_content.py`, a foliage
+  type per static mesh and the charred dead pine materials in `/Game/WorldsBeyond/World/Flora/` (only missing ones;
+  `BEYOND_REBUILD_FLORA_TYPES=1` makes them again, with the meshes' collision: a capsule round the spruce trunks, the
+  cliffs' own triangles), then the scatter over Dominion: foliage for the static meshes, flora tiles for the Megaplants,
+  the wind actor and the Flora streaming grid. Only when nothing is there yet: `BEYOND_REBUILD_FLORA=1` clears pass 19's
+  flora and scatters again (what you painted with the `FT_` types too), `BEYOND_REBUILD_FLORA=forest,frost` only in those
+  regions (forest, frost, molten, blight). Pictures in `Saved/WorldBuilder/flora/` (`BEYOND_SKIP_PICTURES=1` skips them).
+  Report: `last_run_pass19.txt` (the meshes' sizes and how many of each planting went where).
 - `fit_outfits.py` — snug-fits the outfits (see *Clothing fit* below). Needs the **GeometryScripting** plugin, which
   `WorldBeyond.uproject` now enables (editor only).
 - All passes are idempotent and back up every asset they save to `Saved/MigrationBackups/<timestamp>/`; shared helpers live in
@@ -476,16 +509,24 @@ UnrealEditor-Cmd.exe WorldBeyond.uproject -ExecCmds="Automation RunTests WorldsB
   refused (not attuned, a demigod down, an enemy fighting nearby, sealed in an arena), the map (opens paused, closes the
   inventory, markers, select + confirm twice travels), both demigods landing on the ground, an arena's boss only near
   the party and a remembered defeat, a Level 0 camp at the region band (+2) put away when the party leaves and coming
-  back without duplicates, a fallen enemy staying down (Never), lava, deep water, `Beyond.Travel`, `Beyond.ResetWorld`.
+  back without duplicates, a fallen enemy staying down (Never), lava, deep water, a hazard's radius, `Beyond.Travel`,
+  `Beyond.ResetWorld`.
 - `WorldsBeyond.Prototype.WorldBuilder` (no map) — the terrain generator on a small layout: the same seed gives the same
   terrain, pads are flat, roads keep to the grade, lakes sit under their water, layer weights add up to 255, ridges rise
-  and passes cut through, the crater is lower than the rim, heights convert to the landscape and back.
+  and passes cut through, the crater is lower than the rim, heights convert to the landscape and back; the region mask
+  (frost reads frost, the forest nothing), the ground library's 11 layers, and once pass 18 has run `M_Beyond_Landscape`'s
+  three height blends over every layer and its six grass types; the flora scatter (the same seed scatters the same, trees
+  in their region, off the road, out of the village and apart by their footprints, reeds only on the lake's muddy shore,
+  cliffs only on steep rock).
 - `WorldsBeyond.Prototype.OpenWorld` (in `Dominion`; only warns when the map isn't built) — the start hold landing the
   party at Mossbrook's player start, 4 regions / 14 villages / 22 waystones / 10 arenas (4 bosses), the leader in the
   Elderwood at Mossbrook, the map's picture, Mossbrook's houses and its seven people on the ground (pass 17),
   `Beyond.Travel frostholm` landing in the Rimewood Reach, a camp putting its
   enemies away when the party leaves and exactly as many coming back, Gorehide only near the party and exactly one after
-  leaving and coming back.
+  leaving and coming back; pass 18's ground (only a warning before it): the landscape in `MI_Beyond_Landscape`, water and
+  deep water in the three lakes (not at their shores), lava that burns in its pools but not on Kael'thar's floor or at
+  the Caldera Breach Waystone, the party standing on Glassmere's ice; pass 19's flora (only a warning before it): trees,
+  shrubs and rocks loaded round Mossbrook and nothing that blocks within 15 m of its waystone.
 - Every PIE test sets `Beyond.SaveProgress 0` while it runs and switches it back only once PIE has ended (the party
   saves when play ends), so your saved levels are never loaded or overwritten.
 - Also in the editor: *Tools → Test Automation*, filter WorldsBeyond.

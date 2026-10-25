@@ -56,7 +56,7 @@ FRotator UBeyondGameplayAbility::GetAimRotation(FVector Origin) const
 bool UBeyondGameplayAbility::ApplyDamageToTarget(AActor* Target, float Amount, FGameplayTag DamageType, FGameplayTag HitResponse, bool bUnblockable)
 {
 	return UBeyondCombatLibrary::ApplyDamage(GetAvatarActorFromActorInfo(), Target, Amount * GetLevelDamageScale(), DamageType, HitResponse, bUnblockable,
-		GetAvatarActorFromActorInfo());
+		GetAvatarActorFromActorInfo(), false, false, false, Element);
 }
 
 float UBeyondGameplayAbility::GetLevelDamageScale() const

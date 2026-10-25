@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "Items/BeyondCurrency.h"
 #include "BeyondPartyComponent.generated.h"
 
 class ABeyondCharacterBase;
@@ -17,6 +18,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FBeyondBondChangedSignature, float,
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FBeyondMemberLevelUpSignature, ABeyondCharacterBase*, Member, int32, NewLevel);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FBeyondExperienceAwardedSignature, ABeyondCharacterBase*, Victim, float, Experience);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FBeyondBondPointsChangedSignature, int32, BondPoints);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FBeyondBondLevelChangedSignature, int32, BondLevel);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FBeyondStoryFlagChangedSignature, FName, Flag, bool, bSet);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FBeyondPartyFormedSignature);
 
@@ -183,6 +185,8 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Party|World")
 	bool IsWaystoneAttuned(FName WaystoneId) const { return AttunedWaystones.Contains(WaystoneId); }
 
+	int32 GetAttunedWaystoneCount() const { return AttunedWaystones.Num(); }
+
 	// Where a loaded save resumes in the open world (the last waystone attuned, rested at or travelled to)
 	UFUNCTION(BlueprintCallable, Category = "Party|World")
 	void SetLastWaystone(FName WaystoneId);
@@ -212,8 +216,8 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Party|Items")
 	UBeyondInventoryComponent* GetInventory() const;
 
-	// Equips the starter items (Project Settings -> Worlds Beyond Loot) on every demigod with that slot free; given
-	// once, the first time the party forms without a save
+	// Equips the starter items (Project Settings -> Worlds Beyond Loot) on every demigod with that slot free and fills
+	// the wallet with the starting purse (Worlds Beyond Economy); given once, the first time the party forms without a save
 	UFUNCTION(BlueprintCallable, Category = "Party|Items")
 	void GiveStarterKit();
 
@@ -267,6 +271,45 @@ public:
 	// Empties the meter if it is full; returns whether it was
 	UFUNCTION(BlueprintCallable, Category = "Party|Bond")
 	bool ConsumeBond();
+
+	//~ Bond level (Plan 6, saved): grows from synergies, duo moves, main bosses and revives (Worlds Beyond Progression)
+
+	UPROPERTY(BlueprintAssignable, Category = "Party|Bond Level")
+	FBeyondBondLevelChangedSignature OnBondLevelChanged;
+
+	UFUNCTION(BlueprintPure, Category = "Party|Bond Level")
+	int32 GetBondLevel() const { return BondLevel; }
+
+	// Bond EXP into the current level
+	UFUNCTION(BlueprintPure, Category = "Party|Bond Level")
+	float GetBondExperience() const { return BondExperience; }
+
+	// 0 at the top level
+	UFUNCTION(BlueprintPure, Category = "Party|Bond Level")
+	float GetBondExperienceToNext() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Party|Bond Level")
+	void AddBondExperience(float Amount);
+
+	// Sets the level and EXP outright (saves, tests); no level-up events
+	void RestoreBondLevel(int32 Level, float Experience);
+
+	// Saves next frame (several changes in one frame, like equipping, which takes from the bag and puts on, write once)
+	void QueueSave();
+
+	// Seconds played (saved; menus and pauses don't count)
+	UFUNCTION(BlueprintPure, Category = "Party")
+	double GetPlaytime() const { return Playtime; }
+
+	void RestorePlaytime(double Seconds) { Playtime = FMath::Max(Seconds, 0.0); }
+
+	// Both demigods up and within the Bond perk distance of each other
+	UFUNCTION(BlueprintPure, Category = "Party|Bond Level")
+	bool AreTogether() const;
+
+	// The Bond level's perks for a member's hits and the hits it takes (0 while the demigods are apart)
+	float GetBondDamageDealtBonus(const AActor* Member) const;
+	float GetBondDamageTakenReduction(const AActor* Member) const;
 
 	// The party member behind an actor (itself, or the owner / instigator of its projectile or weapon)
 	UFUNCTION(BlueprintPure, Category = "Party")
@@ -330,13 +373,17 @@ protected:
 	UFUNCTION()
 	void HandleEquipmentChanged(UBeyondEquipmentComponent* Equipment);
 
+	UFUNCTION()
+	void HandleCurrencyChanged(EBeyondCurrency Currency, int32 NewAmount, int32 Delta);
+
+	// Kill and discovery rewards into the bag's wallet (Plan 6)
+	void AwardCurrencies(const FBeyondCurrencyBundle& Reward, const TCHAR* Why);
+
 private:
 	APlayerController* GetPlayerController() const;
 	void AddMember(ABeyondCharacterBase* Member);
 	// Skill tree and equipment exist once a member is possessed; listen to them for saving
 	void BindMemberComponents(ABeyondCharacterBase* Member);
-	// Several changes in one frame (equipping takes from the bag and puts on) write the save once, next frame
-	void QueueSave();
 	void FlushQueuedSave();
 	void GiveToCompanionController(ABeyondCharacterBase* Member, ABeyondCharacterBase* NewLeader);
 	ABeyondCharacterBase* FindNextAliveMember(const ABeyondCharacterBase* After) const;
@@ -357,6 +404,9 @@ private:
 	};
 	TMap<TWeakObjectPtr<AActor>, FRecentHit> RecentHits;
 	float Bond = 0.0f;
+	int32 BondLevel = 1;
+	float BondExperience = 0.0f;
+	double Playtime = 0.0;
 
 	TWeakObjectPtr<ABeyondCharacterBase> ReviveTarget;
 	float ReviveProgress = 0.0f;

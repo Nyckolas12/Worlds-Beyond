@@ -3,7 +3,8 @@
 using UnrealBuildTool;
 
 // Editor-only tools for building the open world (Plan 5B): the heightfield generator, the World Partition landscape,
-// its material and layers, the painted world map. Driven by the migration scripts (migrate_pass15/16.py).
+// its material and layers, the painted world map, the flora (Plan 5E). Driven by the migration scripts (migrate_pass15-19.py).
+// Plan 6: the UI fonts (BeyondUIEditorLibrary, migrate_pass20.py).
 public class WorldBeyondEditor : ModuleRules
 {
 	public WorldBeyondEditor(ReadOnlyTargetRules Target) : base(Target)
@@ -22,9 +23,13 @@ public class WorldBeyondEditor : ModuleRules
 			"AssetRegistry",
 			"MaterialEditor",
 			"NavigationSystem",
+			"Foliage",
+			"PhysicsCore",
 			"ImageWrapper",
 			"RenderCore",
-			"RHI"
+			"RHI",
+			"SlateCore",
+			"Slate"
 		});
 	}
 }

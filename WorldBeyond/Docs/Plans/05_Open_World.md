@@ -3,7 +3,8 @@
 Part of the [roadmap](../Roadmap.md). In parts: **5A** (the world systems; built in pass 14, test
 `WorldsBeyond.Prototype.World`), **5B** (the world itself: the greybox World Partition map `Dominion`, its terrain
 built by script, everything placed; built in passes 15–16, tests `WorldsBeyond.Prototype.WorldBuilder` /
-`.OpenWorld`), then villages, nature and polish. How to play with it: *Open world* in
+`.OpenWorld`), **5C** (villages, pass 17), **5D** (the textured ground, grass, water and lava, pass 18), **5E**
+(trees, shrubs and rocks, pass 19), then caves and polish. How to play with it: *Open world* in
 [GAS_Prototype.md](../GAS_Prototype.md#open-world).
 
 Your picks: **all four regions dressed** (the Elderwood with Mossbrook, the Blightwood east, the Rimewood Reach
@@ -108,12 +109,75 @@ Pass 17 (`migrate_pass17.py`) replaces pass 16's grey blocks with real villages,
 90 houses, some 800 props and lanterns, 37 people. Houses go on one or two rings, with more rings when roads leave too
 little room.
 
+## Plan 5D — the ground (built)
+
+Pass 18 (`migrate_pass18.py`, data in `ground_content.py`) dresses the land the greybox left flat. The paint layers
+pass 15 generated are kept as they are; only the material changes, plus surfaces on the lakes and in the caldera.
+
+| Piece | Where | Notes |
+|---|---|---|
+| Ground library | `Source/WorldBeyondEditor/World/BeyondGroundLibrary.*` | Builds the landscape material from per-layer *looks*, the region mask, grass types; puts a material on the landscape and all its streaming proxies; grows grass around a camera for headless pictures |
+| The material | `/Game/WorldsBeyond/World/Landscape/M_Beyond_Landscape`, instance `MI_Beyond_Landscape` (on the landscape) | Three height blends (colour, normal, roughness) over the 11 layers. Each layer is a set of texture parameters at world scale, with a far sample mixed in to hide repeats, colour controls and its own height contrast; rock is projected from three sides. After the blend: large-scale brightness and dry / lush variation, then a grade per region |
+| Region mask | `T_Beyond_RegionMask` (512 px) | Red the Rimewood, green the Cinderlands, blue the Blightwood, from the layout's region weights; the Elderwood is what's left. Laid over the landscape's own coordinates |
+| Grass | `/Game/WorldsBeyond/World/Landscape/Grass/LGT_*` | Meadow (green tufts, kidney weed, ground cover), forest floor (ferns, ground cover, twigs, branches, mossy stones), moss mats, the blight's dead weeds and broom, frost's snow clumps and straw, the ash's charred branches; each limited to its regions. The Persepolis tufts are red in their pack: `MI_Beyond_GrassGreen` / `Dead` / `Straw` recolour them |
+| Water | `/Game/WorldsBeyond/World/Water/` | `M_Beyond_Water` (Single Layer Water, two panning wave normals; `MI_Water_Elderwood`, `MI_Water_Blight`), `M_Beyond_Ice` (glossy, cracked, a dusting of snow), `M_Beyond_Lava` (flowing glow under a dark crust) |
+| Surfaces and hazards | Dominion, folder *Ground* | `WB_Water_*` on Mirrormere, Reedpool and Blackmere with `WB_Hazard_*` deep water under their middles (0.6 m down, round: wading at the edge is fine); `WB_Ice_glassmere` (walkable); `WB_Lava_molten_heart` just under Kael'thar's floor, so it shows as pools in the crater floor's low spots, and its burn. All always loaded |
+
+| Layer | Texture set | In the regions |
+|---|---|---|
+| ForestGround | Megascans Forest Ground | snow in the Rimewood, corrupted in the Blightwood |
+| Moss | Megascans Mossy Ground | the same |
+| Grass | **Fab Wild Grass** (4K, height map) | — |
+| Dirt (village yards, camps) | village sample Dry Soil, darker | grass patches in the Elderwood; trampled snow, ash, corruption |
+| Path | village sample Trampled Mud | trampled snow, ash, corruption |
+| Cobble (King's Road, waystones) | Megascans Cobblestone | snow between the stones |
+| Mud (shores) | village sample Wet Soil | frozen, corrupted |
+| Rock (slopes, cliffs) | Paragon Rampage rock tile, three-sided | snow on the faces that point up |
+| Snow | **Fab Fresh Windswept Snow** | — (paths: **Fab Trampled Snow**) |
+| Ash | Paragon gravel, dark | faint ember specks |
+| Corrupt | Megascans Heavy Mud, violet-black, wet | faint violet veins |
+
+Pictures with the grass grown, at eye height and from above, are in `Saved/WorldBuilder/ground/`.
+
+## Plan 5E — trees, shrubs and rocks (built)
+
+Pass 19 (`migrate_pass19.py`, data in `flora_content.py`) scatters the forests, shrubs, rocks and cliffs over Dominion.
+Your picks: **scripted placement into Foliage** (so you can paint and erase by hand afterwards), **medium density**
+(about 50 trees a hectare in the groves), plus rocks and stumps everywhere, pine saplings at the forest edges, cliffs on
+the steep rock and a few charred trees in the Cinderlands.
+
+| Piece | Where | Notes |
+|---|---|---|
+| Flora library | `Source/WorldBeyondEditor/World/BeyondFloraLibrary.*` | The scatter (from the generated terrain: layers, slopes, roads, lakes, regions, one grove noise for forests and clearings; clear of the gameplay sites; footprints kept apart, cliffs first, then trees, rocks, shrubs), foliage types, trunk / triangle collision on meshes, flora tiles for the Megaplants, clearing a region, the Flora streaming grid |
+| Flora tiles | `Source/WorldBeyond/World/BeyondFloraTile.*` | One actor per 256 m square (`WB_Flora_<x>_<y>`, folder *Flora*): an instanced skinned mesh component per Megaplant (elders, saplings, dead pines, heather, reeds) in the dynamic wind, and invisible instanced cylinders round the trees' trunks (the Megaplants have no physics asset) that block and carve the navmesh |
+| Foliage types | `/Game/WorldsBeyond/World/Flora/FT_*` | One per static mesh (spruce, rocks, stumps, logs, cliffs, the sandstone and snow hills), with their cull distances, collision and a brush set up for painting more by hand |
+| Wind | `WB_Flora_Wind` (always loaded) | The Procedural Vegetation plugin's `BP_GlobalFoliageActor_UE5`: drives the Megaplants' dynamic wind and their materials' wind |
+| Streaming | the map's *World Partition → Runtime Partitions* | A **Flora** grid (512 m cells, loaded within 768 m, with the main grid's HLOD layers) the foliage actors and tiles stream on, so the forest isn't cut off at the main grid's 256 m |
+
+| Region | Trees | Shrubs | Rocks and cliffs |
+|---|---|---|---|
+| Elderwood | spruce stands (14–24 m) in the groves, elders (scaled to 4–6.5 m small trees) through them, young spruce and Baltic pine saplings at their edges | heather on the open grass, pine seedlings, reeds on Mirrormere's and Reedpool's muddy shores | boulders, mossy rocks and roots, mossy banks on the slopes, stumps; grey crags on the steep rock |
+| Blightwood | dead pines, thick in the groves, a few out in the open | reeds at Blackmere | fallen pines and broken stumps, boulders, crags |
+| Rimewood Reach | spruce stands, young spruce and saplings at their edges | seedlings | rocky snow piles and boulders, long snow drifts on the open snow, big boulders on the steep rock |
+| Cinderlands | a few charred dead pines (bark darkened) | — | layered desert cliffs on the steep rock (the crater's outer wall, the Greyspine, the border), four sandstone mesas (at the Greyspine's foot, behind Emberrest, south of the Slagford path, by the Slag Mines), scattered desert rocks |
+
+About 42,700 in all (the report `last_run_pass19.txt` lists each planting by region):
+
+| | Elderwood | Blightwood | Rimewood | Cinderlands |
+|---|---|---|---|---|
+| Trees (≈ 22,000) | 7,800 spruce, 4,600 elders, 760 young spruce, 1,000 saplings | 4,000 dead pines | 2,900 spruce, 440 young spruce and saplings | 190 charred pines |
+| Shrubs (≈ 16,300) | 12,000 heather, 2,200 seedlings, 1,400 reeds | 200 reeds | 390 seedlings | — |
+| Rocks, stumps, logs (≈ 4,000) | 1,000 boulders, 800 mossy rocks, 490 stumps, banks | 270 boulders, 560 fallen pines and stumps | 360 snow piles and boulders, 90 stumps | 430 desert rocks |
+| Cliffs and landmarks (≈ 470) | 76 crags | 58 crags | 155 crags, 9 snow drifts | 151 desert cliffs, 4 sandstone mesas (placed by name in `flora_content.LANDMARKS`) |
+
+Pictures at eye height and from above are in `Saved/WorldBuilder/flora/`.
+
 ## Still to come
 
-1. **Nature:** an 11-layer landscape material (forest ground, moss, grass, dirt, path, cobble, mud, rock, snow, ash,
-   corruption), lakes (a frozen one you can walk on), lava channels, caves, trees and rocks per region with PCG.
-2. **Polish:** weather and music per place, map art, HLODs (houses pop in at the streaming range until then), snow on
-   the Rimewood's roofs, burnt houses in the Cinderlands.
+1. **Caves** (Hollowroot, Rotroot Hollow, the Rime Grotto, the Ashen Tube are places without a cave yet).
+2. **Polish:** weather and music per place, map art (forests on the map from the flora), HLODs (houses pop in at the
+   streaming range until then; the flora streams further on its own grid), snow on the Rimewood's roofs and spruce,
+   burnt houses in the Cinderlands.
 
 ## Playtest fixes
 
@@ -155,6 +219,39 @@ little room.
   packer opens the Content Browser, neither of which a headless pass has, so the village builder makes the level and
   the Blueprint itself and lets the engine fill them.
 - **Villagers are `BP_NPC_Base` with their own settings** (name, look, lines) rather than a Blueprint each.
+- **The ground is a material swap, not a repaint**: pass 15's layer weights already said where grass, rock, snow and
+  roads go, so pass 18 only replaces the material; the terrain, its paint and your *Sculpt* layer are untouched.
+- **Height blending** (each layer's height map decides where it shows through its neighbours) instead of plain weights:
+  grass between cobbles and snow in rock cracks rather than a soft fade.
+- **One region mask instead of more layers**: region looks (dirt that is ash in the Cinderlands, snow on the Rimewood's
+  paths, the violet grade) come from a baked mask, so the layers and the generator stay at 11.
+- **An instance on the landscape**: every value is a parameter of `MI_Beyond_Landscape`, so tuning or swapping a set
+  never needs the script; rebuilding the master keeps the instance.
+- **No new corruption textures**: as you asked, the Blightwood's ground is the heavy mud set recoloured, with veins.
+- **The Megaplants wait for the trees pass**: they are skeletal meshes (dynamic wind) and landscape grass only takes
+  static meshes.
+- **Water, ice and lava are flat discs at their levels**, always loaded (five actors), with round hazards (*Radius* on
+  `ABeyondHazardVolume`). The crater floor never reaches the layout's `lava_level`, so the lava sits just under
+  Kael'thar's floor and shows in its low spots.
+- **Ground textures are capped at 2048 px** (most were 4K–8K): world-scale landscape textures barely stream, and 2K over
+  a 3 m repeat is still about 1.5 mm a texel.
+- **Flora is scattered by script into Foliage, not PCG** (your pick): the scatter reads the generated terrain directly
+  (the same every run, about a second for the whole world) and the result is plain foliage you can paint and erase.
+  The skeletal Megaplants can't be foliage, so they live in flora tiles of instanced skinned meshes.
+- **The Megaplants block through invisible cylinders**: they have no physics asset, so each tree gets a hidden instanced
+  cylinder round its trunk (BlockAll, carves the navmesh); shrubs, reeds and seedlings don't block. The spruce got one
+  capsule round the trunk instead of the pack's hull, so the party walks under the branches.
+- **One grove noise for the whole world**: every planting picks a band of it (spruce in the groves' hearts, elders through
+  them, saplings and young spruce at their edges, heather out in the open), so forests have clearings and edges.
+- **The flora streams on its own grid** (*Flora*, 512 m cells, loaded within 768 m) rather than the main grid's 256 m,
+  so the forest isn't cut off a few hundred metres out. It has the main grid's HLOD layers (Instanced, Merged) on
+  coarser grids of its own, so an HLOD build later covers the forests too; none are built yet.
+- **Headless pictures show the Megaplants at rest, and only roughly**: the dynamic wind doesn't feed a headless scene
+  capture (they'd be invisible), so pass 19 renders them in their rest pose (`r.InstancedSkinnedMeshes.ForceRefPose`).
+  In that mode the dead pines' branch pieces float above their trunks and the saplings lose their needles; that's
+  the capture only. In an editor viewport they draw whole (checked on 2026-10-11 with screenshots of the Blightwood,
+  the Elderwood and Mirrormere).
+- **Spruce needles tinted darker** (`Flora/Tints/`): the pack's summer needles read golden next to the Elderwood's grass.
 
 ## Left for you
 
@@ -175,6 +272,25 @@ little room.
   anything you placed by hand with that village's `WB_VIL_` label prefix goes with it. Moving houses by hand is fine.
 - Portraits for the new speakers (`DT_Speakers`: Garrick, Hild, Ansel, Corvin, Sigrun, Eskil, Thora, Brann, Rusk,
   Ashka) and real names and lines where the placeholders don't fit.
+- **Tune the ground** in `/Game/WorldsBeyond/World/Landscape/MI_Beyond_Landscape` (parameters grouped by layer: tile
+  size, tint, saturation, brightness, roughness, height contrast / offset, region amounts; *Regions* for the grades,
+  *Variation* for the large-scale changes). To swap a layer's textures, set them there with textures of the same kind
+  (virtual or not), or put the new set first in its list in `ground_content.py` and run pass 18 with
+  `BEYOND_REBUILD_GROUND=1`.
+- **Paint** on the landscape with the 11 layers as before: the textured ground follows (Landscape mode → Paint, on the
+  *Sculpt* edit layer).
+- The corruption is recoloured mud; a real dark-forest ground set from Fab can replace it in the *Corrupt* group.
+- **Paint or erase trees and rocks** in Foliage mode: the `FT_*` types in `/Game/WorldsBeyond/World/Flora/` are set up
+  as brushes (density, scale, slope). Megaplants: select a `WB_Flora_<x>_<y>` tile (folder *Flora*) and remove
+  instances from its components, or edit `flora_content.py` and re-run pass 19 for that region
+  (`BEYOND_REBUILD_FLORA=forest`; it clears what you painted there with the `FT_` types too).
+- **After sculpting**, foliage doesn't follow the ground: re-run pass 19 for the regions you changed (or use Foliage
+  mode's *Snap to ground* on the instances).
+- **Check the Megaplants sway** in the editor or in play (elders, saplings, dead pines, heather, reeds): headless
+  pictures can only show them at rest.
+- **Before packaging**: the Megaplants' master material (`MA_Foliage_Trees` in the Procedural Vegetation plugin's sample
+  content) gets *Used with Instanced Skinned Mesh* only in memory while the editor runs; a cooked game needs it saved
+  (or a copy of the master in the project).
 
 ### Later
 - Real music per region and village (*Music* / *Ambience* on each `DA_Region_*`).

@@ -97,6 +97,9 @@ public:
 	virtual float GetOutgoingDamageScale() const override { return OutgoingDamageScale; }
 	virtual float ModifyDamageTaken(float Damage, AActor* DamageInstigator, const FGameplayTagContainer& DamageTags) const override;
 
+	// An elemental affix's element (Molten flame, Venomous verdant, Stormcharged storm), else Native Element, else the region's
+	virtual EBeyondElement GetNativeElement() const override;
+
 protected:
 	virtual void PostInitializeComponents() override;
 	virtual void BeginPlay() override;

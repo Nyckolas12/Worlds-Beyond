@@ -57,6 +57,13 @@ MaxStamina(100.f),
 Strength(0.f),
 Arcana(0.f),
 Defense(0.f),
+CritRate(0.f),
+CritDamage(50.f),
+ElementalMastery(0.f),
+VerdantAffinity(0.f),
+ShadowAffinity(0.f),
+FrostAffinity(0.f),
+FlameAffinity(0.f),
 Level(1.f),
 IncomingDamage(0.f),
 IncomingHeal(0.f)
@@ -77,9 +84,19 @@ void UCharacterAttributeSet::ClampAttribute(const FGameplayAttribute& Attribute,
 	{
 		NewValue = FMath::Max(NewValue, 1.0f);
 	}
-	else if (Attribute == GetStrengthAttribute() || Attribute == GetArcanaAttribute() || Attribute == GetDefenseAttribute())
+	else if (Attribute == GetStrengthAttribute() || Attribute == GetArcanaAttribute() || Attribute == GetDefenseAttribute()
+		|| Attribute == GetCritDamageAttribute() || Attribute == GetElementalMasteryAttribute())
 	{
 		NewValue = FMath::Max(NewValue, 0.0f);
+	}
+	else if (Attribute == GetCritRateAttribute())
+	{
+		NewValue = FMath::Clamp(NewValue, 0.0f, 100.0f);
+	}
+	else if (Attribute == GetVerdantAffinityAttribute() || Attribute == GetShadowAffinityAttribute() || Attribute == GetFrostAffinityAttribute()
+		|| Attribute == GetFlameAffinityAttribute())
+	{
+		NewValue = FMath::Clamp(NewValue, -50.0f, 80.0f);
 	}
 }
 
@@ -298,4 +315,11 @@ void UCharacterAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty
 	DOREPLIFETIME_CONDITION_NOTIFY(UCharacterAttributeSet, Arcana, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UCharacterAttributeSet, Defense, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UCharacterAttributeSet, Level, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UCharacterAttributeSet, CritRate, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UCharacterAttributeSet, CritDamage, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UCharacterAttributeSet, ElementalMastery, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UCharacterAttributeSet, VerdantAffinity, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UCharacterAttributeSet, ShadowAffinity, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UCharacterAttributeSet, FrostAffinity, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UCharacterAttributeSet, FlameAffinity, COND_None, REPNOTIFY_Always);
 }

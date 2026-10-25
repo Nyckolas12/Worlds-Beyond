@@ -9,6 +9,7 @@
 #include "GenericTeamAgentInterface.h"
 #include "InputCoreTypes.h"
 #include "AbilitySystem/BeyondAbilitySet.h"
+#include "AbilitySystem/BeyondElement.h"
 #include "AbilitySystem/BeyondFX.h"
 #include "Characters/BeyondAimComponent.h"
 #include "Characters/BeyondLegacyDamageBridge.h"
@@ -18,6 +19,7 @@
 #include "BeyondCharacterBase.generated.h"
 
 class UBeyondAbilitySet;
+class UBeyondCharacterProfile;
 class UBeyondEquipmentComponent;
 class UBeyondItemDefinition;
 class UBeyondSkillTreeAsset;
@@ -105,6 +107,14 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Character")
 	FText GetCharacterDisplayName() const;
+
+	// How the menus present this demigod: class title, motto, element, portraits (Plan 6; empty for enemies)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Character")
+	TObjectPtr<UBeyondCharacterProfile> Profile;
+
+	// The element of this character's hits that carry none of their own: the profile's (demigods), else Native Element
+	UFUNCTION(BlueprintPure, Category = "Character")
+	virtual EBeyondElement GetNativeElement() const;
 
 	//~ Progression (EXP and skill points only exist on Player-team characters)
 
@@ -329,6 +339,21 @@ protected:
 	// Damage taken x 100 / (100 + Defense)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AbilitySystem|Attributes", meta = (ClampMin = "0"))
 	float BaseDefense = 0.0f;
+
+	// Plan 6: chance in percent that a hit is critical (the demigods get 5 from migrate_pass22.py; enemies never crit)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AbilitySystem|Attributes", meta = (ClampMin = "0", ClampMax = "100"))
+	float BaseCritRate = 0.0f;
+
+	// Extra damage of a critical hit in percent (50: crits deal 150%)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AbilitySystem|Attributes", meta = (ClampMin = "0"))
+	float BaseCritDamage = 50.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AbilitySystem|Attributes", meta = (ClampMin = "0"))
+	float BaseElementalMastery = 0.0f;
+
+	// The element this character's hits carry when nothing else says (enemies; demigods use their Profile's)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AbilitySystem|Attributes")
+	EBeyondElement NativeElement = EBeyondElement::None;
 
 	// Added for every level above 1
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Progression")

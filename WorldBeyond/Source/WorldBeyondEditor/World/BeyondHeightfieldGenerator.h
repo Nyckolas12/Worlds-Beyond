@@ -60,6 +60,12 @@ struct WORLDBEYONDEDITOR_API FBeyondHeightfield
 	// Water surface per lake id (m)
 	TMap<FName, float> LakeLevels;
 
+	// Water surface along each river id: (m east, m north, surface m), source first, every ~8 m
+	TMap<FName, TArray<FVector>> RiverProfiles;
+
+	// 255 in river water (the painted map draws it)
+	TArray<uint8> RiverMask;
+
 	bool bHasVolcano = false;
 	float LavaLevel = 0.0f;
 

@@ -4,64 +4,49 @@
 #include "AbilitySystem/BeyondGameplayAbility.h"
 #include "Characters/BeyondCharacterBase.h"
 #include "Engine/Texture2D.h"
-#include "Fonts/FontMeasure.h"
-#include "Framework/Application/SlateApplication.h"
-#include "Kismet/GameplayStatics.h"
 #include "Player/BeyondPartyComponent.h"
 #include "Player/BeyondPlayerController.h"
 #include "Progression/BeyondSkillTreeComponent.h"
-#include "Rendering/DrawElements.h"
-#include "Rendering/SlateRenderer.h"
 #include "Sound/SoundBase.h"
-#include "Styling/CoreStyle.h"
+#include "UI/BeyondCharacterProfile.h"
+#include "UI/BeyondMenuPanels.h"
+#include "UI/BeyondUIArt.h"
 
 #define LOCTEXT_NAMESPACE "BeyondSkillTree"
 
-namespace
+namespace BeyondSkillTreeLocal
 {
-	constexpr float SkillTreeTop = 230.0f;
-	constexpr float SkillTabWidth = 180.0f;
-	constexpr float SkillTabHeight = 40.0f;
-	constexpr float SkillTabGap = 14.0f;
-	constexpr float SkillTooltipWidth = 340.0f;
-	constexpr int32 SkillRingSegments = 48;
+	// The graph's area on the page
+	constexpr float GraphCentreX = 1040.0f;
+	constexpr float GraphTop = 232.0f;
+	constexpr float GraphBottom = 900.0f;
+	constexpr float GraphHalfWidth = 330.0f;
+	constexpr float ResetWindow = 2.5f;
 
-	FVector2f MeasureTreeText(const FString& Text, const FSlateFontInfo& Font)
+	// The right column
+	const FVector2f StatsTopLeft(1404.0f, 118.0f);
+	const FVector2f StatsSize(486.0f, 382.0f);
+	const FVector2f CardTopLeft(1404.0f, 514.0f);
+	const FVector2f CardSize(486.0f, 474.0f);
+
+	bool IsActiveNode(const FBeyondSkillNode& Node)
 	{
-		FSlateRenderer* Renderer = FSlateApplication::IsInitialized() ? FSlateApplication::Get().GetRenderer() : nullptr;
-		if (!Renderer)
+		return Node.Effects.ContainsByPredicate([](const FBeyondSkillEffect& Effect)
 		{
-			return FVector2f(Text.Len() * Font.Size * 0.6f, Font.Size * 1.2f);
-		}
-		return FVector2f(Renderer->GetFontMeasureService()->Measure(Text, Font));
+			return Effect.Type == EBeyondSkillEffectType::GrantAbility || Effect.Type == EBeyondSkillEffectType::DuoPower;
+		});
 	}
 
-	FLinearColor TreeWithAlpha(FLinearColor Color, float Opacity)
+	bool IsUpgradeNode(const FBeyondSkillNode& Node)
 	{
-		Color.A *= FMath::Clamp(Opacity, 0.0f, 1.0f);
-		return Color;
+		return Node.Effects.ContainsByPredicate([](const FBeyondSkillEffect& Effect) { return Effect.Type == EBeyondSkillEffectType::AbilityRank; });
 	}
 }
 
 UBeyondSkillTreeWidget::UBeyondSkillTreeWidget(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
-	SetIsFocusable(true);
-
-	PillBrush.DrawAs = ESlateBrushDrawType::RoundedBox;
-	PillBrush.OutlineSettings.RoundingType = ESlateBrushRoundingType::HalfHeightRadius;
-	PillBrush.TintColor = FSlateColor(FLinearColor::White);
-
-	PanelBrush.DrawAs = ESlateBrushDrawType::RoundedBox;
-	PanelBrush.OutlineSettings.RoundingType = ESlateBrushRoundingType::FixedRadius;
-	PanelBrush.OutlineSettings.CornerRadii = FVector4(10.0f, 10.0f, 10.0f, 10.0f);
-	PanelBrush.TintColor = FSlateColor(FLinearColor::White);
-
-	// The SkillTreeSystem pack's art, plus the ability bar's icons for health and stamina
-	BackgroundTexture = TSoftObjectPtr<UTexture2D>(FSoftObjectPath(TEXT("/Game/SkillTreeSystem/Textures/T_background.T_background")));
-	SlotTexture = TSoftObjectPtr<UTexture2D>(FSoftObjectPath(TEXT("/Game/SkillTreeSystem/Textures/T_WhiteIconBase.T_WhiteIconBase")));
-	LockTexture = TSoftObjectPtr<UTexture2D>(FSoftObjectPath(TEXT("/Game/SkillTreeSystem/Textures/T_Lock.T_Lock")));
-	GlowTexture = TSoftObjectPtr<UTexture2D>(FSoftObjectPath(TEXT("/Game/SkillTreeSystem/Textures/T_RadialGradient.T_RadialGradient")));
+	// The SkillTreeSystem pack's icons for stat nodes, plus the ability bar's for health
 	StatIcons.Add(EBeyondSkillStat::Strength, TSoftObjectPtr<UTexture2D>(FSoftObjectPath(TEXT("/Game/SkillTreeSystem/Textures/T_Sword.T_Sword"))));
 	StatIcons.Add(EBeyondSkillStat::Arcana, TSoftObjectPtr<UTexture2D>(FSoftObjectPath(TEXT("/Game/SkillTreeSystem/Textures/T_MagicWand.T_MagicWand"))));
 	StatIcons.Add(EBeyondSkillStat::MaxStamina, TSoftObjectPtr<UTexture2D>(FSoftObjectPath(TEXT("/Game/SkillTreeSystem/Textures/T_PersonSimpleRun.T_PersonSimpleRun"))));
@@ -72,29 +57,18 @@ UBeyondSkillTreeWidget::UBeyondSkillTreeWidget(const FObjectInitializer& ObjectI
 void UBeyondSkillTreeWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
-	SetVisibility(ESlateVisibility::Visible);
 	LoadArt();
 	RefreshTabs();
 }
 
 void UBeyondSkillTreeWidget::LoadArt()
 {
-	auto LoadTexture = [this](const TSoftObjectPtr<UTexture2D>& Soft) -> UTexture2D*
+	for (const TPair<EBeyondSkillStat, TSoftObjectPtr<UTexture2D>>& Pair : StatIcons)
 	{
-		UTexture2D* Texture = Soft.IsNull() ? nullptr : Soft.LoadSynchronous();
-		if (Texture)
+		if (UTexture2D* Texture = Pair.Value.IsNull() ? nullptr : Pair.Value.LoadSynchronous())
 		{
 			LoadedTextures.AddUnique(Texture);
 		}
-		return Texture;
-	};
-	Background = LoadTexture(BackgroundTexture);
-	SlotFrame = LoadTexture(SlotTexture);
-	Lock = LoadTexture(LockTexture);
-	Glow = LoadTexture(GlowTexture);
-	for (const TPair<EBeyondSkillStat, TSoftObjectPtr<UTexture2D>>& Pair : StatIcons)
-	{
-		LoadTexture(Pair.Value);
 	}
 }
 
@@ -103,22 +77,16 @@ void UBeyondSkillTreeWidget::RefreshTabs()
 	const UBeyondSkillTreeComponent* Previous = GetActiveTree();
 	Tabs.Reset();
 
-	const ABeyondPlayerController* PC = Cast<ABeyondPlayerController>(GetOwningPlayer());
+	const ABeyondPlayerController* PC = GetBeyondPlayerController();
 	if (!PC || !PC->PartyComponent)
 	{
 		return;
 	}
 
-	// Demigods in duo order (Conduit, Striker, anyone else), then the shared duo tree
-	TArray<ABeyondCharacterBase*> Members = PC->PartyComponent->GetMembers();
-	Members.StableSort([](const ABeyondCharacterBase& A, const ABeyondCharacterBase& B)
+	// Demigods in duo order (Conduit, Striker, anyone else), then the shared duo tree: the same order as the header
+	for (ABeyondCharacterBase* Member : GetPartyInDuoOrder())
 	{
-		auto Order = [](EBeyondDuoRole Role) { return Role == EBeyondDuoRole::Conduit ? 0 : Role == EBeyondDuoRole::Striker ? 1 : 2; };
-		return Order(A.DuoRole) < Order(B.DuoRole);
-	});
-	for (ABeyondCharacterBase* Member : Members)
-	{
-		if (UBeyondSkillTreeComponent* Tree = Member ? Member->GetSkillTreeComponent() : nullptr)
+		if (UBeyondSkillTreeComponent* Tree = Member->GetSkillTreeComponent())
 		{
 			FTreeTab& Tab = Tabs.AddDefaulted_GetRef();
 			Tab.Title = Member->GetCharacterDisplayName();
@@ -150,6 +118,7 @@ void UBeyondSkillTreeWidget::SelectTab(int32 Index)
 		ActiveTab = Index;
 		CancelHold();
 		HoveredNode = NAME_None;
+		SelectedNode = NAME_None;
 		ResetArmedAge = -1.0f;
 	}
 }
@@ -174,13 +143,7 @@ UBeyondSkillTreeComponent* UBeyondSkillTreeWidget::GetActiveTree() const
 const FBeyondSkillNode* UBeyondSkillTreeWidget::FindActiveNode(FName NodeId) const
 {
 	const UBeyondSkillTreeComponent* Tree = GetActiveTree();
-	return Tree && Tree->Tree ? Tree->Tree->FindNode(NodeId) : nullptr;
-}
-
-FLinearColor UBeyondSkillTreeWidget::GetAccent() const
-{
-	const UBeyondSkillTreeComponent* Tree = GetActiveTree();
-	return Tree && Tree->Tree ? Tree->Tree->AccentColor : FLinearColor(0.10f, 0.45f, 1.0f);
+	return Tree && Tree->Tree && !NodeId.IsNone() ? Tree->Tree->FindNode(NodeId) : nullptr;
 }
 
 bool UBeyondSkillTreeWidget::IsDuoLoadout(const FBeyondSkillNode& Node) const
@@ -191,29 +154,10 @@ bool UBeyondSkillTreeWidget::IsDuoLoadout(const FBeyondSkillNode& Node) const
 		return false;
 	}
 	const TSubclassOf<UGameplayAbility> Loadout = Duo->GetDuoLoadout();
-	for (const FBeyondSkillEffect& Effect : Node.Effects)
+	return Node.Effects.ContainsByPredicate([&Loadout](const FBeyondSkillEffect& Effect)
 	{
-		if (Effect.Type == EBeyondSkillEffectType::DuoPower && Effect.Ability == Loadout)
-		{
-			return true;
-		}
-	}
-	return false;
-}
-
-FLinearColor UBeyondSkillTreeWidget::GetNodeColor(const UBeyondSkillTreeComponent& Tree, const FBeyondSkillNode& Node) const
-{
-	switch (Tree.GetNodeState(Node.Id))
-	{
-	case EBeyondSkillNodeState::Maxed:
-		return GoldColor;
-	case EBeyondSkillNodeState::Acquired:
-		return FMath::Lerp(GetAccent(), GoldColor, 0.55f);
-	case EBeyondSkillNodeState::Available:
-		return GetAccent();
-	default:
-		return LockedColor;
-	}
+		return Effect.Type == EBeyondSkillEffectType::DuoPower && Effect.Ability == Loadout;
+	});
 }
 
 UTexture2D* UBeyondSkillTreeWidget::GetNodeIcon(const FBeyondSkillNode& Node) const
@@ -245,61 +189,65 @@ UTexture2D* UBeyondSkillTreeWidget::GetNodeIcon(const FBeyondSkillNode& Node) co
 	return nullptr;
 }
 
-const FSlateBrush* UBeyondSkillTreeWidget::GetTextureBrush(UTexture2D* Texture) const
+FName UBeyondSkillTreeWidget::GetDetailNode() const
 {
-	if (!Texture)
+	if (FindActiveNode(HoveredNode))
 	{
-		return nullptr;
+		return HoveredNode;
 	}
-	if (const TUniquePtr<FSlateBrush>* Existing = TextureBrushes.Find(Texture))
+	if (FindActiveNode(SelectedNode))
 	{
-		return Existing->Get();
+		return SelectedNode;
 	}
-	TUniquePtr<FSlateBrush> Brush = MakeUnique<FSlateBrush>();
-	Brush->SetResourceObject(Texture);
-	Brush->DrawAs = ESlateBrushDrawType::Image;
-	const FSlateBrush* Result = Brush.Get();
-	TextureBrushes.Add(Texture, MoveTemp(Brush));
-	return Result;
-}
-
-FVector2f UBeyondSkillTreeWidget::GetTreeScale(const FVector2f& LocalSize) const
-{
-	// Shrink the grid when a tree is taller / wider than the screen
-	FVector2f Scale(1.0f, 1.0f);
 	const UBeyondSkillTreeComponent* Tree = GetActiveTree();
-	if (!Tree || !Tree->Tree)
+	if (!Tree || !Tree->Tree || Tree->Tree->Nodes.IsEmpty())
 	{
-		return Scale;
+		return NAME_None;
 	}
-	float MaxRow = 0.0f;
-	float MaxColumn = 0.0f;
 	for (const FBeyondSkillNode& Node : Tree->Tree->Nodes)
 	{
-		MaxRow = FMath::Max(MaxRow, static_cast<float>(Node.Position.Y));
-		MaxColumn = FMath::Max(MaxColumn, FMath::Abs(static_cast<float>(Node.Position.X)));
+		FText Unused;
+		if (Tree->CanUnlock(Node.Id, Unused))
+		{
+			return Node.Id;
+		}
 	}
-	const float AvailableHeight = LocalSize.Y - SkillTreeTop - 150.0f;
-	const float AvailableHalfWidth = LocalSize.X * 0.5f - 120.0f;
-	if (MaxRow > 0.0f && MaxRow * CellSize.Y > AvailableHeight)
-	{
-		Scale.Y = FMath::Max(0.4f, AvailableHeight / (MaxRow * CellSize.Y));
-	}
-	if (MaxColumn > 0.0f && MaxColumn * CellSize.X > AvailableHalfWidth)
-	{
-		Scale.X = FMath::Max(0.4f, AvailableHalfWidth / (MaxColumn * CellSize.X));
-	}
-	return Scale;
+	return Tree->Tree->Nodes[0].Id;
 }
 
-FVector2f UBeyondSkillTreeWidget::GetNodeCenter(const FBeyondSkillNode& Node, const FVector2f& LocalSize) const
+void UBeyondSkillTreeWidget::SelectNode(FName NodeId)
 {
-	const FVector2f Scale = GetTreeScale(LocalSize);
-	return FVector2f(LocalSize.X * 0.5f + static_cast<float>(Node.Position.X) * static_cast<float>(CellSize.X) * Scale.X,
-		SkillTreeTop + static_cast<float>(Node.Position.Y) * static_cast<float>(CellSize.Y) * Scale.Y);
+	if (FindActiveNode(NodeId))
+	{
+		SelectedNode = NodeId;
+	}
 }
 
-FName UBeyondSkillTreeWidget::HitTestNode(const FVector2f& Local, const FVector2f& LocalSize) const
+FVector2f UBeyondSkillTreeWidget::GetNodeDesignCenter(FName NodeId) const
+{
+	using namespace BeyondSkillTreeLocal;
+	const UBeyondSkillTreeComponent* Tree = GetActiveTree();
+	const FBeyondSkillNode* Node = FindActiveNode(NodeId);
+	if (!Tree || !Tree->Tree || !Node)
+	{
+		return FVector2f(-1000.0f, -1000.0f);
+	}
+	// Fit the tree's grid (columns from the centre, rows from the top) into the graph area, centred both ways
+	float MaxRow = 0.0f;
+	float MaxColumn = 0.0f;
+	for (const FBeyondSkillNode& Other : Tree->Tree->Nodes)
+	{
+		MaxRow = FMath::Max(MaxRow, static_cast<float>(Other.Position.Y));
+		MaxColumn = FMath::Max(MaxColumn, FMath::Abs(static_cast<float>(Other.Position.X)));
+	}
+	const float StepX = MaxColumn > 0.0f ? FMath::Min(175.0f, (GraphHalfWidth - NodeRadius - 20.0f) / MaxColumn) : 0.0f;
+	const float Available = GraphBottom - GraphTop - NodeRadius * 2.0f - 30.0f;
+	const float StepY = MaxRow > 0.0f ? FMath::Min(150.0f, Available / MaxRow) : 0.0f;
+	const float Top = GraphTop + NodeRadius + (Available - MaxRow * StepY) * 0.5f;
+	return FVector2f(GraphCentreX + static_cast<float>(Node->Position.X) * StepX, Top + static_cast<float>(Node->Position.Y) * StepY);
+}
+
+FName UBeyondSkillTreeWidget::HitTestNode(const FVector2f& Design) const
 {
 	const UBeyondSkillTreeComponent* Tree = GetActiveTree();
 	if (!Tree || !Tree->Tree)
@@ -308,7 +256,7 @@ FName UBeyondSkillTreeWidget::HitTestNode(const FVector2f& Local, const FVector2
 	}
 	for (const FBeyondSkillNode& Node : Tree->Tree->Nodes)
 	{
-		if (FVector2f::Distance(Local, GetNodeCenter(Node, LocalSize)) <= NodeRadius + 4.0f)
+		if (FVector2f::Distance(Design, GetNodeDesignCenter(Node.Id)) <= NodeRadius + 6.0f)
 		{
 			return Node.Id;
 		}
@@ -316,41 +264,7 @@ FName UBeyondSkillTreeWidget::HitTestNode(const FVector2f& Local, const FVector2
 	return NAME_None;
 }
 
-FVector2f UBeyondSkillTreeWidget::GetTabCenter(int32 Index, const FVector2f& LocalSize) const
-{
-	const float Total = Tabs.Num() * SkillTabWidth + FMath::Max(Tabs.Num() - 1, 0) * SkillTabGap;
-	const float Left = LocalSize.X * 0.5f - Total * 0.5f;
-	return FVector2f(Left + Index * (SkillTabWidth + SkillTabGap) + SkillTabWidth * 0.5f, 62.0f);
-}
-
-int32 UBeyondSkillTreeWidget::HitTestTab(const FVector2f& Local, const FVector2f& LocalSize) const
-{
-	for (int32 Index = 0; Index < Tabs.Num(); ++Index)
-	{
-		const FVector2f Centre = GetTabCenter(Index, LocalSize);
-		if (FMath::Abs(Local.X - Centre.X) <= SkillTabWidth * 0.5f && FMath::Abs(Local.Y - Centre.Y) <= SkillTabHeight * 0.5f)
-		{
-			return Index;
-		}
-	}
-	return INDEX_NONE;
-}
-
-void UBeyondSkillTreeWidget::ShowMessage(const FText& Text, bool bWarning)
-{
-	Message = Text;
-	bMessageWarning = bWarning;
-	MessageAge = 0.0f;
-}
-
-void UBeyondSkillTreeWidget::PlayUISound(const TSoftObjectPtr<USoundBase>& Sound) const
-{
-	if (USoundBase* Loaded = Sound.IsNull() ? nullptr : Sound.LoadSynchronous())
-	{
-		// UI sounds keep playing while the game is paused
-		UGameplayStatics::PlaySound2D(this, Loaded, 1.0f, 1.0f, 0.0f, nullptr, nullptr, true);
-	}
-}
+//~ Actions
 
 bool UBeyondSkillTreeWidget::BeginHold(FName NodeId)
 {
@@ -359,10 +273,11 @@ bool UBeyondSkillTreeWidget::BeginHold(FName NodeId)
 	if (!Tree || !Tree->CanUnlock(NodeId, Reason))
 	{
 		ShowMessage(Reason.IsEmpty() ? LOCTEXT("CannotUnlock", "Can't unlock that yet") : Reason, true);
-		PlayUISound(DeniedSound);
+		PlayDeniedSound();
 		HoldNode = NAME_None;
 		return false;
 	}
+	SelectedNode = NodeId;
 	HoldNode = NodeId;
 	HoldTime = 0.0f;
 	return true;
@@ -407,14 +322,6 @@ bool UBeyondSkillTreeWidget::EquipDuoPowerFrom(FName NodeId)
 	return false;
 }
 
-void UBeyondSkillTreeWidget::CycleTab(int32 Direction)
-{
-	if (Tabs.Num() > 1)
-	{
-		SelectTab((ActiveTab + Direction + Tabs.Num()) % Tabs.Num());
-	}
-}
-
 void UBeyondSkillTreeWidget::HandleResetKey()
 {
 	UBeyondSkillTreeComponent* Tree = GetActiveTree();
@@ -428,7 +335,7 @@ void UBeyondSkillTreeWidget::HandleResetKey()
 		ShowMessage(LOCTEXT("NothingToReset", "Nothing to reset"), true);
 		return;
 	}
-	if (ResetArmedAge >= 0.0f && ResetArmedAge < 2.5f)
+	if (ResetArmedAge >= 0.0f && ResetArmedAge < BeyondSkillTreeLocal::ResetWindow)
 	{
 		const int32 Refunded = Tree->ResetTree();
 		ResetArmedAge = -1.0f;
@@ -439,37 +346,18 @@ void UBeyondSkillTreeWidget::HandleResetKey()
 	ShowMessage(FText::Format(LOCTEXT("ConfirmReset", "Press R again to reset this tree ({0} {1} back)"), FText::AsNumber(Spent), Tree->GetCurrencyName()), true);
 }
 
-void UBeyondSkillTreeWidget::Close()
+void UBeyondSkillTreeWidget::CloseMenu()
 {
 	CancelHold();
-	if (ABeyondPlayerController* PC = Cast<ABeyondPlayerController>(GetOwningPlayer()))
-	{
-		PC->CloseSkillTree();
-	}
-	else
-	{
-		RemoveFromParent();
-	}
+	Super::CloseMenu();
 }
 
-void UBeyondSkillTreeWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
+void UBeyondSkillTreeWidget::AdvancePage(float DeltaSeconds)
 {
-	Super::NativeTick(MyGeometry, InDeltaTime);
-	LastLocalSize = FVector2f(MyGeometry.GetLocalSize());
-	AdvanceAnimation(InDeltaTime);
-}
-
-void UBeyondSkillTreeWidget::AdvanceAnimation(float DeltaSeconds)
-{
-	AnimTime += DeltaSeconds;
-	if (MessageAge >= 0.0f)
-	{
-		MessageAge += DeltaSeconds;
-	}
 	if (ResetArmedAge >= 0.0f)
 	{
 		ResetArmedAge += DeltaSeconds;
-		if (ResetArmedAge > 2.5f)
+		if (ResetArmedAge > BeyondSkillTreeLocal::ResetWindow)
 		{
 			ResetArmedAge = -1.0f;
 		}
@@ -501,7 +389,7 @@ void UBeyondSkillTreeWidget::AdvanceAnimation(float DeltaSeconds)
 	{
 		FlashNode = Unlocking;
 		FlashAge = 0.0f;
-		PlayUISound(UnlockSound);
+		PlayUISound(UnlockSound, 1.0f);
 		const int32 Rank = Tree->GetRank(Unlocking);
 		ShowMessage(Node->MaxRank > 1
 			? FText::Format(LOCTEXT("UnlockedRank", "{0}: rank {1} of {2}"), Node->DisplayName, FText::AsNumber(Rank), FText::AsNumber(Node->MaxRank))
@@ -515,389 +403,473 @@ void UBeyondSkillTreeWidget::AdvanceAnimation(float DeltaSeconds)
 			Tree->CanUnlock(Unlocking, Reason);
 		}
 		ShowMessage(Reason, true);
-		PlayUISound(DeniedSound);
+		PlayDeniedSound();
 	}
 }
 
-FReply UBeyondSkillTreeWidget::NativeOnMouseMove(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
-{
-	LastLocalSize = FVector2f(InGeometry.GetLocalSize());
-	const FVector2f Local(InGeometry.AbsoluteToLocal(InMouseEvent.GetScreenSpacePosition()));
-	HoveredNode = HitTestNode(Local, LastLocalSize);
-	if (!HoldNode.IsNone() && HoveredNode != HoldNode)
-	{
-		CancelHold();
-	}
-	return FReply::Handled();
-}
+//~ Input
 
-FReply UBeyondSkillTreeWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+bool UBeyondSkillTreeWidget::HandlePageKey(const FKey& Key)
 {
-	LastLocalSize = FVector2f(InGeometry.GetLocalSize());
-	const FVector2f Local(InGeometry.AbsoluteToLocal(InMouseEvent.GetScreenSpacePosition()));
-
-	if (InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton)
-	{
-		const int32 Tab = HitTestTab(Local, LastLocalSize);
-		if (Tab != INDEX_NONE)
-		{
-			SelectTab(Tab);
-			return FReply::Handled();
-		}
-		const FName Node = HitTestNode(Local, LastLocalSize);
-		if (!Node.IsNone())
-		{
-			BeginHold(Node);
-		}
-		return FReply::Handled();
-	}
-	if (InMouseEvent.GetEffectingButton() == EKeys::RightMouseButton)
-	{
-		const FName Node = HitTestNode(Local, LastLocalSize);
-		if (!Node.IsNone())
-		{
-			EquipDuoPowerFrom(Node);
-		}
-		return FReply::Handled();
-	}
-	return Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
-}
-
-FReply UBeyondSkillTreeWidget::NativeOnMouseButtonUp(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
-{
-	if (InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton)
-	{
-		CancelHold();
-		return FReply::Handled();
-	}
-	return Super::NativeOnMouseButtonUp(InGeometry, InMouseEvent);
-}
-
-FReply UBeyondSkillTreeWidget::NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
-{
-	const FKey Key = InKeyEvent.GetKey();
-	if (Key == EKeys::Escape || Key == EKeys::K || Key == EKeys::Gamepad_Special_Right)
-	{
-		Close();
-		return FReply::Handled();
-	}
-	if (Key == EKeys::I)
-	{
-		// Straight over to the equipment & inventory screen
-		CancelHold();
-		if (ABeyondPlayerController* PC = Cast<ABeyondPlayerController>(GetOwningPlayer()))
-		{
-			PC->OpenInventory();
-		}
-		return FReply::Handled();
-	}
-	if (Key == EKeys::M)
-	{
-		// ...or the world map
-		CancelHold();
-		if (ABeyondPlayerController* PC = Cast<ABeyondPlayerController>(GetOwningPlayer()))
-		{
-			PC->OpenWorldMap();
-		}
-		return FReply::Handled();
-	}
-	if (Key == EKeys::Q || Key == EKeys::Left || Key == EKeys::Gamepad_LeftShoulder)
-	{
-		CycleTab(-1);
-		return FReply::Handled();
-	}
-	if (Key == EKeys::E || Key == EKeys::Right || Key == EKeys::Gamepad_RightShoulder)
-	{
-		CycleTab(1);
-		return FReply::Handled();
-	}
 	if (Key == EKeys::R)
 	{
 		HandleResetKey();
-		return FReply::Handled();
+		return true;
 	}
-	return Super::NativeOnKeyDown(InGeometry, InKeyEvent);
+	if (Key == EKeys::F || Key == EKeys::Gamepad_FaceButton_Bottom)
+	{
+		BeginHold(GetDetailNode());
+		return true;
+	}
+	if (Key == EKeys::G)
+	{
+		EquipDuoPowerFrom(GetDetailNode());
+		return true;
+	}
+	return false;
 }
 
-int32 UBeyondSkillTreeWidget::NativePaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect,
-	FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const
+bool UBeyondSkillTreeWidget::HandlePageKeyUp(const FKey& Key)
 {
-	const int32 BaseLayer = Super::NativePaint(Args, AllottedGeometry, MyCullingRect, OutDrawElements, LayerId, InWidgetStyle, bParentEnabled);
-	const int32 BackLayer = BaseLayer + 1;
-	const int32 LineLayer = BaseLayer + 2;
-	const int32 NodeLayer = BaseLayer + 3;
-	const int32 IconLayer = BaseLayer + 5;
-	const int32 TextLayer = BaseLayer + 7;
-	const int32 TooltipLayer = BaseLayer + 10;
-
-	const FVector2f LocalSize(AllottedGeometry.GetLocalSize());
-	const FSlateBrush* WhiteBrush = FCoreStyle::Get().GetBrush(TEXT("GenericWhiteBox"));
-	const FLinearColor Accent = GetAccent();
-
-	auto DrawBrush = [&](const FSlateBrush* ShapeBrush, const FVector2f& ShapeTopLeft, const FVector2f& ShapeSize, const FLinearColor& ShapeTint, int32 ShapeLayer)
+	if (Key == EKeys::F || Key == EKeys::Gamepad_FaceButton_Bottom)
 	{
-		if (ShapeBrush)
+		CancelHold();
+		return true;
+	}
+	return false;
+}
+
+bool UBeyondSkillTreeWidget::HandlePageClick(const FVector2f& Design, const FKey& Button)
+{
+	const FName Node = HitTestNode(Design);
+	if (Button == EKeys::LeftMouseButton)
+	{
+		if (!Node.IsNone())
 		{
-			FSlateDrawElement::MakeBox(OutDrawElements, ShapeLayer, AllottedGeometry.ToPaintGeometry(ShapeSize, FSlateLayoutTransform(ShapeTopLeft)),
-				ShapeBrush, ESlateDrawEffect::None, ShapeTint);
+			SelectedNode = Node;
+			BeginHold(Node);
 		}
-	};
-	auto DrawCentred = [&](const FSlateBrush* ShapeBrush, const FVector2f& Centre, float Diameter, const FLinearColor& ShapeTint, int32 ShapeLayer)
-	{
-		DrawBrush(ShapeBrush, Centre - FVector2f(Diameter, Diameter) * 0.5f, FVector2f(Diameter, Diameter), ShapeTint, ShapeLayer);
-	};
-	auto DrawLabel = [&](const FString& Label, const FSlateFontInfo& LabelFont, const FVector2f& LabelPosition, const FLinearColor& LabelTint, float Align, int32 LabelLayer)
-	{
-		const FVector2f LabelSize = MeasureTreeText(Label, LabelFont);
-		const FVector2f LabelTopLeft(LabelPosition.X - LabelSize.X * Align, LabelPosition.Y);
-		FSlateDrawElement::MakeText(OutDrawElements, LabelLayer, AllottedGeometry.ToPaintGeometry(LabelSize, FSlateLayoutTransform(LabelTopLeft + FVector2f(1.5f, 1.5f))),
-			Label, LabelFont, ESlateDrawEffect::None, TreeWithAlpha(FLinearColor::Black, 0.7f * LabelTint.A));
-		FSlateDrawElement::MakeText(OutDrawElements, LabelLayer + 1, AllottedGeometry.ToPaintGeometry(LabelSize, FSlateLayoutTransform(LabelTopLeft)),
-			Label, LabelFont, ESlateDrawEffect::None, LabelTint);
-		return LabelSize;
-	};
-	auto DrawRing = [&](const FVector2f& Centre, float Radius, float Fraction, const FLinearColor& RingTint, float Thickness, int32 RingLayer)
-	{
-		const int32 Segments = FMath::Max(2, FMath::CeilToInt(SkillRingSegments * FMath::Clamp(Fraction, 0.0f, 1.0f)));
-		TArray<FVector2f> Points;
-		Points.Reserve(Segments + 1);
-		for (int32 Index = 0; Index <= Segments; ++Index)
-		{
-			// Clockwise from the top
-			const float Angle = -HALF_PI + 2.0f * PI * FMath::Clamp(Fraction, 0.0f, 1.0f) * Index / Segments;
-			Points.Add(Centre + FVector2f(FMath::Cos(Angle), FMath::Sin(Angle)) * Radius);
-		}
-		FSlateDrawElement::MakeLines(OutDrawElements, RingLayer, AllottedGeometry.ToPaintGeometry(), MoveTemp(Points), ESlateDrawEffect::None, RingTint, true, Thickness);
-	};
-
-	const FSlateFontInfo TitleFont = FCoreStyle::GetDefaultFontStyle("Bold", 26);
-	const FSlateFontInfo HeaderFont = FCoreStyle::GetDefaultFontStyle("Bold", 15);
-	const FSlateFontInfo BodyFont = FCoreStyle::GetDefaultFontStyle("Regular", 11);
-	const FSlateFontInfo SmallFont = FCoreStyle::GetDefaultFontStyle("Bold", 9);
-
-	//~ Backdrop: the pack's background over a dark veil
-	DrawBrush(WhiteBrush, FVector2f::ZeroVector, LocalSize, FLinearColor(0.0f, 0.0f, 0.02f, 0.86f), BackLayer);
-	if (const FSlateBrush* BackgroundBrush = GetTextureBrush(Background))
-	{
-		DrawBrush(BackgroundBrush, FVector2f::ZeroVector, LocalSize, FLinearColor(0.55f, 0.6f, 0.8f, 0.35f), BackLayer);
+		return true;
 	}
-
-	//~ Tabs
-	for (int32 Index = 0; Index < Tabs.Num(); ++Index)
+	if (Button == EKeys::RightMouseButton && !Node.IsNone())
 	{
-		const FVector2f Centre = GetTabCenter(Index, LocalSize);
-		const bool bActive = Index == ActiveTab;
-		const FLinearColor TabColor = bActive ? Accent : FLinearColor(0.12f, 0.13f, 0.18f, 0.95f);
-		DrawBrush(&PillBrush, Centre - FVector2f(SkillTabWidth, SkillTabHeight) * 0.5f - FVector2f(2.0f, 2.0f), FVector2f(SkillTabWidth + 4.0f, SkillTabHeight + 4.0f),
-			TreeWithAlpha(GoldColor, bActive ? 0.9f : 0.3f), BackLayer);
-		DrawBrush(&PillBrush, Centre - FVector2f(SkillTabWidth, SkillTabHeight) * 0.5f, FVector2f(SkillTabWidth, SkillTabHeight), TabColor, LineLayer);
-		const FString TabTitle = Tabs[Index].Title.ToString().ToUpper();
-		DrawLabel(TabTitle, HeaderFont, Centre - FVector2f(0.0f, MeasureTreeText(TabTitle, HeaderFont).Y * 0.5f), TextColor, 0.5f, TextLayer);
+		EquipDuoPowerFrom(Node);
+		return true;
 	}
-	if (Tabs.Num() > 1)
-	{
-		DrawLabel(TEXT("Q"), SmallFont, GetTabCenter(0, LocalSize) - FVector2f(SkillTabWidth * 0.5f + 22.0f, 7.0f), TreeWithAlpha(TextColor, 0.6f), 0.5f, TextLayer);
-		DrawLabel(TEXT("E"), SmallFont, GetTabCenter(Tabs.Num() - 1, LocalSize) + FVector2f(SkillTabWidth * 0.5f + 22.0f, -7.0f), TreeWithAlpha(TextColor, 0.6f), 0.5f, TextLayer);
-	}
+	return false;
+}
 
+bool UBeyondSkillTreeWidget::HandlePageMouseUp(const FVector2f& Design, const FKey& Button)
+{
+	if (Button == EKeys::LeftMouseButton)
+	{
+		CancelHold();
+		return true;
+	}
+	return false;
+}
+
+void UBeyondSkillTreeWidget::HandlePageHover(const FVector2f& Design)
+{
+	HoveredNode = HitTestNode(Design);
+	if (!HoldNode.IsNone() && HoveredNode != HoldNode && !HoveredNode.IsNone())
+	{
+		CancelHold();
+	}
+}
+
+void UBeyondSkillTreeWidget::GetPageKeyHints(TArray<FBeyondKeyHint>& OutHints) const
+{
+	OutHints.Add({ TEXT("LMB"), LOCTEXT("SelectNode", "Select Node"), EKeys::LeftMouseButton });
+	OutHints.Add({ TEXT("F"), LOCTEXT("UpgradeHold", "Upgrade (Hold)"), EKeys::F });
+	OutHints.Add({ TEXT("R"), LOCTEXT("ResetRefund", "Reset (Refund)"), EKeys::R });
+	if (Cast<UBeyondDuoSkillTreeComponent>(GetActiveTree()))
+	{
+		OutHints.Add({ TEXT("G"), LOCTEXT("PutOnG", "Put on Duo Slot"), EKeys::G });
+	}
+	OutHints.Add({ TEXT("Q  E"), LOCTEXT("SwitchCharacter", "Switch Character"), EKeys::E });
+}
+
+bool UBeyondSkillTreeWidget::GetCounter(FBeyondMenuCounter& OutCounter) const
+{
+	const UBeyondSkillTreeComponent* Tree = GetActiveTree();
+	if (!Tree)
+	{
+		return false;
+	}
+	UBeyondUISubsystem* UI = UBeyondUISubsystem::Get();
+	const UBeyondUIArtSet* Art = UI ? UI->GetArtSet() : nullptr;
+	const bool bDuo = Cast<UBeyondDuoSkillTreeComponent>(Tree) != nullptr;
+	OutCounter.Label = Tree->GetCurrencyName();
+	FBeyondMenuCounter::FValue& Value = OutCounter.Values.AddDefaulted_GetRef();
+	Value.Text = FString::FromInt(Tree->GetAvailablePoints());
+	Value.Icon = Art ? LoadTexture(bDuo ? Art->BondPointIcon : Art->SkillPointIcon) : nullptr;
+	Value.Glyph = bDuo ? EBeyondGlyph::BondPoint : EBeyondGlyph::SkillPoint;
+	Value.Tint = BeyondUI::Palette().GoldBright;
+	return true;
+}
+
+//~ Painting
+
+void UBeyondSkillTreeWidget::PaintPage(BeyondUI::FPainter& Paint) const
+{
+	using namespace BeyondUI;
+	using namespace BeyondSkillTreeLocal;
+	const FPalette& P = Palette();
 	const UBeyondSkillTreeComponent* Tree = GetActiveTree();
 	if (!Tree || !Tree->Tree)
 	{
-		DrawLabel(LOCTEXT("NoTree", "No skill tree assigned: run Scripts/Migration/migrate_pass8.py").ToString(), HeaderFont,
-			FVector2f(LocalSize.X * 0.5f, LocalSize.Y * 0.45f), WarningColor, 0.5f, TextLayer);
-		return TooltipLayer + 2;
+		Paint.Text(LOCTEXT("NoTree", "No skill tree assigned: run Scripts/Migration/migrate_pass8.py").ToString(), Font(EBeyondFont::Body, 22.0f),
+			FVector2f(1100.0f, 500.0f), P.Minus, 0.5f, 30);
+		return;
 	}
 	const UBeyondSkillTreeAsset& Asset = *Tree->Tree;
+	const UBeyondCharacterProfile* Profile = GetProfileFor(ActiveTab);
+	const FLinearColor Accent = GetAccent();
 
-	//~ Title, points and level
-	DrawLabel(Asset.TreeName.ToString(), TitleFont, FVector2f(LocalSize.X * 0.5f, 100.0f), GoldColor, 0.5f, TextLayer);
-	DrawLabel(Asset.Subtitle.ToString(), BodyFont, FVector2f(LocalSize.X * 0.5f, 140.0f), TreeWithAlpha(TextColor, 0.75f), 0.5f, TextLayer);
+	//~ The demigod's art on the left, fading into the page
+	const FVector2f ArtTopLeft(300.0f, 118.0f);
+	const FVector2f ArtSize(480.0f, 872.0f);
+	if (UTexture2D* FullArt = Profile ? LoadTexture(Profile->FullArt) : nullptr)
+	{
+		Paint.ImageCover(FullArt, ArtTopLeft, ArtSize, FLinearColor(0.75f, 0.8f, 0.95f, 0.95f), 20, 0.15f);
+		Paint.GradientH(ArtTopLeft + FVector2f(ArtSize.X * 0.55f, 0.0f), FVector2f(ArtSize.X * 0.45f, ArtSize.Y), WithAlpha(P.Backdrop, 0.0f), WithAlpha(P.Backdrop, 0.95f), 21);
+	}
+	else if (Profile)
+	{
+		Paint.Glyph(ElementGlyph(Profile->PrimaryElement), FVector2f(545.0f, 560.0f), 300.0f, WithAlpha(Accent, 0.1f), 20, 3.0f);
+	}
 
-	const FString PointsText = FString::Printf(TEXT("%s  %d"), *Tree->GetCurrencyName().ToString().ToUpper(), Tree->GetAvailablePoints());
-	const FVector2f PointsSize = MeasureTreeText(PointsText, HeaderFont);
-	const FVector2f PointsTopLeft(LocalSize.X - 60.0f - PointsSize.X - 24.0f, 44.0f);
-	DrawBrush(&PillBrush, PointsTopLeft, PointsSize + FVector2f(24.0f, 12.0f), TreeWithAlpha(GoldColor, Tree->GetAvailablePoints() > 0 ? 0.95f : 0.35f), BackLayer);
-	DrawLabel(PointsText, HeaderFont, PointsTopLeft + FVector2f(12.0f, 6.0f), FLinearColor(0.05f, 0.04f, 0.02f, 1.0f), 0.0f, TextLayer);
-	const FString LevelText = Cast<UBeyondDuoSkillTreeComponent>(Tree)
-		? FString::Printf(TEXT("Party level %d"), Tree->GetTreeLevel())
-		: FString::Printf(TEXT("Level %d"), Tree->GetTreeLevel());
-	DrawLabel(LevelText, BodyFont, FVector2f(LocalSize.X - 60.0f, 90.0f), TreeWithAlpha(TextColor, 0.8f), 1.0f, TextLayer);
+	//~ Title: emblem, tree name, motto
+	const FVector2f EmblemCentre(736.0f, 162.0f);
+	if (UTexture2D* Emblem = Profile ? LoadTexture(Profile->Emblem) : nullptr)
+	{
+		Paint.ImageCentred(Emblem, EmblemCentre, FVector2f(84.0f, 84.0f), FLinearColor::White, 22);
+	}
+	else
+	{
+		Paint.Ring(EmblemCentre, 30.0f, WithAlpha(P.Gold, 0.7f), 1.5f, 22);
+		Paint.Sparkle(EmblemCentre, 34.0f, P.GoldBright, 22);
+	}
+	Paint.Text(Asset.TreeName.ToString(), Font(EBeyondFont::Display, 38.0f), FVector2f(790.0f, 122.0f), P.GoldBright, 0.0f, 24);
+	const FText Motto = Profile && !Profile->Motto.IsEmpty() ? Profile->Motto : Asset.Subtitle;
+	Paint.Text(Motto.ToString(), Font(EBeyondFont::Body, 21.0f), FVector2f(792.0f, 174.0f), P.TextDim, 0.0f, 24);
 
-	//~ Connections (under the nodes)
+	//~ The rune circle under the graph
+	const float GraphMidY = (GraphTop + GraphBottom) * 0.5f + 10.0f;
+	Paint.RuneCircle(FVector2f(GraphCentreX, GraphMidY), 345.0f, WithAlpha(P.Gold, 0.55f), 20);
+
+	//~ Connections, under the nodes
 	for (const FBeyondSkillNode& Node : Asset.Nodes)
 	{
-		const FVector2f To = GetNodeCenter(Node, LocalSize);
+		const FVector2f To = GetNodeDesignCenter(Node.Id);
 		for (const FName& Required : Node.Requires)
 		{
-			const FBeyondSkillNode* From = Asset.FindNode(Required);
-			if (!From)
+			if (!Asset.FindNode(Required))
 			{
 				continue;
 			}
-			const bool bLit = Tree->GetRank(Required) > 0;
-			const FLinearColor LineColor = bLit ? FMath::Lerp(Accent, GoldColor, Tree->GetRank(Node.Id) > 0 ? 0.6f : 0.0f) : TreeWithAlpha(LockedColor, 0.6f);
-			TArray<FVector2f> Line = { GetNodeCenter(*From, LocalSize), To };
-			FSlateDrawElement::MakeLines(OutDrawElements, LineLayer, AllottedGeometry.ToPaintGeometry(), MoveTemp(Line), ESlateDrawEffect::None,
-				LineColor, true, bLit ? 4.0f : 3.0f);
+			const FVector2f From = GetNodeDesignCenter(Required);
+			const FVector2f Direction = (To - From).GetSafeNormal();
+			const FVector2f A = From + Direction * NodeRadius;
+			const FVector2f B = To - Direction * NodeRadius;
+			const bool bFromTaken = Tree->GetRank(Required) > 0;
+			const bool bToTaken = Tree->GetRank(Node.Id) > 0;
+			if (bFromTaken && bToTaken)
+			{
+				Paint.Line(A, B, WithAlpha(Accent, 0.3f), 10.0f, 24);
+				Paint.Line(A, B, FMath::Lerp(Accent, FLinearColor::White, 0.35f), 2.5f, 25);
+			}
+			else if (bFromTaken)
+			{
+				Paint.Line(A, B, WithAlpha(P.Gold, 0.6f), 2.0f, 25);
+			}
+			else
+			{
+				Paint.Line(A, B, WithAlpha(P.Silver, 0.2f), 1.5f, 25);
+			}
 		}
 	}
 
 	//~ Nodes
-	const FSlateBrush* FrameBrush = GetTextureBrush(SlotFrame);
-	const FSlateBrush* GlowBrush = GetTextureBrush(Glow);
-	const FSlateBrush* LockBrush = GetTextureBrush(Lock);
 	for (const FBeyondSkillNode& Node : Asset.Nodes)
 	{
-		const FVector2f Centre = GetNodeCenter(Node, LocalSize);
-		const EBeyondSkillNodeState State = Tree->GetNodeState(Node.Id);
-		const FLinearColor NodeColor = GetNodeColor(*Tree, Node);
-		const int32 Rank = Tree->GetRank(Node.Id);
-		FText Unused;
-		const bool bCanBuy = Tree->CanUnlock(Node.Id, Unused);
-		const float Diameter = NodeRadius * 2.0f;
-
-		// Glow: steady when taken, pulsing when it can be bought now
-		if (GlowBrush && (Rank > 0 || bCanBuy))
-		{
-			const float Pulse = bCanBuy ? 0.5f + 0.5f * FMath::Sin(AnimTime * 4.0f) : 1.0f;
-			DrawCentred(GlowBrush, Centre, Diameter * 2.4f, TreeWithAlpha(NodeColor, 0.25f + 0.25f * Pulse), LineLayer);
-		}
-
-		// Frame (the pack's slot), dark core, icon
-		if (FrameBrush)
-		{
-			DrawCentred(FrameBrush, Centre, Diameter + 8.0f, NodeColor, NodeLayer);
-		}
-		else
-		{
-			DrawCentred(&PillBrush, Centre, Diameter + 6.0f, NodeColor, NodeLayer);
-		}
-		DrawCentred(&PillBrush, Centre, Diameter - 6.0f, FLinearColor(PanelColor.R, PanelColor.G, PanelColor.B, 1.0f), NodeLayer + 1);
-
-		const FLinearColor IconTint = State == EBeyondSkillNodeState::Locked ? FLinearColor(0.45f, 0.45f, 0.5f, 0.8f) : FLinearColor::White;
-		if (const FSlateBrush* IconBrush = GetTextureBrush(GetNodeIcon(Node)))
-		{
-			DrawCentred(IconBrush, Centre, Diameter * 0.62f, IconTint, IconLayer);
-		}
-		else
-		{
-			const FString Glyph = Node.DisplayName.ToString().Left(1).ToUpper();
-			DrawLabel(Glyph, TitleFont, Centre - FVector2f(0.0f, MeasureTreeText(Glyph, TitleFont).Y * 0.5f), IconTint, 0.5f, IconLayer);
-		}
-		if (State == EBeyondSkillNodeState::Locked && LockBrush)
-		{
-			DrawCentred(LockBrush, Centre + FVector2f(NodeRadius * 0.62f, NodeRadius * 0.62f), NodeRadius * 0.7f, FLinearColor(0.85f, 0.85f, 0.9f, 1.0f), IconLayer + 1);
-		}
-
-		// Hover ring, hold progress, unlock flash
-		if (Node.Id == HoveredNode)
-		{
-			DrawRing(Centre, NodeRadius + 7.0f, 1.0f, TreeWithAlpha(FLinearColor::White, 0.75f), 2.0f, IconLayer);
-		}
-		if (Node.Id == HoldNode && HoldDuration > 0.0f)
-		{
-			DrawRing(Centre, NodeRadius + 7.0f, HoldTime / HoldDuration, GoldColor, 5.0f, IconLayer + 1);
-		}
-		if (Node.Id == FlashNode && FlashAge >= 0.0f)
-		{
-			const float Alpha = FlashAge / 0.6f;
-			DrawRing(Centre, NodeRadius + 6.0f + 40.0f * Alpha, 1.0f, TreeWithAlpha(GoldColor, 1.0f - Alpha), 4.0f * (1.0f - Alpha) + 1.0f, IconLayer + 1);
-		}
-
-		// The duo power on G
-		if (IsDuoLoadout(Node))
-		{
-			const FVector2f BadgeCentre = Centre + FVector2f(NodeRadius * 0.75f, -NodeRadius * 0.75f);
-			DrawCentred(&PillBrush, BadgeCentre, 24.0f, GoldColor, IconLayer + 2);
-			DrawLabel(TEXT("G"), SmallFont, BadgeCentre - FVector2f(0.0f, 7.0f), FLinearColor(0.05f, 0.04f, 0.02f, 1.0f), 0.5f, TextLayer + 2);
-		}
-
-		// Rank pill and name under the node
-		const FString RankText = FString::Printf(TEXT("%d/%d"), Rank, Node.MaxRank);
-		const FVector2f RankSize = MeasureTreeText(RankText, SmallFont);
-		const FVector2f RankTopLeft(Centre.X - RankSize.X * 0.5f - 7.0f, Centre.Y + NodeRadius - 6.0f);
-		DrawBrush(&PillBrush, RankTopLeft, RankSize + FVector2f(14.0f, 4.0f), TreeWithAlpha(Rank > 0 ? NodeColor : FLinearColor(0.1f, 0.1f, 0.14f, 1.0f), 0.95f), IconLayer + 1);
-		DrawLabel(RankText, SmallFont, FVector2f(Centre.X, RankTopLeft.Y + 2.0f), Rank > 0 ? FLinearColor(0.05f, 0.04f, 0.02f, 1.0f) : TextColor, 0.5f, TextLayer);
-		DrawLabel(Node.DisplayName.ToString(), SmallFont, FVector2f(Centre.X, Centre.Y + NodeRadius + 14.0f),
-			TreeWithAlpha(TextColor, State == EBeyondSkillNodeState::Locked ? 0.55f : 0.95f), 0.5f, TextLayer);
+		PaintNode(Paint, *Tree, Node);
 	}
 
-	//~ Tooltip for the hovered node
-	if (const FBeyondSkillNode* Hovered = Asset.FindNode(HoveredNode))
+	PaintSidePanels(Paint, *Tree);
+}
+
+void UBeyondSkillTreeWidget::PaintNode(const BeyondUI::FPainter& Paint, const UBeyondSkillTreeComponent& Tree, const FBeyondSkillNode& Node) const
+{
+	using namespace BeyondUI;
+	const FPalette& P = Palette();
+	const FLinearColor Accent = GetAccent();
+	const FVector2f C = GetNodeDesignCenter(Node.Id);
+	const float R = NodeRadius;
+	const EBeyondSkillNodeState State = Tree.GetNodeState(Node.Id);
+	const int32 Rank = Tree.GetRank(Node.Id);
+	FText Unused;
+	const bool bCanBuy = Tree.CanUnlock(Node.Id, Unused);
+	const bool bSelected = Node.Id == SelectedNode || (SelectedNode.IsNone() && Node.Id == GetDetailNode() && HoveredNode.IsNone());
+	const float Pulse = 0.5f + 0.5f * FMath::Sin(AnimTime * 4.0f);
+
+	if (State == EBeyondSkillNodeState::Locked)
 	{
-		const int32 Rank = Tree->GetRank(Hovered->Id);
-		TArray<TPair<FString, FLinearColor>> Lines;
-		Lines.Emplace(FString::Printf(TEXT("Rank %d / %d"), Rank, Hovered->MaxRank), TreeWithAlpha(TextColor, 0.7f));
-		for (const FText& Effect : UBeyondSkillTreeAsset::DescribeEffects(*Hovered, FMath::Max(Rank, 1)))
+		Paint.Diamond(C, R * 0.95f, R * 0.95f, FromHex(0x0C1220, 0.96f), 30);
+		Paint.DiamondOutline(C, R * 0.95f, R * 0.95f, WithAlpha(P.Silver, 0.5f), 1.5f, 31);
+		Paint.DiamondOutline(C, R * 0.78f, R * 0.78f, WithAlpha(P.Silver, 0.16f), 1.0f, 31);
+		Paint.Glyph(EBeyondGlyph::Lock, C, R * 0.8f, WithAlpha(P.Silver, 0.85f), 32, 1.6f);
+	}
+	else
+	{
+		const bool bTaken = Rank > 0;
+		if (bTaken)
 		{
-			Lines.Emplace(Effect.ToString(), FMath::Lerp(Accent, FLinearColor::White, 0.45f));
-		}
-		if (Rank > 0 && Rank < Hovered->MaxRank)
-		{
-			Lines.Emplace(TEXT("Next rank:"), TreeWithAlpha(TextColor, 0.6f));
-			for (const FText& Effect : UBeyondSkillTreeAsset::DescribeEffects(*Hovered, Rank + 1))
+			Paint.Glow(C, R * 2.5f, WithAlpha(Accent, 0.42f), 28);
+			Paint.Disc(C, R, FMath::Lerp(P.BlueDeep, Accent, 0.55f), 30);
+			Paint.Disc(C, R * 0.82f, FMath::Lerp(P.Backdrop, Accent, 0.35f), 30);
+			Paint.Ring(C, R, FMath::Lerp(Accent, FLinearColor::White, 0.45f), 2.5f, 31);
+			if (State == EBeyondSkillNodeState::Maxed)
 			{
-				Lines.Emplace(FString(TEXT("  ")) + Effect.ToString(), TreeWithAlpha(TextColor, 0.85f));
+				Paint.Ring(C, R + 5.0f, WithAlpha(P.GoldBright, 0.75f), 1.5f, 31);
 			}
 		}
-		if (!Hovered->Description.IsEmpty())
+		else
 		{
-			Lines.Emplace(Hovered->Description.ToString(), TreeWithAlpha(TextColor, 0.8f));
+			Paint.Glow(C, R * 2.2f, WithAlpha(P.GoldBright, bCanBuy ? 0.18f + 0.22f * Pulse : 0.1f), 28);
+			Paint.Disc(C, R, FromHex(0x0D1426, 0.98f), 30);
+			Paint.Ring(C, R, WithAlpha(P.GoldBright, bCanBuy ? 0.95f : 0.5f), 2.5f, 31);
+			Paint.Ring(C, R + 5.0f, WithAlpha(P.Gold, 0.35f), 1.0f, 31);
 		}
-		FText Reason;
-		if (Tree->CanUnlock(Hovered->Id, Reason))
+		if (UTexture2D* Icon = GetNodeIcon(Node))
 		{
-			Lines.Emplace(FString::Printf(TEXT("Hold the left mouse button: %d %s"), Hovered->Cost, *Tree->GetCurrencyName().ToString()), GoldColor);
+			Paint.ImageCentred(Icon, C, FVector2f(R, R) * 1.3f, WithAlpha(FLinearColor::White, bTaken ? 1.0f : 0.8f), 32);
 		}
 		else
 		{
-			Lines.Emplace(Reason.ToString(), Rank >= Hovered->MaxRank ? GoldColor : WarningColor);
-		}
-		if (Cast<UBeyondDuoSkillTreeComponent>(Tree) && Rank > 0)
-		{
-			for (const FBeyondSkillEffect& Effect : Hovered->Effects)
-			{
-				if (Effect.Type == EBeyondSkillEffectType::DuoPower)
-				{
-					Lines.Emplace(IsDuoLoadout(*Hovered) ? FString(TEXT("On G")) : FString(TEXT("Right-click: put it on G")), GoldColor);
-					break;
-				}
-			}
-		}
-
-		const float LineHeight = 18.0f;
-		const float Height = 46.0f + Lines.Num() * LineHeight + 12.0f;
-		const FVector2f Anchor = GetNodeCenter(*Hovered, LocalSize);
-		float Left = Anchor.X + NodeRadius + 24.0f;
-		if (Left + SkillTooltipWidth > LocalSize.X - 20.0f)
-		{
-			Left = Anchor.X - NodeRadius - 24.0f - SkillTooltipWidth;
-		}
-		const float Top = FMath::Clamp(Anchor.Y - 40.0f, 20.0f, LocalSize.Y - Height - 20.0f);
-		DrawBrush(&PanelBrush, FVector2f(Left - 2.0f, Top - 2.0f), FVector2f(SkillTooltipWidth + 4.0f, Height + 4.0f), TreeWithAlpha(Accent, 0.9f), TooltipLayer);
-		DrawBrush(&PanelBrush, FVector2f(Left, Top), FVector2f(SkillTooltipWidth, Height), PanelColor, TooltipLayer + 1);
-		DrawLabel(Hovered->DisplayName.ToString(), HeaderFont, FVector2f(Left + 16.0f, Top + 12.0f), GoldColor, 0.0f, TooltipLayer + 2);
-		float LineTop = Top + 44.0f;
-		for (const TPair<FString, FLinearColor>& Line : Lines)
-		{
-			DrawLabel(Line.Key, BodyFont, FVector2f(Left + 16.0f, LineTop), Line.Value, 0.0f, TooltipLayer + 2);
-			LineTop += LineHeight;
+			const FString Letter = Node.DisplayName.ToString().Left(1).ToUpper();
+			const FSlateFontInfo LetterFont = Font(EBeyondFont::Display, R * 0.8f);
+			Paint.Text(Letter, LetterFont, C - FVector2f(0.0f, MeasureText(Letter, LetterFont).Y * 0.5f), P.Text, 0.5f, 32);
 		}
 	}
 
-	//~ Feedback line and controls
-	if (MessageAge >= 0.0f && MessageAge < 3.0f && !Message.IsEmpty())
+	// Selection, hover, hold progress, unlock flash, the duo power on G
+	if (bSelected)
 	{
-		const float Alpha = MessageAge < 2.4f ? 1.0f : 1.0f - (MessageAge - 2.4f) / 0.6f;
-		DrawLabel(Message.ToString(), HeaderFont, FVector2f(LocalSize.X * 0.5f, LocalSize.Y - 92.0f),
-			TreeWithAlpha(bMessageWarning ? WarningColor : GoldColor, Alpha), 0.5f, TooltipLayer);
+		Paint.Ring(C, R + 9.0f, P.GoldBright, 2.0f, 33);
+		Paint.Diamond(C + FVector2f(R * 0.72f, -R * 0.72f), 6.0f, 6.0f, P.GoldBright, 34);
 	}
-	const FString Controls = Cast<UBeyondDuoSkillTreeComponent>(Tree)
-		? FString(TEXT("Hold LMB: unlock    RMB: put a duo power on G    Q / E: switch tree    R: reset    I: equipment    K / Esc: close"))
-		: FString(TEXT("Hold LMB: unlock    Q / E: switch tree    R: reset (refund)    I: equipment    K / Esc: close"));
-	DrawLabel(Controls, BodyFont, FVector2f(LocalSize.X * 0.5f, LocalSize.Y - 46.0f), TreeWithAlpha(TextColor, 0.65f), 0.5f, TextLayer);
+	if (Node.Id == HoveredNode)
+	{
+		Paint.Ring(C, R + 9.0f, WithAlpha(FLinearColor::White, 0.55f), 1.5f, 33);
+	}
+	if (Node.Id == HoldNode && HoldDuration > 0.0f)
+	{
+		Paint.Ring(C, R + 10.0f, P.GoldBright, 5.0f, 34, HoldTime / HoldDuration);
+	}
+	if (Node.Id == FlashNode && FlashAge >= 0.0f)
+	{
+		const float Alpha = FlashAge / 0.6f;
+		Paint.Ring(C, R + 6.0f + 44.0f * Alpha, WithAlpha(P.GoldBright, 1.0f - Alpha), 4.0f * (1.0f - Alpha) + 1.0f, 34);
+	}
+	if (IsDuoLoadout(Node))
+	{
+		Paint.KeyCap(TEXT("G"), C + FVector2f(R * 0.5f, -R * 1.2f), 35, 22.0f);
+	}
 
-	return TooltipLayer + 3;
+	// Rank pill and name below
+	const FString RankText = FString::Printf(TEXT("%d/%d"), Rank, Node.MaxRank);
+	const FSlateFontInfo RankFont = Font(EBeyondFont::Number, 15.0f);
+	const FVector2f RankSize = MeasureText(RankText, RankFont);
+	const FVector2f PillTopLeft(C.X - RankSize.X * 0.5f - 9.0f, C.Y + R - 9.0f);
+	const FVector2f PillSize(RankSize.X + 18.0f, 21.0f);
+	Paint.Rounded(PillTopLeft, PillSize, 4.0f, FromHex(0x070B16, 0.95f), 35);
+	Paint.RectOutline(PillTopLeft, PillSize, WithAlpha(Rank > 0 ? P.GoldBright : P.GoldDim, 0.85f), 1.0f, 35);
+	Paint.Text(RankText, RankFont, FVector2f(C.X, PillTopLeft.Y + (PillSize.Y - RankSize.Y) * 0.5f), State == EBeyondSkillNodeState::Maxed ? P.GoldBright : P.Text,
+		0.5f, 36, false);
+	// Neighbours can sit one column (~138) away: long names shrink to fit between them
+	Paint.TextFit(Node.DisplayName.ToString(), EBeyondFont::Body, 19.0f, FVector2f(C.X, C.Y + R + 14.0f), 132.0f,
+		State == EBeyondSkillNodeState::Locked ? P.TextDim : P.Text, 0.5f, 36);
+}
+
+void UBeyondSkillTreeWidget::PaintSidePanels(const BeyondUI::FPainter& Paint, const UBeyondSkillTreeComponent& Tree) const
+{
+	using namespace BeyondUI;
+	using namespace BeyondSkillTreeLocal;
+	const FPalette& P = Palette();
+
+	//~ Level and combat stats
+	Paint.Panel(StatsTopLeft, StatsSize, 40);
+	const float Inner = StatsSize.X - 52.0f;
+	const FVector2f Left = StatsTopLeft + FVector2f(26.0f, 18.0f);
+	const ABeyondCharacterBase* Character = Tabs.IsValidIndex(ActiveTab) ? Tabs[ActiveTab].Character.Get() : nullptr;
+	if (Character)
+	{
+		const float LevelHeight = BeyondMenuPanels::PaintLevel(Paint, BeyondMenuPanels::GetLevelInfo(Character), Left, Inner, 42);
+		const float StatsTop = Paint.SectionHeader(LOCTEXT("CombatStats", "Combat Stats").ToString(), Left + FVector2f(0.0f, LevelHeight + 6.0f), Inner, 42);
+		BeyondMenuPanels::PaintStats(Paint, BeyondMenuPanels::GetCombatStats(Character), FVector2f(Left.X, StatsTop), Inner, 28.0f, 42, false, 18.0f);
+	}
+	else
+	{
+		// The duo tree: party level, Bond Points and what the tree adds to the Bond meter
+		FBeyondLevelInfo Party;
+		Party.Level = Tree.GetTreeLevel();
+		Party.ExperienceToNext = -1.0f;
+		const float LevelHeight = BeyondMenuPanels::PaintLevel(Paint, Party, Left, Inner, 42, LOCTEXT("PartyLevel", "Party Level"));
+		const float StatsTop = Paint.SectionHeader(LOCTEXT("DuoStats", "Bond").ToString(), Left + FVector2f(0.0f, LevelHeight + 6.0f), Inner, 42);
+		TArray<FBeyondStatRow> Rows;
+		auto AddRow = [&Rows](EBeyondGlyph Glyph, const FText& Name, float Value, bool bPercent)
+		{
+			FBeyondStatRow& Row = Rows.AddDefaulted_GetRef();
+			Row.Glyph = Glyph;
+			Row.Name = Name;
+			Row.Value = Value;
+			Row.bPercent = bPercent;
+		};
+		AddRow(EBeyondGlyph::Bond, LOCTEXT("BondLevelRow", "Bond Level"), Tree.GetBondLevel(), false);
+		AddRow(EBeyondGlyph::BondPoint, LOCTEXT("BondPoints", "Bond Points"), Tree.GetAvailablePoints(), false);
+		AddRow(EBeyondGlyph::Up, LOCTEXT("BondGain", "Bond Gain"), 100.0f * Tree.GetEffectTotal(EBeyondSkillEffectType::BondGain), true);
+		AddRow(EBeyondGlyph::Bond, LOCTEXT("BondEcho", "Bond Echo"), 100.0f * Tree.GetEffectTotal(EBeyondSkillEffectType::BondEcho), true);
+		BeyondMenuPanels::PaintStats(Paint, Rows, FVector2f(Left.X, StatsTop), Inner, 28.0f, 42, false, 18.0f);
+	}
+
+	//~ The selected node's card
+	Paint.Panel(CardTopLeft, CardSize, 40);
+	if (const FBeyondSkillNode* Node = FindActiveNode(GetDetailNode()))
+	{
+		PaintNodeCard(Paint, Tree, *Node, CardTopLeft, CardSize);
+	}
+}
+
+void UBeyondSkillTreeWidget::PaintNodeCard(const BeyondUI::FPainter& Paint, const UBeyondSkillTreeComponent& Tree, const FBeyondSkillNode& Node,
+	const FVector2f& TopLeft, const FVector2f& Size) const
+{
+	using namespace BeyondUI;
+	const FPalette& P = Palette();
+	const FLinearColor Accent = GetAccent();
+	const int32 Rank = Tree.GetRank(Node.Id);
+	const float Left = TopLeft.X + 24.0f;
+	const float Width = Size.X - 48.0f;
+
+	// Banner: icon disc, name, rank, tags
+	const FVector2f IconCentre(Left + 44.0f, TopLeft.Y + 62.0f);
+	Paint.Glow(IconCentre, 80.0f, WithAlpha(Accent, 0.35f), 42);
+	Paint.Disc(IconCentre, 42.0f, FMath::Lerp(P.BlueDeep, Accent, 0.4f), 43);
+	Paint.Ring(IconCentre, 42.0f, FMath::Lerp(Accent, FLinearColor::White, 0.4f), 2.0f, 44);
+	if (UTexture2D* Icon = GetNodeIcon(Node))
+	{
+		Paint.ImageCentred(Icon, IconCentre, FVector2f(56.0f, 56.0f), FLinearColor::White, 45);
+	}
+	const float TitleLeft = Left + 104.0f;
+	Paint.Text(Node.DisplayName.ToString(), Font(EBeyondFont::Display, 25.0f), FVector2f(TitleLeft, TopLeft.Y + 20.0f), P.GoldBright, 0.0f, 45);
+	Paint.Text(FString::Printf(TEXT("Lv. %d / %d"), Rank, Node.MaxRank), Font(EBeyondFont::Number, 18.0f), FVector2f(TitleLeft, TopLeft.Y + 58.0f), P.Text, 0.0f, 45);
+
+	TArray<FText> Tags;
+	Tags.Add(BeyondSkillTreeLocal::IsActiveNode(Node) ? LOCTEXT("ActiveSkill", "Active Skill")
+		: BeyondSkillTreeLocal::IsUpgradeNode(Node) ? LOCTEXT("Upgrade", "Upgrade") : LOCTEXT("Passive", "Passive"));
+	if (const UBeyondCharacterProfile* Profile = GetProfileFor(ActiveTab); Profile && Profile->PrimaryElement != EBeyondElement::None
+		&& (BeyondSkillTreeLocal::IsActiveNode(Node) || BeyondSkillTreeLocal::IsUpgradeNode(Node)))
+	{
+		Tags.Add(ElementName(Profile->PrimaryElement));
+	}
+	float TagX = TitleLeft;
+	const FSlateFontInfo TagFont = Font(EBeyondFont::Body, 16.0f);
+	for (int32 Index = 0; Index < Tags.Num(); ++Index)
+	{
+		const FString Tag = Tags[Index].ToString();
+		const FVector2f TagSize = MeasureText(Tag, TagFont) + FVector2f(20.0f, 4.0f);
+		const FVector2f TagTopLeft(TagX, TopLeft.Y + 88.0f);
+		Paint.Rounded(TagTopLeft, TagSize, 0.0f, Index == 0 ? WithAlpha(Accent, 0.45f) : FromHex(0x141C30, 0.95f), 44);
+		Paint.Text(Tag, TagFont, TagTopLeft + FVector2f(TagSize.X * 0.5f, 2.0f), P.Text, 0.5f, 45, false);
+		TagX += TagSize.X + 8.0f;
+	}
+
+	// Description
+	float Y = TopLeft.Y + 128.0f;
+	if (!Node.Description.IsEmpty())
+	{
+		Y += Paint.Paragraph(Node.Description.ToString(), Font(EBeyondFont::Body, 19.0f), FVector2f(Left, Y), Width, 24.0f, P.Text, 45, 3) + 6.0f;
+	}
+	Paint.Separator(FVector2f(Left, Y + 4.0f), Width, 44, 0.6f);
+	Y += 16.0f;
+
+	// What each rank gives; the current one lit
+	const FSlateFontInfo RankFont = Font(EBeyondFont::Heading, 17.0f);
+	const FSlateFontInfo EffectFont = Font(EBeyondFont::Body, 18.0f);
+	const float ButtonTop = TopLeft.Y + Size.Y - 78.0f;
+	for (int32 Level = 1; Level <= Node.MaxRank && Y < ButtonTop - 30.0f; ++Level)
+	{
+		const bool bCurrent = Level == FMath::Max(Rank, 1);
+		const bool bReached = Level <= Rank;
+		const FVector2f Bullet(Left + 8.0f, Y + 12.0f);
+		if (bCurrent)
+		{
+			Paint.Diamond(Bullet, 7.0f, 7.0f, P.GoldBright, 45);
+			Paint.Diamond(Bullet, 3.0f, 3.0f, P.Backdrop, 46);
+		}
+		else
+		{
+			Paint.DiamondOutline(Bullet, 6.0f, 6.0f, WithAlpha(P.Silver, 0.6f), 1.2f, 45);
+		}
+		Paint.Text(FString::Printf(TEXT("Lv. %d"), Level), RankFont, FVector2f(Left + 26.0f, Y), bCurrent ? P.GoldBright : P.TextDim, 0.0f, 45);
+		TArray<FString> Effects;
+		for (const FText& Effect : UBeyondSkillTreeAsset::DescribeEffects(Node, Level))
+		{
+			Effects.Add(Effect.ToString());
+		}
+		const FLinearColor EffectColor = bReached || bCurrent ? P.Text : WithAlpha(P.TextDim, 0.8f);
+		const float Height = Paint.Paragraph(FString::Join(Effects, TEXT(". ")), EffectFont, FVector2f(Left + 92.0f, Y), Width - 92.0f, 23.0f, EffectColor, 45, 2);
+		Y += FMath::Max(Height, 23.0f) + 10.0f;
+	}
+
+	// Cost and the UPGRADE button
+	FText Reason;
+	const bool bCanBuy = Tree.CanUnlock(Node.Id, Reason);
+	const bool bMaxed = Rank >= Node.MaxRank;
+	if (!bCanBuy && !bMaxed && !Reason.IsEmpty())
+	{
+		Paint.Text(Reason.ToString(), Font(EBeyondFont::BodyItalic, 17.0f), FVector2f(Left, ButtonTop - 26.0f), P.Minus, 0.0f, 45);
+	}
+	// "Cost * 1 Skill Point" (the currency's name loses its s for one point)
+	FString Currency = Tree.GetCurrencyName().ToString();
+	if (Node.Cost == 1 && Currency.EndsWith(TEXT("s")))
+	{
+		Currency.LeftChopInline(1);
+	}
+	const FSlateFontInfo CostFont = Font(EBeyondFont::Body, 17.0f);
+	const FString CostText = FString::Printf(TEXT("%d %s"), Node.Cost, *Currency);
+	const FVector2f CostTopLeft(Left, ButtonTop + 6.0f);
+	const FVector2f CostSize(FMath::Max(190.0f, 86.0f + MeasureText(CostText, CostFont).X), 46.0f);
+	Paint.Box(CostTopLeft, CostSize, FromHex(0x0A0F1C, 0.9f), 44);
+	Paint.RectOutline(CostTopLeft, CostSize, WithAlpha(P.Gold, 0.5f), 1.0f, 45);
+	Paint.Text(LOCTEXT("Cost", "Cost").ToString(), CostFont, CostTopLeft + FVector2f(12.0f, 11.0f), P.TextDim, 0.0f, 45);
+	Paint.Sparkle(CostTopLeft + FVector2f(64.0f, 23.0f), 9.0f, P.GoldBright, 45);
+	Paint.Text(CostText, CostFont, CostTopLeft + FVector2f(78.0f, 11.0f), P.Text, 0.0f, 45);
+
+	const FVector2f ButtonTopLeft(Left + CostSize.X + 20.0f, ButtonTop);
+	const FVector2f ButtonSize(Width - CostSize.X - 20.0f, 58.0f);
+	const float Skew = 18.0f;
+	const bool bHolding = !HoldNode.IsNone() && HoldNode == Node.Id;
+	if (bMaxed)
+	{
+		Paint.Parallelogram(ButtonTopLeft, ButtonSize, Skew, FromHex(0x1A1F2C, 0.9f), FromHex(0x0E121C, 0.9f), 44);
+		Paint.ParallelogramOutline(ButtonTopLeft, ButtonSize, Skew, WithAlpha(P.GoldBright, 0.6f), 1.2f, 45);
+		Paint.Text(LOCTEXT("Maxed", "Maxed").ToString(), Font(EBeyondFont::Heading, 22.0f), ButtonTopLeft + FVector2f(ButtonSize.X * 0.5f, 14.0f), P.GoldBright, 0.5f, 46);
+		return;
+	}
+	Paint.Parallelogram(ButtonTopLeft, ButtonSize, Skew, bCanBuy ? FromHex(0x2A2416, 0.95f) : FromHex(0x161A24, 0.9f), FromHex(0x0E0D0A, 0.95f), 44);
+	if (bHolding && HoldDuration > 0.0f)
+	{
+		const float Fill = FMath::Clamp(HoldTime / HoldDuration, 0.0f, 1.0f);
+		Paint.Parallelogram(ButtonTopLeft, FVector2f(ButtonSize.X * Fill, ButtonSize.Y), Skew, WithAlpha(P.GoldBright, 0.55f), WithAlpha(P.Gold, 0.35f), 45);
+	}
+	Paint.ParallelogramOutline(ButtonTopLeft, ButtonSize, Skew, WithAlpha(bCanBuy ? P.GoldBright : P.Silver, bCanBuy ? 0.95f : 0.4f), 1.6f, 46);
+	Paint.ParallelogramOutline(ButtonTopLeft + FVector2f(0.0f, 4.0f), ButtonSize - FVector2f(0.0f, 8.0f), Skew * (ButtonSize.Y - 8.0f) / ButtonSize.Y,
+		WithAlpha(P.Gold, 0.3f), 1.0f, 46);
+	const float CapWidth = Paint.KeyCap(TEXT("F"), ButtonTopLeft + FVector2f(22.0f, 15.0f), 47);
+	Paint.Text(LOCTEXT("UpgradeButton", "Upgrade").ToString(), Font(EBeyondFont::Heading, 23.0f), ButtonTopLeft + FVector2f(22.0f + CapWidth + (ButtonSize.X - CapWidth - 22.0f) * 0.5f, 14.0f),
+		bCanBuy ? P.Text : P.TextDim, 0.5f, 47);
 }
 
 #undef LOCTEXT_NAMESPACE

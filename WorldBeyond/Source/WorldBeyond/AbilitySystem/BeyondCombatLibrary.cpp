@@ -12,21 +12,122 @@
 #include "Animation/AnimClassInterface.h"
 #include "Animation/AnimInstance.h"
 #include "BeyondGameplayTags.h"
+#include "HAL/IConsoleManager.h"
+#include "Player/BeyondPartyComponent.h"
+#include "Progression/BeyondSkillTreeComponent.h"
+#include "Progression/BeyondStatEffects.h"
+#include "World/BeyondWorldSubsystem.h"
 #include "CharacterAttributeSet.h"
 #include "EngineUtils.h"
 #include "GameFramework/PlayerController.h"
 #include "GenericTeamAgentInterface.h"
 #include "LevelSequenceActor.h"
 #include "LevelSequencePlayer.h"
-#include "Player/BeyondPartyComponent.h"
 
 UAbilitySystemComponent* UBeyondCombatLibrary::GetASC(const AActor* Actor)
 {
 	return UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(const_cast<AActor*>(Actor));
 }
 
+namespace BeyondCombatLibraryLocal
+{
+	TAutoConsoleVariable<int32> CVarCritMode(
+		TEXT("Beyond.CritMode"), -1,
+		TEXT("Critical hits: -1 roll (never while automation tests run), 0 never, 1 roll, 2 always"));
+
+	bool RollCritical(float CritRate)
+	{
+		int32 Mode = CVarCritMode.GetValueOnGameThread();
+		if (Mode < 0)
+		{
+			Mode = GIsAutomationTesting ? 0 : 1;
+		}
+		return Mode == 2 || (Mode == 1 && CritRate > 0.0f && FMath::FRand() * 100.0f < CritRate);
+	}
+
+	float ReadAttribute(const UAbilitySystemComponent* ASC, const FGameplayAttribute& Attribute)
+	{
+		return ASC && ASC->HasAttributeSetForAttribute(Attribute) ? ASC->GetNumericAttribute(Attribute) : 0.0f;
+	}
+}
+
+EBeyondElement UBeyondCombatLibrary::ResolveHitElement(const AActor* Source, const FGameplayTag& DamageType, EBeyondElement Element)
+{
+	if (Element != EBeyondElement::None)
+	{
+		return Element;
+	}
+	if (DamageType.MatchesTagExact(BeyondTags::DamageType_Proc_Lightning)) { return EBeyondElement::Storm; }
+	if (DamageType.MatchesTagExact(BeyondTags::DamageType_Proc_Burn)) { return EBeyondElement::Flame; }
+	if (DamageType.MatchesTagExact(BeyondTags::DamageType_Proc_Poison)) { return EBeyondElement::Verdant; }
+	const ABeyondCharacterBase* Character = Cast<ABeyondCharacterBase>(Source);
+	if (!Character || DamageType.MatchesTag(BeyondTags::DamageType_Environment))
+	{
+		return EBeyondElement::None;
+	}
+	// The demigods' spells carry their element (their sword and staff swings don't); a foe's every hit carries its own
+	const bool bSpell = DamageType.MatchesTag(BeyondTags::DamageType_Projectile) || DamageType.MatchesTag(BeyondTags::DamageType_Explosion);
+	return Character->TeamAffiliation == EBeyondTeam::Player && !bSpell ? EBeyondElement::None : Character->GetNativeElement();
+}
+
+float UBeyondCombatLibrary::ComputeOutgoingDamage(const AActor* Source, const AActor* Target, float Amount, const FGameplayTag& DamageType,
+	EBeyondElement Element, FGameplayTagContainer& OutTags)
+{
+	using namespace BeyondCombatLibraryLocal;
+	const UAbilitySystemComponent* SourceASC = GetASC(Source);
+	Amount *= GetDamageScale(SourceASC, DamageType);
+
+	const EBeyondElement HitElement = ResolveHitElement(Source, DamageType, Element);
+	if (HitElement != EBeyondElement::None)
+	{
+		OutTags.AddTag(BeyondStats::GetElementTag(HitElement));
+	}
+	if (!SourceASC)
+	{
+		return Amount;
+	}
+
+	// Mastery: the attacker's own element and its procs
+	const ABeyondCharacterBase* SourceCharacter = Cast<ABeyondCharacterBase>(Source);
+	const bool bProc = DamageType.MatchesTag(BeyondTags::DamageType_Proc);
+	if (HitElement != EBeyondElement::None && (bProc || (SourceCharacter && SourceCharacter->GetNativeElement() == HitElement)))
+	{
+		Amount *= 1.0f + ReadAttribute(SourceASC, UCharacterAttributeSet::GetElementalMasteryAttribute()) * 0.0025f;
+	}
+
+	// Skill nodes that strengthen an element (Storm's Embrace)
+	if (const UBeyondSkillTreeComponent* Skills = SourceCharacter ? SourceCharacter->GetSkillTreeComponent() : nullptr)
+	{
+		Amount *= 1.0f + Skills->GetElementDamageBonus(HitElement);
+	}
+
+	// Affinity: more damage against foes of that element
+	const ABeyondCharacterBase* TargetCharacter = Cast<ABeyondCharacterBase>(Target);
+	EBeyondSkillStat AffinityStat;
+	if (TargetCharacter && BeyondStats::GetAffinityStat(TargetCharacter->GetNativeElement(), AffinityStat))
+	{
+		Amount *= FMath::Max(0.0f, 1.0f + ReadAttribute(SourceASC, BeyondStats::GetStatAttribute(AffinityStat)) / 100.0f);
+	}
+
+	// Bond level: the duo hits harder while they fight side by side
+	if (const UBeyondPartyComponent* Party = SourceCharacter && !DamageType.MatchesTag(BeyondTags::DamageType_Environment) ? UBeyondWorldSubsystem::GetParty(SourceCharacter) : nullptr)
+	{
+		Amount *= 1.0f + Party->GetBondDamageDealtBonus(SourceCharacter);
+	}
+
+	// Critical hits: weapon and spell hits only, never procs or the environment
+	const bool bCanCrit = DamageType.MatchesTag(BeyondTags::DamageType_Melee) || DamageType.MatchesTag(BeyondTags::DamageType_Projectile)
+		|| DamageType.MatchesTag(BeyondTags::DamageType_Explosion);
+	if (bCanCrit && !bProc && RollCritical(ReadAttribute(SourceASC, UCharacterAttributeSet::GetCritRateAttribute())))
+	{
+		Amount *= 1.0f + ReadAttribute(SourceASC, UCharacterAttributeSet::GetCritDamageAttribute()) / 100.0f;
+		OutTags.AddTag(BeyondTags::Damage_Critical);
+	}
+	return Amount;
+}
+
 bool UBeyondCombatLibrary::ApplyDamage(AActor* Source, AActor* Target, float Amount, FGameplayTag DamageType, FGameplayTag HitResponse,
-	bool bUnblockable, AActor* Causer, bool bUnparryable, bool bIgnoreInvincible, bool bForceInterrupt)
+	bool bUnblockable, AActor* Causer, bool bUnparryable, bool bIgnoreInvincible, bool bForceInterrupt, EBeyondElement Element)
 {
 	UAbilitySystemComponent* TargetASC = GetASC(Target);
 	if (!TargetASC || Amount <= 0.0f)
@@ -43,8 +144,9 @@ bool UBeyondCombatLibrary::ApplyDamage(AActor* Source, AActor* Target, float Amo
 	UAbilitySystemComponent* SourceASC = GetASC(Source);
 	UAbilitySystemComponent* SpecOwner = SourceASC ? SourceASC : TargetASC;
 
-	// The attacker's stats: Strength for melee, Arcana for projectiles / explosions (spells, abilities)
-	Amount *= GetDamageScale(SourceASC, DamageType);
+	// The attacker's stats (Strength for melee, Arcana for spells), Elemental Mastery and affinity, a critical roll
+	FGameplayTagContainer HitTags;
+	Amount = ComputeOutgoingDamage(Source, Target, Amount, DamageType, Element, HitTags);
 
 	FGameplayEffectContextHandle Context = SpecOwner->MakeEffectContext();
 	Context.AddInstigator(Source, Causer ? Causer : Source);
@@ -63,6 +165,10 @@ bool UBeyondCombatLibrary::ApplyDamage(AActor* Source, AActor* Target, float Amo
 	if (bUnparryable) { Spec->AddDynamicAssetTag(BeyondTags::Damage_Unparryable); }
 	if (bIgnoreInvincible) { Spec->AddDynamicAssetTag(BeyondTags::Damage_IgnoreInvincible); }
 	if (bForceInterrupt) { Spec->AddDynamicAssetTag(BeyondTags::Damage_ForceInterrupt); }
+	for (const FGameplayTag& HitTag : HitTags)
+	{
+		Spec->AddDynamicAssetTag(HitTag);
+	}
 
 	if (SourceASC)
 	{
@@ -112,7 +218,16 @@ bool UBeyondCombatLibrary::ApplyDamageOverTime(AActor* Source, AActor* Target, f
 	{
 		return false;
 	}
+	// Elemental Mastery strengthens poison, burn and lightning procs
+	if (SourceASC && DamageTag.MatchesTag(BeyondTags::DamageType_Proc) && SourceASC->HasAttributeSetForAttribute(UCharacterAttributeSet::GetElementalMasteryAttribute()))
+	{
+		DamagePerSecond *= 1.0f + SourceASC->GetNumericAttribute(UCharacterAttributeSet::GetElementalMasteryAttribute()) * 0.0025f;
+	}
 	Spec.Data->SetSetByCallerMagnitude(BeyondTags::SetByCaller_Damage, DamagePerSecond);
+	if (const FGameplayTag ElementTag = BeyondStats::GetElementTag(ResolveHitElement(Source, DamageTag, EBeyondElement::None)); ElementTag.IsValid())
+	{
+		Spec.Data->AddDynamicAssetTag(ElementTag);
+	}
 	Spec.Data->SetSetByCallerMagnitude(BeyondTags::SetByCaller_Duration, Duration);
 	if (DamageTag.IsValid())
 	{

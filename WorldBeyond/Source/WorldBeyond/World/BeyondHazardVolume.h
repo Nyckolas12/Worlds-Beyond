@@ -20,7 +20,8 @@ enum class EBeyondHazardKind : uint8
 
 /**
  * A box that hurts the party (Plan 5): lava channels in the Cinderlands, the deep middle of a lake. Checked four times a
- * second against the demigods (no overlap events, so a teleport into it counts too). Streams with the art around it.
+ * second against the demigods' locations (their capsule centres; no overlap events, so a teleport into it counts too).
+ * A Radius makes it round.
  */
 UCLASS()
 class WORLDBEYOND_API ABeyondHazardVolume : public AActor
@@ -51,7 +52,12 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hazard", meta = (ClampMin = "0", ClampMax = "1", EditCondition = "Kind == EBeyondHazardKind::DeepWater"))
 	float DeepWaterDamageFraction = 0.1f;
 
-	// Location is inside the box
+	// Above 0: only within this distance (cm, across the ground) of the box's centre counts, so a lake or a lava pool is
+	// round and the box's corners never reach the ground around it
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hazard", meta = (ClampMin = "0", Units = "cm"))
+	float Radius = 0.0f;
+
+	// Location is inside the box (and within Radius)
 	UFUNCTION(BlueprintPure, Category = "Hazard")
 	bool ContainsLocation(const FVector& Location) const;
 

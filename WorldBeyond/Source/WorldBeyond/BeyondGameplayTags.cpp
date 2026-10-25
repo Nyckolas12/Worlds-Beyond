@@ -93,6 +93,22 @@ namespace BeyondTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Strength, "SetByCaller.Strength", "Strength added by UBeyondGE_LevelStats");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Arcana, "SetByCaller.Arcana", "Arcana added by UBeyondGE_LevelStats");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Defense, "SetByCaller.Defense", "Defense added by UBeyondGE_LevelStats");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_CritRate, "SetByCaller.CritRate", "Critical rate added by UBeyondGE_LevelStats");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_CritDamage, "SetByCaller.CritDamage", "Critical damage added by UBeyondGE_LevelStats");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_ElementalMastery, "SetByCaller.ElementalMastery", "Elemental Mastery added by UBeyondGE_LevelStats");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_VerdantAffinity, "SetByCaller.Affinity.Verdant", "Verdant affinity added by UBeyondGE_LevelStats");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_ShadowAffinity, "SetByCaller.Affinity.Shadow", "Shadow affinity added by UBeyondGE_LevelStats");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_FrostAffinity, "SetByCaller.Affinity.Frost", "Frost affinity added by UBeyondGE_LevelStats");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_FlameAffinity, "SetByCaller.Affinity.Flame", "Flame affinity added by UBeyondGE_LevelStats");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Damage_Critical, "Damage.Critical", "The hit rolled a critical (UBeyondCombatLibrary::ApplyDamage)");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Element_Storm, "Element.Storm", "Angel's lightning");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Element_Radiant, "Element.Radiant", "Ji-Woong's golden light");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Element_Eclipse, "Element.Eclipse", "The duo's merged power");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Element_Verdant, "Element.Verdant", "The forest's foes, poison");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Element_Shadow, "Element.Shadow", "The corrupted woods' foes");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Element_Frost, "Element.Frost", "The frost region's foes");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Element_Flame, "Element.Flame", "The molten region's foes, burning");
 
 	UE_DEFINE_GAMEPLAY_TAG(GameplayCue_Damage_Burst, "GameplayCue.Damage.Burst");
 	UE_DEFINE_GAMEPLAY_TAG(GameplayCue_Heal_Burst, "GameplayCue.Heal.Burst");

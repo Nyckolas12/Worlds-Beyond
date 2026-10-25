@@ -163,7 +163,7 @@ FString UBeyondVillageBuilderLibrary::GetPrefabLevel(AActor* Actor)
 }
 
 bool UBeyondVillageBuilderLibrary::CaptureView(UObject* WorldContext, FVector Location, FRotator Rotation, const FString& FilePath, float FOV,
-	int32 Width, int32 Height, float ExposureEV, float OrthoWidth)
+	int32 Width, int32 Height, float ExposureEV, float OrthoWidth, int32 WarmupFrames)
 {
 	using namespace BeyondVillageBuilderLocal;
 	UWorld* World = ResolveWorld(WorldContext);
@@ -238,7 +238,8 @@ bool UBeyondVillageBuilderLibrary::CaptureView(UObject* WorldContext, FVector Lo
 	Capture->PostProcessSettings.AutoExposureBias = ExposureEV;
 
 	// A few frames: shadows and streaming settle
-	for (int32 Frame = 0; Frame < 4; ++Frame)
+	const int32 Frames = FMath::Clamp(WarmupFrames, 1, 120);
+	for (int32 Frame = 0; Frame < Frames; ++Frame)
 	{
 		IStreamingManager::Get().Tick(0.1f, true);
 		IStreamingManager::Get().StreamAllResources(5.0f);

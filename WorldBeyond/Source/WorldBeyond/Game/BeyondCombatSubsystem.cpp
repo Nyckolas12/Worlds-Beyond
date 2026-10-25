@@ -7,10 +7,13 @@
 #include "AbilitySystemComponent.h"
 #include "Animation/AnimMontage.h"
 #include "BeyondGameplayTags.h"
+#include "Progression/BeyondStatEffects.h"
 #include "Characters/BeyondCharacterBase.h"
 #include "Items/BeyondEquipmentComponent.h"
 #include "Engine/OverlapResult.h"
 #include "Engine/World.h"
+#include "Player/BeyondPartyComponent.h"
+#include "World/BeyondWorldSubsystem.h"
 #include "Particles/ParticleSystemComponent.h"
 #include "TimerManager.h"
 
@@ -174,6 +177,23 @@ float UBeyondCombatSubsystem::ModifyIncomingDamage(UAbilitySystemComponent& Targ
 	if (const ABeyondCharacterBase* Source = Cast<ABeyondCharacterBase>(DamageInstigator))
 	{
 		Damage *= Source->GetOutgoingDamageScale();
+	}
+
+	// Affinity to the hit's element resists it (up to half); a negative affinity makes it worse
+	EBeyondSkillStat AffinityStat;
+	if (BeyondStats::GetAffinityStat(BeyondStats::GetElementFromTags(DamageTags), AffinityStat)
+		&& TargetASC.HasAttributeSetForAttribute(BeyondStats::GetStatAttribute(AffinityStat)))
+	{
+		Damage *= 1.0f - FMath::Clamp(TargetASC.GetNumericAttribute(BeyondStats::GetStatAttribute(AffinityStat)), -50.0f, 50.0f) / 100.0f;
+	}
+
+	// Bond level: the duo takes less while they fight side by side (not from the environment)
+	if (!DamageTags.HasTag(BeyondTags::DamageType_Environment))
+	{
+		if (const UBeyondPartyComponent* Party = UBeyondWorldSubsystem::GetParty(TargetASC.GetAvatarActor()))
+		{
+			Damage *= 1.0f - Party->GetBondDamageTakenReduction(TargetASC.GetAvatarActor());
+		}
 	}
 
 	// Armor (Sunforged): less damage while healthy

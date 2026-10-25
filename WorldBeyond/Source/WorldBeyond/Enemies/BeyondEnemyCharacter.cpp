@@ -299,6 +299,30 @@ void ABeyondEnemyCharacter::RestoreToFull()
 	LastDamagedTime = -1000.0f;
 }
 
+EBeyondElement ABeyondEnemyCharacter::GetNativeElement() const
+{
+	for (const UBeyondAffixDefinition* Affix : Affixes)
+	{
+		if (!Affix)
+		{
+			continue;
+		}
+		if (Affix->AffixTag == BeyondTags::Enemy_Affix_Molten) { return EBeyondElement::Flame; }
+		if (Affix->AffixTag == BeyondTags::Enemy_Affix_Venomous) { return EBeyondElement::Verdant; }
+		if (Affix->AffixTag == BeyondTags::Enemy_Affix_Stormcharged) { return EBeyondElement::Storm; }
+	}
+	if (NativeElement != EBeyondElement::None)
+	{
+		return NativeElement;
+	}
+	const FGameplayTag Region = Definition ? Definition->Region : FGameplayTag();
+	if (Region.MatchesTag(BeyondTags::Region_Forest)) { return EBeyondElement::Verdant; }
+	if (Region.MatchesTag(BeyondTags::Region_CorruptedWoods)) { return EBeyondElement::Shadow; }
+	if (Region.MatchesTag(BeyondTags::Region_Frost)) { return EBeyondElement::Frost; }
+	if (Region.MatchesTag(BeyondTags::Region_Molten)) { return EBeyondElement::Flame; }
+	return EBeyondElement::None;
+}
+
 float ABeyondEnemyCharacter::ModifyDamageTaken(float Damage, AActor* DamageInstigator, const FGameplayTagContainer& DamageTags) const
 {
 	return AffixComponent ? AffixComponent->ModifyDamageTaken(Damage, DamageInstigator, DamageTags) : Damage;

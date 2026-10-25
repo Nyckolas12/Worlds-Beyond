@@ -59,6 +59,39 @@ public:
 	FGameplayAttributeData Defense;
 	ATTRIBUTE_ACCESSORS(UCharacterAttributeSet, Defense)
 
+	// Plan 6. Chance in percent (0-100) that a melee / projectile / explosion hit is critical (UBeyondCombatLibrary)
+	UPROPERTY(BlueprintReadOnly, Category = "Stats", ReplicatedUsing = OnRep_CritRate)
+	FGameplayAttributeData CritRate;
+	ATTRIBUTE_ACCESSORS(UCharacterAttributeSet, CritRate)
+
+	// Extra damage of a critical hit in percent (50: crits deal 150%)
+	UPROPERTY(BlueprintReadOnly, Category = "Stats", ReplicatedUsing = OnRep_CritDamage)
+	FGameplayAttributeData CritDamage;
+	ATTRIBUTE_ACCESSORS(UCharacterAttributeSet, CritDamage)
+
+	// Boosts damage of the character's own element (+0.25% per point) and of its procs
+	UPROPERTY(BlueprintReadOnly, Category = "Stats", ReplicatedUsing = OnRep_ElementalMastery)
+	FGameplayAttributeData ElementalMastery;
+	ATTRIBUTE_ACCESSORS(UCharacterAttributeSet, ElementalMastery)
+
+	// Affinity to the regions' elements in percent: that much more damage against foes of the element, and that much
+	// less from their hits (resistance capped at 50%)
+	UPROPERTY(BlueprintReadOnly, Category = "Stats", ReplicatedUsing = OnRep_VerdantAffinity)
+	FGameplayAttributeData VerdantAffinity;
+	ATTRIBUTE_ACCESSORS(UCharacterAttributeSet, VerdantAffinity)
+
+	UPROPERTY(BlueprintReadOnly, Category = "Stats", ReplicatedUsing = OnRep_ShadowAffinity)
+	FGameplayAttributeData ShadowAffinity;
+	ATTRIBUTE_ACCESSORS(UCharacterAttributeSet, ShadowAffinity)
+
+	UPROPERTY(BlueprintReadOnly, Category = "Stats", ReplicatedUsing = OnRep_FrostAffinity)
+	FGameplayAttributeData FrostAffinity;
+	ATTRIBUTE_ACCESSORS(UCharacterAttributeSet, FrostAffinity)
+
+	UPROPERTY(BlueprintReadOnly, Category = "Stats", ReplicatedUsing = OnRep_FlameAffinity)
+	FGameplayAttributeData FlameAffinity;
+	ATTRIBUTE_ACCESSORS(UCharacterAttributeSet, FlameAffinity)
+
 	// Character level (demigods level up through UBeyondProgressionAttributeSet; enemies keep their Starting Level)
 	UPROPERTY(BlueprintReadOnly, Category = "Stats", ReplicatedUsing = OnRep_Level)
 	FGameplayAttributeData Level;
@@ -120,6 +153,41 @@ protected:
 	virtual void OnRep_Level(const FGameplayAttributeData& OldLevel) const
 	{
 		GAMEPLAYATTRIBUTE_REPNOTIFY(UCharacterAttributeSet, Level, OldLevel);
+	}
+	UFUNCTION()
+	virtual void OnRep_CritRate(const FGameplayAttributeData& OldValue) const
+	{
+		GAMEPLAYATTRIBUTE_REPNOTIFY(UCharacterAttributeSet, CritRate, OldValue);
+	}
+	UFUNCTION()
+	virtual void OnRep_CritDamage(const FGameplayAttributeData& OldValue) const
+	{
+		GAMEPLAYATTRIBUTE_REPNOTIFY(UCharacterAttributeSet, CritDamage, OldValue);
+	}
+	UFUNCTION()
+	virtual void OnRep_ElementalMastery(const FGameplayAttributeData& OldValue) const
+	{
+		GAMEPLAYATTRIBUTE_REPNOTIFY(UCharacterAttributeSet, ElementalMastery, OldValue);
+	}
+	UFUNCTION()
+	virtual void OnRep_VerdantAffinity(const FGameplayAttributeData& OldValue) const
+	{
+		GAMEPLAYATTRIBUTE_REPNOTIFY(UCharacterAttributeSet, VerdantAffinity, OldValue);
+	}
+	UFUNCTION()
+	virtual void OnRep_ShadowAffinity(const FGameplayAttributeData& OldValue) const
+	{
+		GAMEPLAYATTRIBUTE_REPNOTIFY(UCharacterAttributeSet, ShadowAffinity, OldValue);
+	}
+	UFUNCTION()
+	virtual void OnRep_FrostAffinity(const FGameplayAttributeData& OldValue) const
+	{
+		GAMEPLAYATTRIBUTE_REPNOTIFY(UCharacterAttributeSet, FrostAffinity, OldValue);
+	}
+	UFUNCTION()
+	virtual void OnRep_FlameAffinity(const FGameplayAttributeData& OldValue) const
+	{
+		GAMEPLAYATTRIBUTE_REPNOTIFY(UCharacterAttributeSet, FlameAffinity, OldValue);
 	}
 
 	virtual void PreAttributeChange(const FGameplayAttribute& Attribute, float& NewValue) override;

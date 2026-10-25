@@ -2,6 +2,7 @@
 
 #include "Progression/BeyondSkillTree.h"
 #include "AbilitySystem/BeyondGameplayAbility.h"
+#include "Progression/BeyondStatEffects.h"
 
 #define LOCTEXT_NAMESPACE "BeyondSkillTree"
 
@@ -16,9 +17,17 @@ FText UBeyondSkillTreeAsset::GetStatName(EBeyondSkillStat Stat)
 	{
 	case EBeyondSkillStat::MaxHealth: return LOCTEXT("MaxHealth", "Max Health");
 	case EBeyondSkillStat::MaxStamina: return LOCTEXT("MaxStamina", "Max Stamina");
-	case EBeyondSkillStat::Strength: return LOCTEXT("Strength", "Strength");
-	case EBeyondSkillStat::Arcana: return LOCTEXT("Arcana", "Arcana");
+	// Shown as the menus name them (Plan 6); the stats stay Strength (melee) and Arcana (abilities) underneath
+	case EBeyondSkillStat::Strength: return LOCTEXT("Strength", "Attack Power");
+	case EBeyondSkillStat::Arcana: return LOCTEXT("Arcana", "Magic Power");
 	case EBeyondSkillStat::Defense: return LOCTEXT("Defense", "Defense");
+	case EBeyondSkillStat::CritRate: return LOCTEXT("CritRate", "Critical Rate");
+	case EBeyondSkillStat::CritDamage: return LOCTEXT("CritDamage", "Critical Damage");
+	case EBeyondSkillStat::ElementalMastery: return LOCTEXT("ElementalMastery", "Elemental Mastery");
+	case EBeyondSkillStat::VerdantAffinity: return LOCTEXT("VerdantAffinity", "Verdant Affinity");
+	case EBeyondSkillStat::ShadowAffinity: return LOCTEXT("ShadowAffinity", "Shadow Affinity");
+	case EBeyondSkillStat::FrostAffinity: return LOCTEXT("FrostAffinity", "Frost Affinity");
+	case EBeyondSkillStat::FlameAffinity: return LOCTEXT("FlameAffinity", "Flame Affinity");
 	}
 	return FText::GetEmpty();
 }
@@ -53,8 +62,35 @@ TArray<FText> UBeyondSkillTreeAsset::DescribeEffects(const FBeyondSkillNode& Nod
 		switch (Effect.Type)
 		{
 		case EBeyondSkillEffectType::Stat:
-			Lines.Add(FText::Format(LOCTEXT("StatLine", "+{0} {1}"), FText::AsNumber(FMath::RoundToInt(Effect.Value * Ranks)), GetStatName(Effect.Stat)));
+			Lines.Add(FText::Format(BeyondStats::IsPercentStat(Effect.Stat) ? LOCTEXT("StatPercentLine", "+{0}% {1}") : LOCTEXT("StatLine", "+{0} {1}"),
+				FText::AsNumber(FMath::RoundToInt(Effect.Value * Ranks)), GetStatName(Effect.Stat)));
 			break;
+		case EBeyondSkillEffectType::ElementDamage:
+			Lines.Add(FText::Format(LOCTEXT("ElementDamageLine", "+{0}% {1} damage"), FText::AsNumber(FMath::RoundToInt(Effect.Value * Ranks * 100.0f)),
+				StaticEnum<EBeyondElement>()->GetDisplayNameTextByValue(static_cast<int64>(Effect.Element))));
+			break;
+		case EBeyondSkillEffectType::Passive:
+		{
+			const FText When = Effect.Trigger == EBeyondPassiveTrigger::OnCrit ? LOCTEXT("OnCrit", "On a critical hit")
+				: Effect.Trigger == EBeyondPassiveTrigger::OnKill ? LOCTEXT("OnKill", "On a kill") : LOCTEXT("OnElemental", "On an elemental hit");
+			const float Amount = Effect.Value * Ranks;
+			FText What;
+			if (Effect.Action == EBeyondPassiveAction::BuffStat)
+			{
+				What = FText::Format(BeyondStats::IsPercentStat(Effect.Stat) ? LOCTEXT("BuffPercent", "+{0}% {1} for {2}s") : LOCTEXT("Buff", "+{0} {1} for {2}s"),
+					FText::AsNumber(FMath::RoundToInt(Amount)), GetStatName(Effect.Stat), FText::AsNumber(FMath::RoundToInt(Effect.Duration)));
+			}
+			else if (Effect.Action == EBeyondPassiveAction::ReduceCooldowns)
+			{
+				What = FText::Format(LOCTEXT("Cooldowns", "cooldowns {0}s shorter"), FText::AsNumber(Amount));
+			}
+			else
+			{
+				What = FText::Format(LOCTEXT("PassiveHeal", "heal {0}% of max health"), FText::AsNumber(FMath::RoundToInt(Amount)));
+			}
+			Lines.Add(FText::Format(LOCTEXT("PassiveLine", "{0}: {1}"), When, What));
+			break;
+		}
 		case EBeyondSkillEffectType::AbilityRank:
 		{
 			const UBeyondGameplayAbility* BeyondCDO = Effect.Ability ? Cast<UBeyondGameplayAbility>(Effect.Ability->GetDefaultObject()) : nullptr;
